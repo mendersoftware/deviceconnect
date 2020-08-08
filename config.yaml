@@ -1,0 +1,5 @@
+# API server listen address
+# Defauls to: ":8080" which will listen on all avalable interfaces.
+# Overwrite with environment variable: DEVICECONNECT_LISTEN
+
+listen: :8080
