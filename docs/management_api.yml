@@ -1,0 +1,71 @@
+swagger: '2.0'
+info:
+  title: Device Connect
+  version: '1'
+  description: |
+    An API for device connect management.
+    Intended for use by the web GUI.
+
+host: 'hosted.mender.io'
+basePath: '/api/management/v1/deviceconnect'
+schemes:
+  - https
+
+consumes:
+  - application/json
+produces:
+  - application/json
+
+responses:
+  NotFoundError: # 404
+    description: Not Found.
+    schema:
+      $ref: "#/definitions/Error"
+  ConflictError: # 409
+    description: Conflict, record already exists.
+    schema:
+      $ref: "#/definitions/Error"
+  InternalServerError: # 500
+    description: Internal Server Error.
+    schema:
+      $ref: "#/definitions/Error"
+  InvalidRequestError: # 400
+    description: Invalid Request.
+    schema:
+      $ref: "#/definitions/Error"
+
+paths:
+  /status:
+    get:
+      operationId: Check Health
+      summary: Get health status of service
+      description: |
+        Returns status of the running service.
+      responses:
+        200:
+          description: Successful response.
+          examples:
+            application/json:
+              status: ok
+          schema:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+        400:
+          $ref: "#/responses/InvalidRequestError"
+        500:
+          $ref: "#/responses/InternalServerError"
+
+definitions:
+  Error:
+    description: Error descriptor.
+    type: object
+    properties:
+      error:
+        description: Description of the error.
+        type: string
+    example:
+      error: "failed: JSON payload is empty"
