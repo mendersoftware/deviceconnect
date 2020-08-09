@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	api "github.com/mendersoftware/deviceconnect/api/http"
+	"github.com/mendersoftware/deviceconnect/app"
 	dconfig "github.com/mendersoftware/deviceconnect/config"
 	"github.com/mendersoftware/go-lib-micro/config"
 	"github.com/mendersoftware/go-lib-micro/log"
@@ -36,8 +37,13 @@ func InitAndRun(conf config.Reader) error {
 	log.Setup(conf.GetBool(dconfig.SettingDebugLog))
 	l := log.FromContext(ctx)
 
+	deviceConnectApp := app.NewDeviceConnectApp()
+
 	var listen = conf.GetString(dconfig.SettingListen)
-	var router = api.NewRouter()
+	router, err := api.NewRouter(deviceConnectApp)
+	if err != nil {
+		l.Fatal(err)
+	}
 	srv := &http.Server{
 		Addr:    listen,
 		Handler: router,

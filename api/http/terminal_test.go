@@ -20,32 +20,20 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
 )
 
-func TestHealthCheck(t *testing.T) {
-	testCases := []struct {
-		Name string
+func TestTerminal(t *testing.T) {
+	deviceConnectApp := &app_mocks.App{}
 
-		DataStoreErr error
-		HTTPStatus   int
-		HTTPBody     map[string]interface{}
-	}{{
-		Name:       "ok",
-		HTTPStatus: http.StatusNoContent,
-	}}
+	router, _ := NewRouter(deviceConnectApp)
 
-	for _, tc := range testCases {
-		t.Run(tc.Name, func(t *testing.T) {
-			router := NewRouter()
-			req, err := http.NewRequest("GET", "http://localhost"+APIURLHealth, nil)
-			if !assert.NoError(t, err) {
-				t.FailNow()
-			}
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", URLTerminal, nil)
+	router.ServeHTTP(w, req)
 
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-			assert.Equal(t, tc.HTTPStatus, w.Code)
-			assert.Nil(t, w.Body.Bytes())
-		})
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	deviceConnectApp.AssertExpectations(t)
 }

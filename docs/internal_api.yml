@@ -1,0 +1,122 @@
+swagger: '2.0'
+info:
+  title: Device Connect Internal API
+  version: '1'
+  description: |
+    Internal API of device connect service
+
+host: 'mender-deviceconnect:8080'
+basePath: '/api/internal/v1/deviceconnect'
+schemes:
+  - http
+
+produces:
+  - application/json
+consumes:
+  - application/json
+
+responses:
+  InternalServerError: # 500
+    description: Internal Server Error.
+    schema:
+      $ref: "#/definitions/Error"
+  InvalidRequestError: # 400
+    description: Invalid Request.
+    schema:
+      $ref: "#/definitions/Error"
+
+paths:
+  /health:
+    get:
+      operationId: Check Health
+      tags:
+        - Internal API
+      summary: Check the health of the service
+      responses:
+        204:
+          description: >
+              Service is healthy and all dependencies are up and running.
+        500:
+          description: >
+              Unexpected internal error
+          schema:
+            $ref: '#/definitions/Error'
+          examples:
+            application/json:
+              error: "internal error"
+              request_id: "ffd712be-d697-4cb7-814b-88ff1e2eb5f6"
+        503:
+          description: >
+              Service unhealthy / not ready to accept traffic. At least one
+              dependency is not running.
+          schema:
+            $ref: '#/definitions/Error'
+          examples:
+            application/json:
+              error: "error reaching MongoDB: context deadline exceeded"
+              request_id: "ffd712be-d697-4cb7-814b-88ff1e2eb5f6"
+
+  /alive:
+    get:
+      operationId: Check Liveliness
+      tags:
+        - Internal API
+      summary: >
+          Trivial endpoint that unconditionally returns an empty 200 response
+          whenever the API handler is running correctly.
+      responses:
+        204:
+          description: Service is up and running.
+        500:
+          description: >
+              Internal API error
+          schema:
+            $ref: '#/definitions/Error'
+
+  /tenants:
+    post:
+      operationId: Create Tenant
+      summary: Provision a new tenant
+      description: |
+          Sets up all tenant-related infrastructure, e.g. a migrated tenant's database.
+      parameters:
+        - name: tenant
+          in: body
+          description: New tenant descriptor.
+          required: true
+          schema:
+            $ref: "#/definitions/NewTenant"
+      responses:
+        201:
+          description: Tenant was successfully provisioned.
+        400:
+          description: Bad request.
+        500:
+          description: Internal server error.
+          schema:
+           $ref: "#/definitions/Error"
+
+definitions:
+  NewTenant:
+    description: New tenant descriptor.
+    type: object
+    properties:
+      tenant_id:
+        description: New tenant's ID.
+        type: string
+    example:
+      tenant_id: "58be8208dd77460001fe0d78"
+
+  Error:
+    description: Error descriptor.
+    type: object
+    properties:
+      error:
+        description: Description of the error.
+        type: string
+      request_id:
+        description: Request ID (same as in X-MEN-RequestID header).
+        type: string
+    example:
+      error: "failed to decode request body: JSON payload is empty"
+      request_id: "f7881e82-0492-49fb-b459-795654e7188a"

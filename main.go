@@ -23,8 +23,8 @@ import (
 	"github.com/mendersoftware/go-lib-micro/config"
 	"github.com/urfave/cli"
 
-	"github.com/mendersoftware/deviceconnect/app/server"
 	dconfig "github.com/mendersoftware/deviceconnect/config"
+	"github.com/mendersoftware/deviceconnect/server"
 	store "github.com/mendersoftware/deviceconnect/store/mongo"
 )
 

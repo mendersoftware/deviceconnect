@@ -15,22 +15,50 @@
 package http
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mendersoftware/deviceconnect/app"
+	"github.com/mendersoftware/go-lib-micro/log"
+	"github.com/pkg/errors"
+)
+
+const (
+	defaultTimeout = time.Second * 10
 )
 
 // StatusController contains status-related end-points
-type StatusController struct{}
-
-// NewStatusController returns a new StatusController
-func NewStatusController() *StatusController {
-	return new(StatusController)
+type StatusController struct {
+	app app.App
 }
 
-// Status responds to GET /status
-func (h StatusController) Status(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"status": "ok",
-	})
+// NewStatusController returns a new StatusController
+func NewStatusController(app app.App) *StatusController {
+	return &StatusController{app: app}
+}
+
+// Alive responds to GET /alive
+func (h StatusController) Alive(c *gin.Context) {
+	c.Writer.WriteHeader(http.StatusNoContent)
+}
+
+// Health responds to GET /health
+func (h StatusController) Health(c *gin.Context) {
+	ctx := c.Request.Context()
+	l := log.FromContext(ctx)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	err := h.app.HealthCheck(ctx)
+	if err != nil {
+		l.Error(errors.Wrap(err, "health check failed"))
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.Writer.WriteHeader(http.StatusNoContent)
 }

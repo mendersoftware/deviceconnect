@@ -15,33 +15,73 @@
 package http
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+
+	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
 )
 
-func TestStatus(t *testing.T) {
-	router := NewRouter()
+func TestAlive(t *testing.T) {
+	deviceConnectApp := &app_mocks.App{}
+
+	router, _ := NewRouter(deviceConnectApp)
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/status", nil)
+	req, _ := http.NewRequest("GET", APIURLInternalAlive, nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusNoContent, w.Code)
 
-	var response map[string]string
-	err := json.Unmarshal([]byte(w.Body.String()), &response)
-	value, ok := response["status"]
+	deviceConnectApp.AssertExpectations(t)
+}
 
-	assert.Nil(t, err)
-	assert.True(t, ok)
+func TestHealth(t *testing.T) {
+	testCases := []struct {
+		Name           string
+		HealthCheckErr error
 
-	expectedBody := gin.H{
-		"status": "ok",
+		HTTPStatus int
+		HTTPBody   map[string]interface{}
+	}{
+		{
+			Name:       "ok",
+			HTTPStatus: http.StatusNoContent,
+		},
+		{
+			Name:           "ko",
+			HealthCheckErr: errors.New("error"),
+			HTTPStatus:     http.StatusServiceUnavailable,
+		},
 	}
-	assert.Equal(t, expectedBody["status"], value)
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			deviceConnectApp := &app_mocks.App{}
+			deviceConnectApp.On("HealthCheck",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				})).Return(tc.HealthCheckErr)
+
+			router, _ := NewRouter(deviceConnectApp)
+			req, err := http.NewRequest("GET", APIURLInternalHealth, nil)
+			if !assert.NoError(t, err) {
+				t.FailNow()
+			}
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			assert.Equal(t, tc.HTTPStatus, w.Code)
+			if tc.HTTPStatus == http.StatusNoContent {
+				assert.Nil(t, w.Body.Bytes())
+			}
+
+			deviceConnectApp.AssertExpectations(t)
+		})
+	}
 }

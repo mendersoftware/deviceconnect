@@ -18,33 +18,43 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mendersoftware/deviceconnect/app"
 	"github.com/mendersoftware/go-lib-micro/log"
 )
 
 // API URL used by the HTTP router
 const (
-	APIURLStatus = "/status"
+	APIURLDevices    = "/api/devices/v1/deviceconnect"
+	APIURLInternal   = "/api/internal/v1/deviceconnect"
+	APIURLManagement = "/api/management/v1/deviceconnect"
 
-	APIURLHealth = "/api/v1/health"
+	APIURLDevicesWebsocket = APIURLDevices + "/websocket"
+
+	APIURLInternalAlive   = APIURLInternal + "/alive"
+	APIURLInternalHealth  = APIURLInternal + "/health"
+	APIURLInternalTenants = APIURLInternal + "/tenants"
+
+	URLTerminal = "/"
 )
 
 // NewRouter returns the gin router
-func NewRouter() *gin.Engine {
+func NewRouter(deviceConnectApp app.App) (*gin.Engine, error) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DisableConsoleColor()
 
-	router := gin.New()
 	ctx := context.Background()
 	l := log.FromContext(ctx)
 
+	router := gin.New()
 	router.Use(routerLogger(l))
 	router.Use(gin.Recovery())
 
-	status := NewStatusController()
-	router.GET(APIURLStatus, status.Status)
+	status := NewStatusController(deviceConnectApp)
+	router.GET(APIURLInternalAlive, status.Alive)
+	router.GET(APIURLInternalHealth, status.Health)
 
-	deviceConnect := NewDeviceConnectController()
-	router.GET(APIURLHealth, deviceConnect.HealthCheck)
+	terminal := NewTerminalController()
+	router.GET(URLTerminal, terminal.Terminal)
 
-	return router
+	return router, nil
 }

@@ -4,7 +4,7 @@ info:
   version: '1'
   description: |
     An API for device connect management.
-    Intended for use by the web GUI.
+    Intended for use by the web GUI.  
 
 host: 'hosted.mender.io'
 basePath: '/api/management/v1/deviceconnect'
