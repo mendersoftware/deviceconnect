@@ -28,7 +28,7 @@ const (
 	APIURLInternal   = "/api/internal/v1/deviceconnect"
 	APIURLManagement = "/api/management/v1/deviceconnect"
 
-	APIURLDevicesWebsocket = APIURLDevices + "/websocket"
+	APIURLDevicesConnect = APIURLDevices + "/connect"
 
 	APIURLInternalAlive   = APIURLInternal + "/alive"
 	APIURLInternalHealth  = APIURLInternal + "/health"
@@ -55,6 +55,9 @@ func NewRouter(deviceConnectApp app.App) (*gin.Engine, error) {
 
 	tenants := NewTenantsController(deviceConnectApp)
 	router.POST(APIURLInternalTenants, tenants.Provision)
+
+	device := NewDeviceController(deviceConnectApp)
+	router.GET(APIURLDevicesConnect, device.Connect)
 
 	terminal := NewTerminalController()
 	router.GET(URLTerminal, terminal.Terminal)
