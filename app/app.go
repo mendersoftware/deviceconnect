@@ -41,7 +41,7 @@ func NewDeviceConnectApp(store store.DataStore, client clientnats.ClientInterfac
 
 // HealthCheck performs a health check and returns an error if it fails
 func (a *DeviceConnectApp) HealthCheck(ctx context.Context) error {
-	return nil
+	return a.store.Ping(ctx)
 }
 
 // ProvisionTenant provisions a new tenant
