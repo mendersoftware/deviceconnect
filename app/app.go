@@ -17,6 +17,7 @@ package app
 import (
 	"context"
 
+	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
 )
@@ -29,12 +30,13 @@ type App interface {
 
 // DeviceConnectApp is an app object
 type DeviceConnectApp struct {
-	store store.DataStore
+	store  store.DataStore
+	client clientnats.ClientInterface
 }
 
 // NewDeviceConnectApp returns a new DeviceConnectApp
-func NewDeviceConnectApp(store store.DataStore) App {
-	return &DeviceConnectApp{store: store}
+func NewDeviceConnectApp(store store.DataStore, client clientnats.ClientInterface) App {
+	return &DeviceConnectApp{store: store, client: client}
 }
 
 // HealthCheck performs a health check and returns an error if it fails

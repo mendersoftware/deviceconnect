@@ -21,14 +21,15 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/mendersoftware/go-lib-micro/config"
+	"github.com/mendersoftware/go-lib-micro/log"
 	"golang.org/x/sys/unix"
 
 	api "github.com/mendersoftware/deviceconnect/api/http"
 	"github.com/mendersoftware/deviceconnect/app"
+	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
 	dconfig "github.com/mendersoftware/deviceconnect/config"
 	"github.com/mendersoftware/deviceconnect/store"
-	"github.com/mendersoftware/go-lib-micro/config"
-	"github.com/mendersoftware/go-lib-micro/log"
 )
 
 // InitAndRun initializes the server and runs it
@@ -38,7 +39,13 @@ func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 	log.Setup(conf.GetBool(dconfig.SettingDebugLog))
 	l := log.FromContext(ctx)
 
-	deviceConnectApp := app.NewDeviceConnectApp(dataStore)
+	client := &clientnats.Client{}
+	if natsURI := config.Config.GetString(dconfig.SettingNatsURI); natsURI != "" {
+		if err := client.Connect(ctx, natsURI); err != nil {
+			return err
+		}
+	}
+	deviceConnectApp := app.NewDeviceConnectApp(dataStore, client)
 
 	var listen = conf.GetString(dconfig.SettingListen)
 	router, err := api.NewRouter(deviceConnectApp)
