@@ -12,6 +12,9 @@ import (
 	"time"
 
 	"github.com/mendersoftware/go-lib-micro/config"
+	"github.com/mendersoftware/go-lib-micro/mongo/migrate"
+	"github.com/mendersoftware/go-lib-micro/store"
+
 	"github.com/pkg/errors"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -44,11 +47,20 @@ func SetupDataStore(automigrate bool) (*DataStoreMongo, error) {
 func doMigrations(ctx context.Context, client *mongo.Client,
 	automigrate bool) error {
 	db := config.Config.GetString(dconfig.SettingDbName)
-	err := Migrate(ctx, db, DbVersion, client, automigrate)
+	dbs, err := migrate.GetTenantDbs(ctx, client, store.IsTenantDb(db))
 	if err != nil {
-		return errors.New(fmt.Sprintf("failed to run migrations: %v", err))
+		return errors.Wrap(err, "failed go retrieve tenant DBs")
+	}
+	if len(dbs) == 0 {
+		dbs = []string{DbName}
 	}
 
+	for _, d := range dbs {
+		err := Migrate(ctx, d, DbVersion, client, automigrate)
+		if err != nil {
+			return errors.New(fmt.Sprintf("failed to run migrations: %v", err))
+		}
+	}
 	return nil
 }
 
