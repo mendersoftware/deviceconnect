@@ -25,6 +25,7 @@ import (
 
 	"github.com/mendersoftware/deviceconnect/app/server"
 	dconfig "github.com/mendersoftware/deviceconnect/config"
+	store "github.com/mendersoftware/deviceconnect/store/mongo"
 )
 
 func main() {
@@ -54,6 +55,11 @@ func doMain(args []string) {
 						Usage: "Run database migrations before starting.",
 					},
 				},
+			},
+			{
+				Name:   "migrate",
+				Usage:  "Run the migrations",
+				Action: cmdMigrate,
 			},
 		},
 	}
@@ -85,4 +91,12 @@ func doMain(args []string) {
 
 func cmdServer(args *cli.Context) error {
 	return server.InitAndRun(config.Config)
+}
+
+func cmdMigrate(args *cli.Context) error {
+	_, err := store.SetupDataStore(true)
+	if err != nil {
+		return err
+	}
+	return nil
 }

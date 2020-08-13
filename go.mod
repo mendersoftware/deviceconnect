@@ -10,6 +10,7 @@ require (
 	github.com/sirupsen/logrus v1.6.0
 	github.com/stretchr/testify v1.6.1
 	github.com/urfave/cli v1.22.4
+	go.mongodb.org/mongo-driver v1.3.3
 	golang.org/x/sys v0.0.0-20200806125547-5acd03effb82
 	google.golang.org/protobuf v1.25.0 // indirect
 )

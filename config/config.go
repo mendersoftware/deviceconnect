@@ -29,6 +29,32 @@ const (
 	// SettingNatsURIDefault is the default value for the nats uri
 	SettingNatsURIDefault = "nats://localhost:4222"
 
+	// SettingMongo is the config key for the mongo URL
+	SettingMongo = "mongo-url"
+	// SettingMongoDefault is the default value for the mongo URL
+	SettingMongoDefault = "mongodb://mender-mongo:27017"
+
+	// SettingDbName is the config key for the mongo database name
+	SettingDbName = "mongo-dbname"
+	// SettingDbNameDefault is the default value for the mongo database name
+	SettingDbNameDefault = "deviceconnect"
+
+	// SettingDbSSL is the config key for the mongo SSL setting
+	SettingDbSSL = "mongo_ssl"
+	// SettingDbSSLDefault is the default value for the mongo SSL setting
+	SettingDbSSLDefault = false
+
+	// SettingDbSSLSkipVerify is the config key for the mongo SSL skip verify setting
+	SettingDbSSLSkipVerify = "mongo_ssl_skipverify"
+	// SettingDbSSLSkipVerifyDefault is the default value for the mongo SSL skip verify setting
+	SettingDbSSLSkipVerifyDefault = false
+
+	// SettingDbUsername is the config key for the mongo username
+	SettingDbUsername = "mongo_username"
+
+	// SettingDbPassword is the config key for the mongo password
+	SettingDbPassword = "mongo_password"
+
 	// SettingDebugLog is the config key for the turning on the debug log
 	SettingDebugLog = "debug_log"
 	// SettingDebugLogDefault is the default value for the debug log enabling
@@ -40,6 +66,10 @@ var (
 	Defaults = []config.Default{
 		{Key: SettingListen, Value: SettingListenDefault},
 		{Key: SettingNatsURI, Value: SettingNatsURIDefault},
+		{Key: SettingMongo, Value: SettingMongoDefault},
+		{Key: SettingDbName, Value: SettingDbNameDefault},
+		{Key: SettingDbSSL, Value: SettingDbSSLDefault},
+		{Key: SettingDbSSLSkipVerify, Value: SettingDbSSLSkipVerifyDefault},
 		{Key: SettingDebugLog, Value: SettingDebugLogDefault},
 	}
 )
