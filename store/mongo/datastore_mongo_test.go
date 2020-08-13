@@ -34,3 +34,15 @@ func TestPing(t *testing.T) {
 	err := ds.Ping(ctx)
 	assert.NoError(t, err)
 }
+
+func TestProvisionTenant(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping TestPing in short mode.")
+	}
+	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
+	defer cancel()
+
+	ds := NewDataStoreWithClient(db.Client(), config.Config)
+	err := ds.ProvisionTenant(ctx, "1234")
+	assert.NoError(t, err)
+}

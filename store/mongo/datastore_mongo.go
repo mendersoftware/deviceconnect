@@ -148,6 +148,12 @@ func (db *DataStoreMongo) Ping(ctx context.Context) error {
 	return res.Err()
 }
 
+// ProvisionTenant provisions a new tenant
+func (db *DataStoreMongo) ProvisionTenant(ctx context.Context, tenantID string) error {
+	dbname := store.DbNameForTenant(tenantID, DbName)
+	return Migrate(ctx, dbname, DbVersion, db.client, true)
+}
+
 // Close disconnects the client
 func (db *DataStoreMongo) Close() {
 	ctx := context.Background()

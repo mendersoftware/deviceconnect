@@ -26,18 +26,19 @@ import (
 	api "github.com/mendersoftware/deviceconnect/api/http"
 	"github.com/mendersoftware/deviceconnect/app"
 	dconfig "github.com/mendersoftware/deviceconnect/config"
+	"github.com/mendersoftware/deviceconnect/store"
 	"github.com/mendersoftware/go-lib-micro/config"
 	"github.com/mendersoftware/go-lib-micro/log"
 )
 
 // InitAndRun initializes the server and runs it
-func InitAndRun(conf config.Reader) error {
+func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 	ctx := context.Background()
 
 	log.Setup(conf.GetBool(dconfig.SettingDebugLog))
 	l := log.FromContext(ctx)
 
-	deviceConnectApp := app.NewDeviceConnectApp()
+	deviceConnectApp := app.NewDeviceConnectApp(dataStore)
 
 	var listen = conf.GetString(dconfig.SettingListen)
 	router, err := api.NewRouter(deviceConnectApp)

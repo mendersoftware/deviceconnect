@@ -12,14 +12,9 @@
 //    See the License for the specific language governing permissions and
 //    limitations under the License.
 
-package store
+package model
 
-import (
-	"context"
-)
-
-// DataStore interface for DataStore services
-type DataStore interface {
-	Ping(ctx context.Context) error
-	ProvisionTenant(ctx context.Context, tenantID string) error
+// Tenant represents a new tenant
+type Tenant struct {
+	TenantID string `json:"tenant_id"`
 }

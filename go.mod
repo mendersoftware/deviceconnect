@@ -15,4 +15,5 @@ require (
 	go.mongodb.org/mongo-driver v1.3.3
 	golang.org/x/sys v0.0.0-20200806125547-5acd03effb82
 	google.golang.org/protobuf v1.25.0 // indirect
+	k8s.io/apimachinery v0.18.6
 )

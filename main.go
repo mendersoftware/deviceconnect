@@ -90,7 +90,12 @@ func doMain(args []string) {
 }
 
 func cmdServer(args *cli.Context) error {
-	return server.InitAndRun(config.Config)
+	dataStore, err := store.SetupDataStore(args.Bool("automigrate"))
+	if err != nil {
+		return err
+	}
+	defer dataStore.Close()
+	return server.InitAndRun(config.Config, dataStore)
 }
 
 func cmdMigrate(args *cli.Context) error {

@@ -12,14 +12,11 @@
 //    See the License for the specific language governing permissions and
 //    limitations under the License.
 
-package store
+package model
 
-import (
-	"context"
-)
-
-// DataStore interface for DataStore services
-type DataStore interface {
-	Ping(ctx context.Context) error
-	ProvisionTenant(ctx context.Context, tenantID string) error
+// Device represents a device and its attributes
+type Device struct {
+	DeviceID    string `json:"device_id" bson:"_id"`
+	WebsocketID string `json:"websocket_id" bson:"websocket_id"`
+	Status      string `json:"status" bson:"status"`
 }

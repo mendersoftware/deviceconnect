@@ -53,6 +53,9 @@ func NewRouter(deviceConnectApp app.App) (*gin.Engine, error) {
 	router.GET(APIURLInternalAlive, status.Alive)
 	router.GET(APIURLInternalHealth, status.Health)
 
+	tenants := NewTenantsController(deviceConnectApp)
+	router.POST(APIURLInternalTenants, tenants.Provision)
+
 	terminal := NewTerminalController()
 	router.GET(URLTerminal, terminal.Terminal)
 

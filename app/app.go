@@ -14,22 +14,35 @@
 
 package app
 
-import "context"
+import (
+	"context"
+
+	"github.com/mendersoftware/deviceconnect/model"
+	"github.com/mendersoftware/deviceconnect/store"
+)
 
 // App interface describes app objects
 type App interface {
 	HealthCheck(context.Context) error
+	ProvisionTenant(context.Context, *model.Tenant) error
 }
 
 // DeviceConnectApp is an app object
-type DeviceConnectApp struct{}
+type DeviceConnectApp struct {
+	store store.DataStore
+}
 
 // NewDeviceConnectApp returns a new DeviceConnectApp
-func NewDeviceConnectApp() App {
-	return &DeviceConnectApp{}
+func NewDeviceConnectApp(store store.DataStore) App {
+	return &DeviceConnectApp{store: store}
 }
 
 // HealthCheck performs a health check and returns an error if it fails
-func (a *DeviceConnectApp) HealthCheck(context.Context) error {
+func (a *DeviceConnectApp) HealthCheck(ctx context.Context) error {
 	return nil
+}
+
+// ProvisionTenant provisions a new tenant
+func (a *DeviceConnectApp) ProvisionTenant(ctx context.Context, tenant *model.Tenant) error {
+	return a.store.ProvisionTenant(ctx, tenant.TenantID)
 }
