@@ -24,6 +24,11 @@ const (
 	// SettingListenDefault is the default value for the listen address
 	SettingListenDefault = ":8080"
 
+	// SettingNatsURI is the config key for the nats uri
+	SettingNatsURI = "nats_uri"
+	// SettingNatsURIDefault is the default value for the nats uri
+	SettingNatsURIDefault = "nats://localhost:4222"
+
 	// SettingDebugLog is the config key for the turning on the debug log
 	SettingDebugLog = "debug_log"
 	// SettingDebugLogDefault is the default value for the debug log enabling
@@ -34,6 +39,7 @@ var (
 	// Defaults are the default configuration settings
 	Defaults = []config.Default{
 		{Key: SettingListen, Value: SettingListenDefault},
+		{Key: SettingNatsURI, Value: SettingNatsURIDefault},
 		{Key: SettingDebugLog, Value: SettingDebugLogDefault},
 	}
 )
