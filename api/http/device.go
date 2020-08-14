@@ -23,6 +23,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
+	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/mendersoftware/deviceconnect/app"
 	"github.com/mendersoftware/deviceconnect/model"
@@ -151,12 +152,18 @@ func (h DeviceController) Connect(c *gin.Context) {
 	done := make(chan struct{})
 	go func() {
 		for {
-			m := &model.Message{}
-			err := ws.ReadJSON(&m)
+			_, data, err := ws.ReadMessage()
 			if err != nil {
 				close(done)
 				return
 			}
+			m := &model.Message{}
+			err = msgpack.Unmarshal(data, m)
+			if err != nil {
+				close(done)
+				return
+			}
+			l.Printf("received: %s / %s", m.Cmd, m.Data)
 		}
 	}()
 

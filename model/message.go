@@ -21,6 +21,6 @@ const (
 
 // Message represents a message between the device and the backend
 type Message struct {
-	Cmd  string `json:"cmd"`
-	Data []byte `json:"data"`
+	Cmd  string `json:"cmd" msgpack:"cmd"`
+	Data []byte `json:"data" msgpack:"data"`
 }
