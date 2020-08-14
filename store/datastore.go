@@ -27,4 +27,5 @@ type DataStore interface {
 	ProvisionDevice(ctx context.Context, tenantID string, deviceID string) error
 	DeleteDevice(ctx context.Context, tenantID, deviceID string) error
 	GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error)
+	UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error
 }

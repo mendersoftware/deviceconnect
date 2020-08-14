@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/config"
 	"github.com/stretchr/testify/assert"
 )
@@ -73,4 +74,32 @@ func TestProvisionAndDeleteDevice(t *testing.T) {
 	device, err = ds.GetDevice(ctx, tenantID, deviceID)
 	assert.NoError(t, err)
 	assert.Nil(t, device)
+}
+
+func TestUpdateDeviceStatus(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping TestPing in short mode.")
+	}
+	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
+	defer cancel()
+
+	const (
+		tenantID = "1234"
+		deviceID = "abcd"
+	)
+
+	ds := NewDataStoreWithClient(db.Client(), config.Config)
+	err := ds.ProvisionDevice(ctx, tenantID, deviceID)
+	assert.NoError(t, err)
+
+	device, err := ds.GetDevice(ctx, tenantID, deviceID)
+	assert.NoError(t, err)
+	assert.Equal(t, model.DeviceStatusClosed, device.Status)
+
+	err = ds.UpdateDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusOpen)
+	assert.NoError(t, err)
+
+	device, err = ds.GetDevice(ctx, tenantID, deviceID)
+	assert.NoError(t, err)
+	assert.Equal(t, model.DeviceStatusOpen, device.Status)
 }

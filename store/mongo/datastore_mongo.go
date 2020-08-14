@@ -161,11 +161,11 @@ func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID string, 
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
 	updateOpts := &mopts.UpdateOptions{}
-	updateOpts.SetUpsert((true))
+	updateOpts.SetUpsert(true)
 	_, err := coll.UpdateOne(ctx,
 		bson.M{"_id": deviceID},
 		bson.M{
-			"$setOnInsert": bson.M{"status": "close"},
+			"$setOnInsert": bson.M{"status": model.DeviceStatusClosed},
 		},
 		updateOpts,
 	)
@@ -198,6 +198,23 @@ func (db *DataStoreMongo) GetDevice(ctx context.Context, tenantID, deviceID stri
 	}
 
 	return device, nil
+}
+
+// UpdateDeviceStatus updates a device status
+func (db *DataStoreMongo) UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error {
+	dbname := store.DbNameForTenant(tenantID, DbName)
+	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
+
+	updateOpts := &mopts.UpdateOptions{}
+	_, err := coll.UpdateOne(ctx,
+		bson.M{"_id": deviceID},
+		bson.M{
+			"$set": bson.M{"status": status},
+		},
+		updateOpts,
+	)
+
+	return err
 }
 
 // Close disconnects the client

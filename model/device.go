@@ -14,6 +14,12 @@
 
 package model
 
+// Values for the device status attribute
+const (
+	DeviceStatusClosed = "closed"
+	DeviceStatusOpen   = "open"
+)
+
 // Device represents a device and its attributes
 type Device struct {
 	DeviceID    string `json:"device_id" bson:"_id"`

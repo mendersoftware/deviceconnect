@@ -105,3 +105,17 @@ func (_m *DataStore) ProvisionTenant(ctx context.Context, tenantID string) error
 
 	return r0
 }
+
+// UpdateDeviceStatus provides a mock function with given fields: ctx, tenantID, deviceID, status
+func (_m *DataStore) UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error {
+	ret := _m.Called(ctx, tenantID, deviceID, status)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
+		r0 = rf(ctx, tenantID, deviceID, status)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
