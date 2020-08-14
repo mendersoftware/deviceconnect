@@ -17,11 +17,41 @@ package http
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
+
 	"github.com/mendersoftware/deviceconnect/app"
 	"github.com/mendersoftware/deviceconnect/model"
-	"github.com/pkg/errors"
+	"github.com/mendersoftware/go-lib-micro/identity"
+	"github.com/mendersoftware/go-lib-micro/log"
+)
+
+const (
+	// Time allowed to write a message to the peer.
+	writeWait = 10 * time.Second
+
+	// Time allowed to read the next pong message from the peer.
+	pongWait = 60 * time.Second
+
+	// Send pings to peer with this period. Must be less than pongWait.
+	pingPeriod = (pongWait * 9) / 10
+)
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	Subprotocols:    []string{"binary"},
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
+
+// HTTP errors
+var (
+	ErrMissingAuthentication = errors.New("missing or non-device identity in the authorization headers")
 )
 
 // DeviceController container for end-points
@@ -86,7 +116,66 @@ func (h DeviceController) Delete(c *gin.Context) {
 	c.Writer.WriteHeader(http.StatusAccepted)
 }
 
-// Connect starts a websocket
+// Connect starts a websocket connection with the device
 func (h DeviceController) Connect(c *gin.Context) {
-	c.JSON(http.StatusOK, nil)
+	ctx := c.Request.Context()
+	l := log.FromContext(ctx)
+
+	idata := identity.FromContext(ctx)
+	if idata == nil || !idata.IsDevice {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": ErrMissingAuthentication.Error(),
+		})
+		return
+	}
+
+	// upgrade get request to websocket protocol
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
+		l.Error(err)
+		return
+	}
+
+	defer ws.Close()
+
+	// update the device status on websocket opening
+	h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusOpen)
+
+	// go-routine to read from the webservice
+	done := make(chan struct{})
+	go func() {
+		for {
+			m := &model.Message{}
+			err := ws.ReadJSON(&m)
+			if err != nil {
+				close(done)
+				return
+			}
+		}
+	}()
+
+	// periodic ping
+	ticker := time.NewTicker(pingPeriod)
+	defer ticker.Stop()
+	for {
+		stop := false
+		select {
+		case <-done:
+			stop = true
+			break
+		case <-ticker.C:
+			ws.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+				stop = false
+				break
+			}
+		}
+		if stop {
+			break
+		}
+	}
+
+	// update the device status on websocket closing
+	h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusClosed)
 }

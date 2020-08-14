@@ -16,26 +16,103 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gorilla/websocket"
 	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
+const JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibWVuZGVyLmRldmljZSI6dHJ1ZSwibWVuZGVyLnBsYW4iOiJlbnRlcnByaXNlIiwibWVuZGVyLnRlbmFudCI6ImFiY2QifQ.Q4bIDhEx53FLFUMipjJUNgEmEf48yjcaFxlh8XxZFVw"
+const JWTDeviceID = "1234567890"
+const JWTTenantID = "abcd"
+
 func TestDeviceConnect(t *testing.T) {
 	testCases := []struct {
-		Name       string
-		HTTPStatus int
-	}{{
-		Name:       "ok",
-		HTTPStatus: http.StatusOK,
-	}}
+		Name          string
+		Authorization string
+	}{
+		{
+			Name:          "ok",
+			Authorization: "Bearer " + JWT,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			app := &app_mocks.App{}
+			app.On("UpdateDeviceStatus",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				}),
+				JWTTenantID,
+				JWTDeviceID,
+				model.DeviceStatusOpen,
+			).Return(nil)
+
+			app.On("UpdateDeviceStatus",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				}),
+				JWTTenantID,
+				JWTDeviceID,
+				model.DeviceStatusClosed,
+			).Return(nil)
+
+			router, _ := NewRouter(app)
+			s := httptest.NewServer(router)
+			defer s.Close()
+
+			url := "ws" + strings.TrimPrefix(s.URL, "http")
+
+			headers := http.Header{}
+			headers.Set(headerAuthorization, "Bearer "+JWT)
+
+			ws, _, err := websocket.DefaultDialer.Dial(url+APIURLDevicesConnect, headers)
+			assert.NoError(t, err)
+
+			ws.Close()
+
+			// wait 100ms to let the websocket fully shutdown on the server
+			time.Sleep(100 * time.Millisecond)
+
+			app.AssertExpectations(t)
+		})
+	}
+}
+
+func TestDeviceConnectFailures(t *testing.T) {
+	testCases := []struct {
+		Name          string
+		Authorization string
+		HTTPStatus    int
+		HTTPError     error
+	}{
+		{
+			Name:          "ko, unable to upgrade",
+			Authorization: "Bearer " + JWT,
+			HTTPStatus:    http.StatusBadRequest,
+		},
+		{
+			Name:       "ko, missing authorization header",
+			HTTPStatus: http.StatusBadRequest,
+			HTTPError:  ErrMissingAuthentication,
+		},
+		{
+			Name:          "ko, malformed authorization header",
+			Authorization: "malformed",
+			HTTPStatus:    http.StatusBadRequest,
+			HTTPError:     ErrMissingAuthentication,
+		},
+	}
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
@@ -45,9 +122,21 @@ func TestDeviceConnect(t *testing.T) {
 				t.FailNow()
 			}
 
+			if tc.Authorization != "" {
+				req.Header.Add("Authorization", tc.Authorization)
+			}
+
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 			assert.Equal(t, tc.HTTPStatus, w.Code)
+
+			if tc.HTTPError != nil {
+				var response map[string]string
+				body := w.Body.Bytes()
+				err = json.Unmarshal(body, &response)
+				value, _ := response["error"]
+				assert.Equal(t, ErrMissingAuthentication.Error(), value)
+			}
 		})
 	}
 }

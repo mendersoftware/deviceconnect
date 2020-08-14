@@ -48,6 +48,7 @@ func NewRouter(deviceConnectApp app.App) (*gin.Engine, error) {
 	l := log.FromContext(ctx)
 
 	router := gin.New()
+	router.Use(IdentityMiddleware)
 	router.Use(routerLogger(l))
 	router.Use(gin.Recovery())
 

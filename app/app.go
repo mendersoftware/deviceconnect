@@ -28,6 +28,7 @@ type App interface {
 	ProvisionTenant(ctx context.Context, tenant *model.Tenant) error
 	ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error
 	DeleteDevice(ctx context.Context, tenantID string, deviceID string) error
+	UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error
 }
 
 // DeviceConnectApp is an app object
@@ -59,4 +60,9 @@ func (a *DeviceConnectApp) ProvisionDevice(ctx context.Context, tenantID string,
 // DeleteDevice provisions a new tenant
 func (a *DeviceConnectApp) DeleteDevice(ctx context.Context, tenantID, deviceID string) error {
 	return a.store.DeleteDevice(ctx, tenantID, deviceID)
+}
+
+// UpdateDeviceStatus provisions a new tenant
+func (a *DeviceConnectApp) UpdateDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error {
+	return a.store.UpdateDeviceStatus(ctx, tenantID, deviceID, status)
 }
