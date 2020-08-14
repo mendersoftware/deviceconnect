@@ -65,3 +65,49 @@ func TestProvisionTenant(t *testing.T) {
 
 	store.AssertExpectations(t)
 }
+
+func TestProvisionDevice(t *testing.T) {
+	err := errors.New("error")
+	const tenantID = "1234"
+	const deviceID = "abcd"
+
+	store := &store_mocks.DataStore{}
+	store.On("ProvisionDevice",
+		mock.MatchedBy(func(ctx context.Context) bool {
+			return true
+		}),
+		tenantID,
+		deviceID,
+	).Return(err)
+
+	app := NewDeviceConnectApp(store, nil)
+
+	ctx := context.Background()
+	res := app.ProvisionDevice(ctx, tenantID, &model.Device{DeviceID: deviceID})
+	assert.Equal(t, err, res)
+
+	store.AssertExpectations(t)
+}
+
+func TestDeleteDevice(t *testing.T) {
+	err := errors.New("error")
+	const tenantID = "1234"
+	const deviceID = "abcd"
+
+	store := &store_mocks.DataStore{}
+	store.On("DeleteDevice",
+		mock.MatchedBy(func(ctx context.Context) bool {
+			return true
+		}),
+		tenantID,
+		deviceID,
+	).Return(err)
+
+	app := NewDeviceConnectApp(store, nil)
+
+	ctx := context.Background()
+	res := app.DeleteDevice(ctx, tenantID, deviceID)
+	assert.Equal(t, err, res)
+
+	store.AssertExpectations(t)
+}

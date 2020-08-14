@@ -24,8 +24,10 @@ import (
 
 // App interface describes app objects
 type App interface {
-	HealthCheck(context.Context) error
-	ProvisionTenant(context.Context, *model.Tenant) error
+	HealthCheck(ctx context.Context) error
+	ProvisionTenant(ctx context.Context, tenant *model.Tenant) error
+	ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error
+	DeleteDevice(ctx context.Context, tenantID string, deviceID string) error
 }
 
 // DeviceConnectApp is an app object
@@ -47,4 +49,14 @@ func (a *DeviceConnectApp) HealthCheck(ctx context.Context) error {
 // ProvisionTenant provisions a new tenant
 func (a *DeviceConnectApp) ProvisionTenant(ctx context.Context, tenant *model.Tenant) error {
 	return a.store.ProvisionTenant(ctx, tenant.TenantID)
+}
+
+// ProvisionDevice provisions a new tenant
+func (a *DeviceConnectApp) ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error {
+	return a.store.ProvisionDevice(ctx, tenantID, device.DeviceID)
+}
+
+// DeleteDevice provisions a new tenant
+func (a *DeviceConnectApp) DeleteDevice(ctx context.Context, tenantID, deviceID string) error {
+	return a.store.DeleteDevice(ctx, tenantID, deviceID)
 }

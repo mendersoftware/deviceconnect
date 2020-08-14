@@ -76,6 +76,8 @@ paths:
   /tenants:
     post:
       operationId: Create Tenant
+      tags:
+        - Internal API
       summary: Provision a new tenant
       description: |
           Sets up all tenant-related infrastructure, e.g. a migrated tenant's database.
@@ -96,6 +98,65 @@ paths:
           schema:
            $ref: "#/definitions/Error"
 
+  /tenants/{tenantId}/devices:
+    post:
+      operationId: Create Device
+      tags:
+        - Internal API
+      summary: Provision a new device
+      description: |
+          Add a new device to a tenant.
+      parameters:
+        - name: tenantId
+          in: path
+          description: The ID of the tenant
+          required: true
+          type: string
+        - name: device
+          in: body
+          description: New tenant descriptor.
+          required: true
+          schema:
+            $ref: "#/definitions/NewDevice"
+      responses:
+        201:
+          description: Device was successfully provisioned.
+        400:
+          description: Bad request.
+        500:
+          description: Internal server error.
+          schema:
+           $ref: "#/definitions/Error"
+
+  /tenants/{tenantId}/devices/{deviceId}:
+    delete:
+      operationId: Delete Device
+      tags:
+        - Internal API
+      summary: Delete a device
+      description: |
+          Remove a device from the tenant.
+      parameters:
+        - name: tenantId
+          in: path
+          description: The ID of the tenant
+          required: true
+          type: string
+        - name: deviceId
+          in: path
+          description: The ID of the device
+          required: true
+          type: string
+      responses:
+        202:
+          description: Device was successfully deleteed.
+        400:
+          description: Bad request.
+        500:
+          description: Internal server error.
+          schema:
+           $ref: "#/definitions/Error"
+
 definitions:
   NewTenant:
     description: New tenant descriptor.
@@ -106,6 +167,16 @@ definitions:
         type: string
     example:
       tenant_id: "58be8208dd77460001fe0d78"
+
+  NewDevice:
+    description: New device descriptor.
+    type: object
+    properties:
+      tenant_id:
+        description: New device's ID.
+        type: string
+    example:
+      device_id: "58be8208dd77460001fe0d78"
 
   Error:
     description: Error descriptor.

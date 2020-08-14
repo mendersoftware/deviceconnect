@@ -16,10 +16,15 @@ package store
 
 import (
 	"context"
+
+	"github.com/mendersoftware/deviceconnect/model"
 )
 
 // DataStore interface for DataStore services
 type DataStore interface {
 	Ping(ctx context.Context) error
 	ProvisionTenant(ctx context.Context, tenantID string) error
+	ProvisionDevice(ctx context.Context, tenantID string, deviceID string) error
+	DeleteDevice(ctx context.Context, tenantID, deviceID string) error
+	GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error)
 }

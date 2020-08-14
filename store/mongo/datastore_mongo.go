@@ -22,6 +22,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 
 	dconfig "github.com/mendersoftware/deviceconnect/config"
+	"github.com/mendersoftware/deviceconnect/model"
 )
 
 const (
@@ -152,6 +153,51 @@ func (db *DataStoreMongo) Ping(ctx context.Context) error {
 func (db *DataStoreMongo) ProvisionTenant(ctx context.Context, tenantID string) error {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	return Migrate(ctx, dbname, DbVersion, db.client, true)
+}
+
+// ProvisionDevice provisions a new device
+func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID string, deviceID string) error {
+	dbname := store.DbNameForTenant(tenantID, DbName)
+	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
+
+	updateOpts := &mopts.UpdateOptions{}
+	updateOpts.SetUpsert((true))
+	_, err := coll.UpdateOne(ctx,
+		bson.M{"_id": deviceID},
+		bson.M{
+			"$setOnInsert": bson.M{"status": "close"},
+		},
+		updateOpts,
+	)
+
+	return err
+}
+
+// DeleteDevice deletes a device
+func (db *DataStoreMongo) DeleteDevice(ctx context.Context, tenantID, deviceID string) error {
+	dbname := store.DbNameForTenant(tenantID, DbName)
+	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
+
+	_, err := coll.DeleteOne(ctx, bson.M{"_id": deviceID})
+	return err
+}
+
+// GetDevice deletes a device
+func (db *DataStoreMongo) GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error) {
+	dbname := store.DbNameForTenant(tenantID, DbName)
+	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
+
+	cur := coll.FindOne(ctx, bson.M{"_id": deviceID})
+
+	device := &model.Device{}
+	if err := cur.Decode(&device); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return device, nil
 }
 
 // Close disconnects the client

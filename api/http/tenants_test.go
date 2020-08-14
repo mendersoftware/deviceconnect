@@ -16,7 +16,6 @@ package http
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -33,23 +32,36 @@ import (
 func TestProvision(t *testing.T) {
 	testCases := []struct {
 		Name               string
-		Tenant             *model.Tenant
+		TenantID           string
+		Tenant             string
 		ProvisionTenantErr error
 		HTTPStatus         int
 	}{
 		{
 			Name:       "ok",
-			Tenant:     &model.Tenant{TenantID: "1234"},
+			TenantID:   "1234",
+			Tenant:     `{"tenant_id": "1234"}`,
 			HTTPStatus: http.StatusCreated,
 		},
 		{
-			Name:               "ko, empty payload",
-			ProvisionTenantErr: errors.New("error"),
-			HTTPStatus:         http.StatusBadRequest,
+			Name:       "ko, empty payload",
+			Tenant:     ``,
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:       "ko, bad payload",
+			Tenant:     `...`,
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:       "ko, empty tenant ID",
+			Tenant:     `{"tenant_id": ""}`,
+			HTTPStatus: http.StatusBadRequest,
 		},
 		{
 			Name:               "ko, error",
-			Tenant:             &model.Tenant{TenantID: "1234"},
+			TenantID:           "1234",
+			Tenant:             `{"tenant_id": "1234"}`,
 			ProvisionTenantErr: errors.New("error"),
 			HTTPStatus:         http.StatusInternalServerError,
 		},
@@ -58,19 +70,18 @@ func TestProvision(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			deviceConnectApp := &app_mocks.App{}
-			if tc.Tenant != nil {
+			if tc.TenantID != "" {
 				deviceConnectApp.On("ProvisionTenant",
 					mock.MatchedBy(func(_ context.Context) bool {
 						return true
 					}),
-					tc.Tenant,
+					&model.Tenant{TenantID: tc.TenantID},
 				).Return(tc.ProvisionTenantErr)
 			}
 
 			router, _ := NewRouter(deviceConnectApp)
 
-			data, _ := json.Marshal(tc.Tenant)
-			req, err := http.NewRequest("POST", APIURLInternalTenants, strings.NewReader(string(data)))
+			req, err := http.NewRequest("POST", APIURLInternalTenants, strings.NewReader(tc.Tenant))
 			if !assert.NoError(t, err) {
 				t.FailNow()
 			}
