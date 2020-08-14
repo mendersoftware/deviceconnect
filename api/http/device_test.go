@@ -31,6 +31,10 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+// initialize tenant and device running:
+// $ curl http://localhost:8080/api/internal/v1/deviceconnect/tenants -X POST -d '{"tenant_id": "abcd"}'
+// $ curl http://localhost:8080/api/internal/v1/deviceconnect/tenants/abcd/devices -X POST -d '{"device_id": "1234567890"}'
+
 const JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibWVuZGVyLmRldmljZSI6dHJ1ZSwibWVuZGVyLnBsYW4iOiJlbnRlcnByaXNlIiwibWVuZGVyLnRlbmFudCI6ImFiY2QifQ.Q4bIDhEx53FLFUMipjJUNgEmEf48yjcaFxlh8XxZFVw"
 const JWTDeviceID = "1234567890"
 const JWTTenantID = "abcd"
@@ -79,6 +83,27 @@ func TestDeviceConnect(t *testing.T) {
 			ws, _, err := websocket.DefaultDialer.Dial(url+APIURLDevicesConnect, headers)
 			assert.NoError(t, err)
 
+			pingReceived := false
+			ws.SetPingHandler(func(message string) error {
+				pingReceived = true
+				ws.SetReadDeadline(time.Now().Add(time.Duration(pongWait) * time.Second))
+				return ws.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(writeWait))
+			})
+
+			go func() {
+				for {
+					_, _, err := ws.ReadMessage()
+					if err != nil {
+						break
+					}
+				}
+			}()
+
+			// wait 1s to let the first ping flow in
+			time.Sleep(1 * time.Second)
+			assert.True(t, pingReceived)
+
+			// close the websocket
 			ws.Close()
 
 			// wait 100ms to let the websocket fully shutdown on the server

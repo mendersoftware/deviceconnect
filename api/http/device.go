@@ -17,6 +17,7 @@ package http
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,14 +31,11 @@ import (
 )
 
 const (
-	// Time allowed to write a message to the peer.
-	writeWait = 10 * time.Second
-
 	// Time allowed to read the next pong message from the peer.
-	pongWait = 60 * time.Second
+	pongWait = 60
 
-	// Send pings to peer with this period. Must be less than pongWait.
-	pingPeriod = (pongWait * 9) / 10
+	// Seconds allowed to write a message to the peer.
+	writeWait = 10
 )
 
 var upgrader = websocket.Upgrader{
@@ -139,6 +137,13 @@ func (h DeviceController) Connect(c *gin.Context) {
 
 	defer ws.Close()
 
+	// handle the ping-pong connection health check
+	ws.SetReadDeadline(time.Now().Add(pongWait * time.Second))
+	ws.SetPongHandler(func(string) error {
+		ws.SetReadDeadline(time.Now().Add(pongWait * time.Second))
+		return nil
+	})
+
 	// update the device status on websocket opening
 	h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusOpen)
 
@@ -156,6 +161,16 @@ func (h DeviceController) Connect(c *gin.Context) {
 	}()
 
 	// periodic ping
+	sendPing := func() bool {
+		pongWaitString := strconv.Itoa(pongWait)
+		if err := ws.WriteControl(websocket.PingMessage, []byte(pongWaitString), time.Now().Add(writeWait*time.Second)); err != nil {
+			return false
+		}
+		return true
+	}
+	sendPing()
+
+	pingPeriod := (pongWait * time.Second * 9) / 10
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 	for {
@@ -165,8 +180,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 			stop = true
 			break
 		case <-ticker.C:
-			ws.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+			if !sendPing() {
 				stop = false
 				break
 			}
