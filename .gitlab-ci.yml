@@ -13,10 +13,10 @@ include:
     file: '.gitlab-ci-check-golang-unittests.yml'
   - project: 'Northern.tech/Mender/mendertesting'
     file: '.gitlab-ci-check-apidocs.yml'
-  - project: 'Northern.tech/Mender/mendertesting'
-    file: '.gitlab-ci-check-docker-build.yml'
-  - project: 'Northern.tech/Mender/mendertesting'
-    file: '.gitlab-ci-github-status-updates.yml'
+#   - project: 'Northern.tech/Mender/mendertesting'
+#     file: '.gitlab-ci-check-docker-build.yml'
+#   - project: 'Northern.tech/Mender/mendertesting'
+#     file: '.gitlab-ci-github-status-updates.yml'
 
 test:static:
   image: golang:1.14
