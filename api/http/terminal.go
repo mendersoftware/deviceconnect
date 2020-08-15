@@ -34,7 +34,8 @@ const template = `<!doctype html>
 	  term.open(document.getElementById('terminal'));
 	  term.resize(80, 25);
 	  //
-	  var socket = new WebSocket("ws://" + window.location.host + "/api/v1/websocket");
+	  var jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibWVuZGVyLnVzZXIiOnRydWUsIm1lbmRlci5wbGFuIjoiZW50ZXJwcmlzZSIsIm1lbmRlci50ZW5hbnQiOiJhYmNkIn0.sn10_eTex-otOTJ7WCp_7NUwiz9lBT0KiPOdZF9Jt4w";
+	  var socket = new WebSocket("ws://" + window.location.host + "/api/management/v1/deviceconnect/devices/1234567890/connect?jwt=" + jwt);
 	  socket.onopen = function(e) {
 		console.log("[websocket] Connection established");
 	  };

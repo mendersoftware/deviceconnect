@@ -27,7 +27,14 @@ func IdentityMiddleware(c *gin.Context) {
 	req := c.Request
 	ctx := req.Context()
 
-	idata, err := identity.ExtractIdentityFromHeaders(req.Header)
+	var idata identity.Identity
+	var err error
+
+	if jwt := req.URL.Query().Get("jwt"); jwt != "" {
+		idata, err = identity.ExtractIdentity(jwt)
+	} else {
+		idata, err = identity.ExtractIdentityFromHeaders(req.Header)
+	}
 	if err == nil {
 		ctx = identity.WithContext(ctx, &idata)
 		c.Request = req.WithContext(ctx)
