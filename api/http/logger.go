@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/sirupsen/logrus"
 )
 
@@ -52,6 +53,17 @@ func routerLogger(logger logrus.FieldLogger) gin.HandlerFunc {
 			"method":       method,
 			"path":         path,
 		})
+
+		ctx := c.Request.Context()
+		idata := identity.FromContext(ctx)
+		if idata != nil {
+			entry = entry.WithField("tenant_id", idata.Tenant)
+			if idata.IsDevice {
+				entry = entry.WithField("device_id", idata.Subject)
+			} else if idata.IsUser {
+				entry = entry.WithField("user_id", idata.Subject)
+			}
+		}
 
 		if len(c.Errors) > 0 {
 			entry.Error(c.Errors.ByType(gin.ErrorTypePrivate).String())
