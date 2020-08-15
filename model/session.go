@@ -14,14 +14,16 @@
 
 package model
 
-// Values for the device status attribute
+// Values for the session status attribute
 const (
-	DeviceStatusDisconnected = "disconnected"
-	DeviceStatusConnected    = "connected"
+	SessionStatusDisconnected = "disconnected"
+	SessiontatusConnected     = "connected"
 )
 
-// Device represents a device and its attributes
-type Device struct {
-	ID     string `json:"device_id" bson:"_id"`
-	Status string `json:"status" bson:"status"`
+// Session represents a session from a user to a device and its attributes
+type Session struct {
+	ID       string `json:"id" bson:"_id"`
+	UserID   string `json:"user_id" bson:"user_id"`
+	DeviceID string `json:"device_id" bson:"device_id"`
+	Status   string `json:"status" bson:"status"`
 }

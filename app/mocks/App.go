@@ -55,6 +55,29 @@ func (_m *App) HealthCheck(ctx context.Context) error {
 	return r0
 }
 
+// PrepareUserSession provides a mock function with given fields: ctx, tenantID, userID, deviceID
+func (_m *App) PrepareUserSession(ctx context.Context, tenantID string, userID string, deviceID string) (*model.Session, error) {
+	ret := _m.Called(ctx, tenantID, userID, deviceID)
+
+	var r0 *model.Session
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) *model.Session); ok {
+		r0 = rf(ctx, tenantID, userID, deviceID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*model.Session)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, string) error); ok {
+		r1 = rf(ctx, tenantID, userID, deviceID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // ProvisionDevice provides a mock function with given fields: ctx, tenantID, device
 func (_m *App) ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error {
 	ret := _m.Called(ctx, tenantID, device)
@@ -90,6 +113,20 @@ func (_m *App) UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
 		r0 = rf(ctx, tenantID, deviceID, status)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// UpdateUserSessionStatus provides a mock function with given fields: ctx, tenantID, sessionID, status
+func (_m *App) UpdateUserSessionStatus(ctx context.Context, tenantID string, sessionID string, status string) error {
+	ret := _m.Called(ctx, tenantID, sessionID, status)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
+		r0 = rf(ctx, tenantID, sessionID, status)
 	} else {
 		r0 = ret.Error(0)
 	}

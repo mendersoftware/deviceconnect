@@ -61,7 +61,6 @@ func TestMigration_1_0_0(t *testing.T) {
 		db.Wipe()
 		c := db.Client()
 
-		// setup
 		// setup existing migrations
 		if tc.dbVer != "" {
 			ver, err := migrate.NewVersion(tc.dbVer)

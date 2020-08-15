@@ -23,19 +23,22 @@ func (m *migration1_0_0) Up(from migrate.Version) error {
 	ctx := context.Background()
 	database := m.client.Database(m.db)
 
-	collDevices := database.Collection(DevicesCollectionName)
-	idxDevices := collDevices.Indexes()
+	collSessions := database.Collection(SessionsCollectionName)
+	idxSessions := collSessions.Indexes()
 
 	// unique index devices.websocket_id
 	indexOptions := mopts.Index()
 	indexOptions.SetBackground(false)
-	indexOptions.SetName("websocket_id")
+	indexOptions.SetName("user_id_device_id")
 	indexOptions.SetUnique(true)
-	deviceIDIndex := mongo.IndexModel{
-		Keys:    bson.D{{Key: "websocket_id", Value: 1}},
+	userDeviceIDIndex := mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "user_id", Value: 1},
+			{Key: "device_id", Value: 1},
+		},
 		Options: indexOptions,
 	}
-	if _, err := idxDevices.CreateOne(ctx, deviceIDIndex); err != nil {
+	if _, err := idxSessions.CreateOne(ctx, userDeviceIDIndex); err != nil {
 		return err
 	}
 

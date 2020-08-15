@@ -15,7 +15,6 @@
 package http
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -31,99 +30,47 @@ import (
 	"github.com/mendersoftware/go-lib-micro/log"
 )
 
-const (
-	// Time allowed to read the next pong message from the peer.
-	pongWait = 60
-
-	// Seconds allowed to write a message to the peer.
-	writeWait = 10
-)
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	Subprotocols:    []string{"binary"},
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
-
 // HTTP errors
 var (
-	ErrMissingAuthentication = errors.New("missing or non-device identity in the authorization headers")
+	ErrMissingUserAuthentication = errors.New("missing or non-useer identity in the authorization headers")
 )
 
-// DeviceController container for end-points
-type DeviceController struct {
+// ManagementController container for end-points
+type ManagementController struct {
 	app app.App
 }
 
-// NewDeviceController returns a new DeviceController
-func NewDeviceController(app app.App) *DeviceController {
-	return &DeviceController{app: app}
-}
-
-// Provision responds to POST /tenants/:tenantId/devices
-func (h DeviceController) Provision(c *gin.Context) {
-	tenantID := c.Param("tenantId")
-
-	rawData, err := c.GetRawData()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "bad request",
-		})
-		return
-	}
-
-	device := &model.Device{}
-	if err = json.Unmarshal(rawData, device); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": errors.Wrap(err, "invalid payload").Error(),
-		})
-		return
-	} else if device.ID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "device_id is empty",
-		})
-		return
-	}
-
-	ctx := c.Request.Context()
-	if err = h.app.ProvisionDevice(ctx, tenantID, device); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": errors.Wrap(err, "error provisioning the device").Error(),
-		})
-		return
-	}
-
-	c.Writer.WriteHeader(http.StatusCreated)
-}
-
-// Delete responds to DELETE /tenants/:tenantId/devices/:deviceId
-func (h DeviceController) Delete(c *gin.Context) {
-	tenantID := c.Param("tenantId")
-	deviceID := c.Param("deviceId")
-
-	ctx := c.Request.Context()
-	if err := h.app.DeleteDevice(ctx, tenantID, deviceID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": errors.Wrap(err, "error deleting the device").Error(),
-		})
-		return
-	}
-
-	c.Writer.WriteHeader(http.StatusAccepted)
+// NewManagementController returns a new ManagementController
+func NewManagementController(app app.App) *ManagementController {
+	return &ManagementController{app: app}
 }
 
 // Connect starts a websocket connection with the device
-func (h DeviceController) Connect(c *gin.Context) {
+func (h ManagementController) Connect(c *gin.Context) {
 	ctx := c.Request.Context()
 	l := log.FromContext(ctx)
 
 	idata := identity.FromContext(ctx)
-	if idata == nil || !idata.IsDevice {
+	if idata == nil || !idata.IsUser {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": ErrMissingAuthentication.Error(),
+			"error": ErrMissingUserAuthentication.Error(),
+		})
+		return
+	}
+	tenantID := idata.Tenant
+	userID := idata.Subject
+	deviceID := c.Param("deviceId")
+
+	// Prepare the user session
+	session, err := h.app.PrepareUserSession(ctx, tenantID, userID, deviceID)
+	if err == app.ErrDeviceNotFound {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": err.Error(),
+		})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
 		})
 		return
 	}
@@ -145,8 +92,8 @@ func (h DeviceController) Connect(c *gin.Context) {
 		return nil
 	})
 
-	// update the device status on websocket opening
-	h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusConnected)
+	// update the session status on websocket opening
+	h.app.UpdateUserSessionStatus(ctx, tenantID, session.ID, model.SessiontatusConnected)
 
 	// go-routine to read from the webservice
 	done := make(chan struct{})
@@ -198,5 +145,5 @@ func (h DeviceController) Connect(c *gin.Context) {
 	}
 
 	// update the device status on websocket closing
-	h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusDisconnected)
+	h.app.UpdateUserSessionStatus(ctx, tenantID, session.ID, model.SessionStatusDisconnected)
 }

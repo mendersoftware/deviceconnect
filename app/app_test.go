@@ -83,7 +83,7 @@ func TestProvisionDevice(t *testing.T) {
 	app := NewDeviceConnectApp(store, nil)
 
 	ctx := context.Background()
-	res := app.ProvisionDevice(ctx, tenantID, &model.Device{DeviceID: deviceID})
+	res := app.ProvisionDevice(ctx, tenantID, &model.Device{ID: deviceID})
 	assert.Equal(t, err, res)
 
 	store.AssertExpectations(t)
@@ -107,6 +107,155 @@ func TestDeleteDevice(t *testing.T) {
 
 	ctx := context.Background()
 	res := app.DeleteDevice(ctx, tenantID, deviceID)
+	assert.Equal(t, err, res)
+
+	store.AssertExpectations(t)
+}
+
+func TestUpdateDeviceStatus(t *testing.T) {
+	err := errors.New("error")
+	const tenantID = "1234"
+	const deviceID = "abcd"
+
+	store := &store_mocks.DataStore{}
+	store.On("UpdateDeviceStatus",
+		mock.MatchedBy(func(ctx context.Context) bool {
+			return true
+		}),
+		tenantID,
+		deviceID,
+		mock.AnythingOfType("string"),
+	).Return(err)
+
+	app := NewDeviceConnectApp(store, nil)
+
+	ctx := context.Background()
+	res := app.UpdateDeviceStatus(ctx, tenantID, deviceID, "anything")
+	assert.Equal(t, err, res)
+
+	store.AssertExpectations(t)
+}
+
+func TestPrepareUserSession(t *testing.T) {
+	testCases := []struct {
+		name             string
+		tenantID         string
+		userID           string
+		deviceID         string
+		device           *model.Device
+		deviceErr        error
+		upsertSessionErr error
+		session          *model.Session
+		err              error
+	}{
+		{
+			name:      "device error",
+			tenantID:  "1",
+			userID:    "2",
+			deviceID:  "3",
+			deviceErr: errors.New("error"),
+			err:       errors.New("error"),
+		},
+		{
+			name:     "device not found",
+			tenantID: "1",
+			userID:   "2",
+			deviceID: "3",
+			err:      ErrDeviceNotFound,
+		},
+		{
+			name:     "device not connected",
+			tenantID: "1",
+			userID:   "2",
+			deviceID: "3",
+			device: &model.Device{
+				ID:     "3",
+				Status: model.DeviceStatusDisconnected,
+			},
+			err: ErrDeviceNotConnected,
+		},
+		{
+			name:     "upsert fails",
+			tenantID: "1",
+			userID:   "2",
+			deviceID: "3",
+			device: &model.Device{
+				ID:     "3",
+				Status: model.DeviceStatusConnected,
+			},
+			upsertSessionErr: errors.New("upsert error"),
+			err:              errors.New("upsert error"),
+		},
+		{
+			name:     "upsert fails",
+			tenantID: "1",
+			userID:   "2",
+			deviceID: "3",
+			device: &model.Device{
+				ID:     "3",
+				Status: model.DeviceStatusConnected,
+			},
+			session: &model.Session{
+				ID:       "id",
+				UserID:   "2",
+				DeviceID: "3",
+				Status:   model.SessionStatusDisconnected,
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &store_mocks.DataStore{}
+			store.On("GetDevice",
+				mock.MatchedBy(func(ctx context.Context) bool {
+					return true
+				}),
+				tc.tenantID,
+				tc.deviceID,
+			).Return(tc.device, tc.deviceErr)
+
+			if tc.deviceErr == nil && tc.device != nil && tc.device.Status == model.DeviceStatusConnected {
+				store.On("UpsertSession",
+					mock.MatchedBy(func(ctx context.Context) bool {
+						return true
+					}),
+					tc.tenantID,
+					tc.userID,
+					tc.deviceID,
+				).Return(tc.session, tc.upsertSessionErr)
+			}
+
+			app := NewDeviceConnectApp(store, nil)
+
+			ctx := context.Background()
+			session, err := app.PrepareUserSession(ctx, tc.tenantID, tc.userID, tc.deviceID)
+			assert.Equal(t, tc.session, session)
+			assert.Equal(t, tc.err, err)
+
+			store.AssertExpectations(t)
+		})
+	}
+}
+
+func TestUpdateUserSessionStatus(t *testing.T) {
+	err := errors.New("error")
+	const tenantID = "1234"
+	const deviceID = "abcd"
+
+	store := &store_mocks.DataStore{}
+	store.On("UpdateSessionStatus",
+		mock.MatchedBy(func(ctx context.Context) bool {
+			return true
+		}),
+		tenantID,
+		deviceID,
+		mock.AnythingOfType("string"),
+	).Return(err)
+
+	app := NewDeviceConnectApp(store, nil)
+
+	ctx := context.Background()
+	res := app.UpdateUserSessionStatus(ctx, tenantID, deviceID, "anything")
 	assert.Equal(t, err, res)
 
 	store.AssertExpectations(t)

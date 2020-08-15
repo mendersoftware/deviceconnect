@@ -16,10 +16,17 @@ package app
 
 import (
 	"context"
+	"errors"
 
 	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
+)
+
+// App errors
+var (
+	ErrDeviceNotFound     = errors.New("device not found")
+	ErrDeviceNotConnected = errors.New("device not connected")
 )
 
 // App interface describes app objects
@@ -29,6 +36,8 @@ type App interface {
 	ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error
 	DeleteDevice(ctx context.Context, tenantID string, deviceID string) error
 	UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error
+	PrepareUserSession(ctx context.Context, tenantID string, userID string, deviceID string) (*model.Session, error)
+	UpdateUserSessionStatus(ctx context.Context, tenantID string, sessionID string, status string) error
 }
 
 // DeviceConnectApp is an app object
@@ -54,7 +63,7 @@ func (a *DeviceConnectApp) ProvisionTenant(ctx context.Context, tenant *model.Te
 
 // ProvisionDevice provisions a new tenant
 func (a *DeviceConnectApp) ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error {
-	return a.store.ProvisionDevice(ctx, tenantID, device.DeviceID)
+	return a.store.ProvisionDevice(ctx, tenantID, device.ID)
 }
 
 // DeleteDevice provisions a new tenant
@@ -65,4 +74,27 @@ func (a *DeviceConnectApp) DeleteDevice(ctx context.Context, tenantID, deviceID 
 // UpdateDeviceStatus provisions a new tenant
 func (a *DeviceConnectApp) UpdateDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error {
 	return a.store.UpdateDeviceStatus(ctx, tenantID, deviceID, status)
+}
+
+// PrepareUserSession prepares a new user session
+func (a *DeviceConnectApp) PrepareUserSession(ctx context.Context, tenantID string, userID string, deviceID string) (*model.Session, error) {
+	device, err := a.store.GetDevice(ctx, tenantID, deviceID)
+	if err != nil {
+		return nil, err
+	} else if device == nil {
+		return nil, ErrDeviceNotFound
+	} else if device.Status != model.DeviceStatusConnected {
+		return nil, ErrDeviceNotConnected
+	}
+
+	session, err := a.store.UpsertSession(ctx, tenantID, userID, device.ID)
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+// UpdateUserSessionStatus updates a user session
+func (a *DeviceConnectApp) UpdateUserSessionStatus(ctx context.Context, tenantID, sessionID string, status string) error {
+	return a.store.UpdateSessionStatus(ctx, tenantID, sessionID, status)
 }

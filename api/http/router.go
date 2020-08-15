@@ -36,6 +36,8 @@ const (
 	APIURLInternalDevices   = APIURLInternal + "/tenants/:tenantId/devices"
 	APIURLInternalDevicesID = APIURLInternal + "/tenants/:tenantId/devices/:deviceId"
 
+	APIURLManagementConnect = APIURLManagement + "/devices/:deviceId/connect"
+
 	URLTerminal = "/"
 )
 
@@ -63,6 +65,9 @@ func NewRouter(deviceConnectApp app.App) (*gin.Engine, error) {
 	router.GET(APIURLDevicesConnect, device.Connect)
 	router.POST(APIURLInternalDevices, device.Provision)
 	router.DELETE(APIURLInternalDevicesID, device.Delete)
+
+	management := NewManagementController(deviceConnectApp)
+	router.GET(APIURLManagementConnect, management.Connect)
 
 	terminal := NewTerminalController()
 	router.GET(URLTerminal, terminal.Terminal)

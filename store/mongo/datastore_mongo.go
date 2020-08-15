@@ -16,6 +16,7 @@ import (
 	"github.com/mendersoftware/go-lib-micro/store"
 
 	"github.com/pkg/errors"
+	uuid "github.com/satori/go.uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	mopts "go.mongodb.org/mongo-driver/mongo/options"
@@ -26,8 +27,11 @@ import (
 )
 
 const (
-	// DevicesCollectionName refers to the collection of stored devices
+	// DevicesCollectionName refers to the name of the collection of stored devices
 	DevicesCollectionName = "devices"
+
+	// SessionsCollectionName refers to the name of the collection of sessions
+	SessionsCollectionName = "sessions"
 )
 
 // SetupDataStore returns the mongo data store and optionally runs migrations
@@ -164,7 +168,7 @@ func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID string, 
 	_, err := coll.UpdateOne(ctx,
 		bson.M{"_id": deviceID},
 		bson.M{
-			"$setOnInsert": bson.M{"status": model.DeviceStatusClosed},
+			"$setOnInsert": bson.M{"status": model.DeviceStatusDisconnected},
 		},
 		updateOpts,
 	)
@@ -181,7 +185,7 @@ func (db *DataStoreMongo) DeleteDevice(ctx context.Context, tenantID, deviceID s
 	return err
 }
 
-// GetDevice deletes a device
+// GetDevice returns a device
 func (db *DataStoreMongo) GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error) {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
@@ -214,6 +218,75 @@ func (db *DataStoreMongo) UpdateDeviceStatus(ctx context.Context, tenantID strin
 	)
 
 	return err
+}
+
+// UpsertSession upserts a user session connecting to a device
+func (db *DataStoreMongo) UpsertSession(ctx context.Context, tenantID, userID, deviceID string) (*model.Session, error) {
+	dbname := store.DbNameForTenant(tenantID, DbName)
+	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
+
+	findOneAndUpdateOpts := &mopts.FindOneAndUpdateOptions{}
+	findOneAndUpdateOpts.SetUpsert(true)
+	findOneAndUpdateOpts.SetReturnDocument(mopts.After)
+	res := coll.FindOneAndUpdate(ctx,
+		bson.M{
+			"user_id":   userID,
+			"device_id": deviceID,
+		},
+		bson.M{
+			"$setOnInsert": bson.M{
+				"_id":       uuid.NewV4().String(),
+				"user_id":   userID,
+				"device_id": deviceID,
+			},
+			"$set": bson.M{
+				"status": model.SessionStatusDisconnected,
+			},
+		},
+		findOneAndUpdateOpts,
+	)
+
+	session := &model.Session{}
+	if err := res.Decode(session); err != nil {
+		return nil, err
+	}
+
+	return session, nil
+}
+
+// UpdateSessionStatus updates a session status
+func (db *DataStoreMongo) UpdateSessionStatus(ctx context.Context, tenantID, sessionID, status string) error {
+	dbname := store.DbNameForTenant(tenantID, DbName)
+	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
+
+	updateOpts := &mopts.UpdateOptions{}
+	_, err := coll.UpdateOne(ctx,
+		bson.M{"_id": sessionID},
+		bson.M{
+			"$set": bson.M{"status": status},
+		},
+		updateOpts,
+	)
+
+	return err
+}
+
+// GetSession returns a device
+func (db *DataStoreMongo) GetSession(ctx context.Context, tenantID, sessionID string) (*model.Session, error) {
+	dbname := store.DbNameForTenant(tenantID, DbName)
+	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
+
+	cur := coll.FindOne(ctx, bson.M{"_id": sessionID})
+
+	session := &model.Session{}
+	if err := cur.Decode(session); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return session, nil
 }
 
 // Close disconnects the client

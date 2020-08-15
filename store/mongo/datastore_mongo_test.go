@@ -66,7 +66,7 @@ func TestProvisionAndDeleteDevice(t *testing.T) {
 
 	device, err := ds.GetDevice(ctx, tenantID, deviceID)
 	assert.NoError(t, err)
-	assert.Equal(t, deviceID, device.DeviceID)
+	assert.Equal(t, deviceID, device.ID)
 
 	err = ds.DeleteDevice(ctx, tenantID, deviceID)
 	assert.NoError(t, err)
@@ -94,12 +94,41 @@ func TestUpdateDeviceStatus(t *testing.T) {
 
 	device, err := ds.GetDevice(ctx, tenantID, deviceID)
 	assert.NoError(t, err)
-	assert.Equal(t, model.DeviceStatusClosed, device.Status)
+	assert.Equal(t, model.DeviceStatusDisconnected, device.Status)
 
-	err = ds.UpdateDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusOpen)
+	err = ds.UpdateDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusConnected)
 	assert.NoError(t, err)
 
 	device, err = ds.GetDevice(ctx, tenantID, deviceID)
 	assert.NoError(t, err)
-	assert.Equal(t, model.DeviceStatusOpen, device.Status)
+	assert.Equal(t, model.DeviceStatusConnected, device.Status)
+}
+
+func TestUpsertSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping TestPing in short mode.")
+	}
+	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
+	defer cancel()
+
+	const (
+		tenantID = "1234"
+		userID   = "abcd"
+		deviceID = "efgh"
+	)
+
+	ds := NewDataStoreWithClient(db.Client(), config.Config)
+	session, err := ds.UpsertSession(ctx, tenantID, userID, deviceID)
+	assert.NoError(t, err)
+	assert.Equal(t, userID, session.UserID)
+	assert.Equal(t, deviceID, session.DeviceID)
+	assert.Equal(t, model.SessionStatusDisconnected, session.Status)
+
+	err = ds.UpdateSessionStatus(ctx, tenantID, session.ID, model.DeviceStatusConnected)
+	assert.NoError(t, err)
+
+	session, err = ds.GetSession(ctx, tenantID, session.ID)
+	assert.NoError(t, err)
+	assert.NotNil(t, session)
+	assert.Equal(t, model.SessiontatusConnected, session.Status)
 }

@@ -31,10 +31,6 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// initialize tenant and device running:
-// $ curl http://localhost:8080/api/internal/v1/deviceconnect/tenants -X POST -d '{"tenant_id": "abcd"}'
-// $ curl http://localhost:8080/api/internal/v1/deviceconnect/tenants/abcd/devices -X POST -d '{"device_id": "1234567890"}'
-
 const JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibWVuZGVyLmRldmljZSI6dHJ1ZSwibWVuZGVyLnBsYW4iOiJlbnRlcnByaXNlIiwibWVuZGVyLnRlbmFudCI6ImFiY2QifQ.Q4bIDhEx53FLFUMipjJUNgEmEf48yjcaFxlh8XxZFVw"
 const JWTDeviceID = "1234567890"
 const JWTTenantID = "abcd"
@@ -59,7 +55,7 @@ func TestDeviceConnect(t *testing.T) {
 				}),
 				JWTTenantID,
 				JWTDeviceID,
-				model.DeviceStatusOpen,
+				model.DeviceStatusConnected,
 			).Return(nil)
 
 			app.On("UpdateDeviceStatus",
@@ -68,7 +64,7 @@ func TestDeviceConnect(t *testing.T) {
 				}),
 				JWTTenantID,
 				JWTDeviceID,
-				model.DeviceStatusClosed,
+				model.DeviceStatusDisconnected,
 			).Return(nil)
 
 			router, _ := NewRouter(app)
@@ -160,7 +156,7 @@ func TestDeviceConnectFailures(t *testing.T) {
 				body := w.Body.Bytes()
 				err = json.Unmarshal(body, &response)
 				value, _ := response["error"]
-				assert.Equal(t, ErrMissingAuthentication.Error(), value)
+				assert.Equal(t, tc.HTTPError.Error(), value)
 			}
 		})
 	}
@@ -219,7 +215,7 @@ func TestProvisionDevice(t *testing.T) {
 						return true
 					}),
 					tc.TenantID,
-					&model.Device{DeviceID: tc.DeviceID},
+					&model.Device{ID: tc.DeviceID},
 				).Return(tc.ProvisionDeviceErr)
 			}
 
