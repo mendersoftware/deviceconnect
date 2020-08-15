@@ -67,13 +67,14 @@ func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 	signal.Notify(quit, unix.SIGINT, unix.SIGTERM)
 	<-quit
 
-	l.Info("Shutdown Server ...")
+	l.Info("server shutdown")
 
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctxWithTimeout); err != nil {
-		l.Fatal("Server Shutdown: ", err)
+		l.Fatal("error when shutting down the server ", err)
 	}
 
+	l.Info("server exiting")
 	return nil
 }

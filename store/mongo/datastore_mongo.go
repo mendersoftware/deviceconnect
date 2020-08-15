@@ -66,10 +66,9 @@ func doMigrations(ctx context.Context, client *mongo.Client,
 }
 
 func disconnectClient(parentCtx context.Context, client *mongo.Client) {
-	ctx, cancel := context.WithTimeout(parentCtx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(parentCtx, 1*time.Second)
+	defer cancel()
 	client.Disconnect(ctx)
-	<-ctx.Done()
-	cancel()
 }
 
 // NewClient returns a mongo client
