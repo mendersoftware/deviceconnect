@@ -49,6 +49,14 @@ func TestDeviceConnect(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			app := &app_mocks.App{}
+			app.On("SubscribeMessagesFromManagement",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				}),
+				JWTUserTenantID,
+				JWTDeviceID,
+			).Return(make(<-chan *model.Message), nil)
+
 			app.On("UpdateDeviceStatus",
 				mock.MatchedBy(func(_ context.Context) bool {
 					return true

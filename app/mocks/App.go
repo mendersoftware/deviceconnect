@@ -106,6 +106,80 @@ func (_m *App) ProvisionTenant(ctx context.Context, tenant *model.Tenant) error 
 	return r0
 }
 
+// PublishMessageFromDevice provides a mock function with given fields: ctx, tenantID, deviceID, message
+func (_m *App) PublishMessageFromDevice(ctx context.Context, tenantID string, deviceID string, message *model.Message) error {
+	ret := _m.Called(ctx, tenantID, deviceID, message)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, *model.Message) error); ok {
+		r0 = rf(ctx, tenantID, deviceID, message)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// PublishMessageFromManagement provides a mock function with given fields: ctx, tenantID, deviceID, message
+func (_m *App) PublishMessageFromManagement(ctx context.Context, tenantID string, deviceID string, message *model.Message) error {
+	ret := _m.Called(ctx, tenantID, deviceID, message)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, *model.Message) error); ok {
+		r0 = rf(ctx, tenantID, deviceID, message)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// SubscribeMessagesFromDevice provides a mock function with given fields: ctx, tenantID, deviceID
+func (_m *App) SubscribeMessagesFromDevice(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error) {
+	ret := _m.Called(ctx, tenantID, deviceID)
+
+	var r0 <-chan *model.Message
+	if rf, ok := ret.Get(0).(func(context.Context, string, string) <-chan *model.Message); ok {
+		r0 = rf(ctx, tenantID, deviceID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(<-chan *model.Message)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = rf(ctx, tenantID, deviceID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// SubscribeMessagesFromManagement provides a mock function with given fields: ctx, tenantID, deviceID
+func (_m *App) SubscribeMessagesFromManagement(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error) {
+	ret := _m.Called(ctx, tenantID, deviceID)
+
+	var r0 <-chan *model.Message
+	if rf, ok := ret.Get(0).(func(context.Context, string, string) <-chan *model.Message); ok {
+		r0 = rf(ctx, tenantID, deviceID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(<-chan *model.Message)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = rf(ctx, tenantID, deviceID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // UpdateDeviceStatus provides a mock function with given fields: ctx, tenantID, deviceID, status
 func (_m *App) UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error {
 	ret := _m.Called(ctx, tenantID, deviceID, status)

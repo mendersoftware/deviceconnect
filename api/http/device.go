@@ -163,9 +163,19 @@ func (h DeviceController) Connect(c *gin.Context) {
 				close(done)
 				return
 			}
-			l.Printf("received: %s / %s", m.Cmd, m.Data)
+			err = h.app.PublishMessageFromDevice(ctx, idata.Tenant, idata.Subject, m)
+			if err != nil {
+				close(done)
+				return
+			}
 		}
 	}()
+
+	// subscribe to messages from the device
+	messages, err := h.app.SubscribeMessagesFromManagement(ctx, idata.Tenant, idata.Subject)
+	if err != nil {
+		return
+	}
 
 	// periodic ping
 	sendPing := func() bool {
@@ -183,6 +193,12 @@ func (h DeviceController) Connect(c *gin.Context) {
 	for {
 		stop := false
 		select {
+		case message := <-messages:
+			data, err := msgpack.Marshal(message)
+			if err != nil {
+				l.Fatal(err)
+			}
+			ws.WriteMessage(websocket.BinaryMessage, data)
 		case <-done:
 			stop = true
 			break

@@ -54,6 +54,14 @@ func TestManagementConnect(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			app := &app_mocks.App{}
+			app.On("SubscribeMessagesFromDevice",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				}),
+				JWTUserTenantID,
+				tc.DeviceID,
+			).Return(make(<-chan *model.Message), nil)
+
 			app.On("PrepareUserSession",
 				mock.MatchedBy(func(_ context.Context) bool {
 					return true

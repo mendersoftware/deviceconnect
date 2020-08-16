@@ -22,47 +22,52 @@ import (
 
 const template = `<!doctype html>
 <html>
-  <head>
-	<title>Mender Connect</title>
-	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/xterm/3.14.5/xterm.min.css" integrity="sha512-iLYuqv+v/P4u9erpk+KM83Ioe/l7SEmr7wB6g+Kg1qmEit8EShDKnKtLHlv2QXUp7GGJhmqDI+1PhJYLTsfb8w==" crossorigin="anonymous" />
-  </head>
-  <body>
-	<div id="terminal"></div>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/3.14.5/xterm.min.js" integrity="sha512-2PRgAav8Os8vLcOAh1gSaDoNLe1fAyq8/G3QSdyjFFD+OqNjLeHE/8q4+S4MEZgPsuo+itHopj+hJvqS8XUQ8A==" crossorigin="anonymous"></script>
-	<script>
-	  var term = new Terminal();
-	  term.open(document.getElementById('terminal'));
-	  term.resize(80, 25);
-	  //
-	  var jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibWVuZGVyLnVzZXIiOnRydWUsIm1lbmRlci5wbGFuIjoiZW50ZXJwcmlzZSIsIm1lbmRlci50ZW5hbnQiOiJhYmNkIn0.sn10_eTex-otOTJ7WCp_7NUwiz9lBT0KiPOdZF9Jt4w";
-	  var socket = new WebSocket("ws://" + window.location.host + "/api/management/v1/deviceconnect/devices/1234567890/connect?jwt=" + jwt);
-	  socket.onopen = function(e) {
-		console.log("[websocket] Connection established");
-	  };
-	  socket.onmessage = function(event) {
-		data = JSON.parse(event.data) || {};
-		if (data.cmd == "terminal") {
-		  term.write(atob(data.data).replace(/\r/g, "\n\r"));
-		}
-	  };
-	  socket.onclose = function(event) {
-		if (event.wasClean) {
-		  console.log("[close] Connection closed cleanly, code=" + event.code + " reason=" + event.reason);
-		} else {
-		  console.log('[close] Connection died');
-		}
-	  };
-	  socket.onerror = function(error) {
-		console.log("[error] " + error.message);
-	  };
-	  //
-	  term.onData(function (data) {
-		term.write(data.replace(/\r/g, "\n\r"));
-		msg = {cmd: "terminal", data: btoa(data)};
-		socket.send(JSON.stringify(msg));
-	  })
-	</script>
-  </body>
+	<head>
+		<title>Mender Connect</title>
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/xterm/3.14.5/xterm.min.css" integrity="sha512-iLYuqv+v/P4u9erpk+KM83Ioe/l7SEmr7wB6g+Kg1qmEit8EShDKnKtLHlv2QXUp7GGJhmqDI+1PhJYLTsfb8w==" crossorigin="anonymous" />
+	</head>
+	<body>
+		<div id="terminal"></div>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/msgpack5/4.2.0/msgpack5.min.js" integrity="sha512-D0GVJIuE4FlQJvwnzUBEQ6cb1f72Tg/4iELPcFZpU/a8QPvX805QUm13NhN1kcDtkbrL8Ji/+uyapjaXTqm00Q==" crossorigin="anonymous"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/3.14.5/xterm.min.js" integrity="sha512-2PRgAav8Os8vLcOAh1gSaDoNLe1fAyq8/G3QSdyjFFD+OqNjLeHE/8q4+S4MEZgPsuo+itHopj+hJvqS8XUQ8A==" crossorigin="anonymous"></script>
+		<script>
+			var term = new Terminal();
+			term.open(document.getElementById('terminal'));
+			term.resize(80, 25);
+			//
+			var jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibWVuZGVyLnVzZXIiOnRydWUsIm1lbmRlci5wbGFuIjoiZW50ZXJwcmlzZSIsIm1lbmRlci50ZW5hbnQiOiJhYmNkIn0.sn10_eTex-otOTJ7WCp_7NUwiz9lBT0KiPOdZF9Jt4w";
+			var socket = new WebSocket("ws://" + window.location.host + "/api/management/v1/deviceconnect/devices/1234567890/connect?jwt=" + jwt);
+			socket.onopen = function(e) {
+				console.log("[websocket] Connection established");
+			};
+			socket.onmessage = function(event) {
+				event.data.arrayBuffer().then(function (data) {
+					obj = msgpack5().decode(data);
+					console.log(obj);
+					// data = JSON.parse(event.data) || {};
+					// if (data.cmd == "terminal") {
+					//	 term.write(atob(data.data).replace(/\r/g, "\n\r"));
+					// }
+				});
+			};
+			socket.onclose = function(event) {
+				if (event.wasClean) {
+					console.log("[close] Connection closed cleanly, code=" + event.code + " reason=" + event.reason);
+				} else {
+					console.log('[close] Connection died');
+				}
+			};
+			socket.onerror = function(error) {
+				console.log("[error] " + error.message);
+			};
+			//
+			term.onData(function (data) {
+				term.write(data.replace(/\r/g, "\n\r"));
+				msg = {cmd: "terminal", data: btoa(data)};
+				socket.send(JSON.stringify(msg));
+			})
+		</script>
+	</body>
 </html>`
 
 // TerminalController contains status-related end-points

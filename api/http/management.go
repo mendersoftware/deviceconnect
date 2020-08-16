@@ -110,9 +110,20 @@ func (h ManagementController) Connect(c *gin.Context) {
 				close(done)
 				return
 			}
-			l.Printf("received: %s / %s", m.Cmd, m.Data)
+
+			err = h.app.PublishMessageFromManagement(ctx, idata.Tenant, session.DeviceID, m)
+			if err != nil {
+				close(done)
+				return
+			}
 		}
 	}()
+
+	// subscribe to messages from the device
+	messages, err := h.app.SubscribeMessagesFromDevice(ctx, idata.Tenant, session.DeviceID)
+	if err != nil {
+		return
+	}
 
 	// periodic ping
 	sendPing := func() bool {
@@ -130,6 +141,12 @@ func (h ManagementController) Connect(c *gin.Context) {
 	for {
 		stop := false
 		select {
+		case message := <-messages:
+			data, err := msgpack.Marshal(message)
+			if err != nil {
+				l.Fatal(err)
+			}
+			ws.WriteMessage(websocket.BinaryMessage, data)
 		case <-done:
 			stop = true
 			break

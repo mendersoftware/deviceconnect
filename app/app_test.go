@@ -19,9 +19,12 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/magiconair/properties/assert"
+	"github.com/nats-io/nats.go"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/vmihailenco/msgpack/v5"
 
+	nats_mocks "github.com/mendersoftware/deviceconnect/client/nats/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 	store_mocks "github.com/mendersoftware/deviceconnect/store/mocks"
 )
@@ -259,4 +262,134 @@ func TestUpdateUserSessionStatus(t *testing.T) {
 	assert.Equal(t, err, res)
 
 	store.AssertExpectations(t)
+}
+
+func TestPublishMessageFromDevice(t *testing.T) {
+	const tenantID = "abcd"
+	const deviceID = "1234567890"
+
+	subject := getMessageSubject(tenantID, deviceID, "device")
+
+	message := &model.Message{
+		Cmd:  "cmd",
+		Data: []byte("data"),
+	}
+
+	client := &nats_mocks.ClientInterface{}
+	client.On("Publish",
+		subject,
+		mock.MatchedBy(func(data []byte) bool {
+			decodedMessage := &model.Message{}
+			err := msgpack.Unmarshal(data, decodedMessage)
+			assert.NoError(t, err)
+			assert.Equal(t, message, decodedMessage)
+
+			return true
+		}),
+	).Return(nil)
+
+	app := NewDeviceConnectApp(nil, client)
+
+	ctx := context.Background()
+	err := app.PublishMessageFromDevice(ctx, tenantID, deviceID, message)
+	assert.NoError(t, err)
+}
+
+func TestPublishMessageFromManagement(t *testing.T) {
+	const tenantID = "abcd"
+	const deviceID = "1234567890"
+
+	subject := getMessageSubject(tenantID, deviceID, "management")
+
+	message := &model.Message{
+		Cmd:  "cmd",
+		Data: []byte("data"),
+	}
+
+	client := &nats_mocks.ClientInterface{}
+	client.On("Publish",
+		subject,
+		mock.MatchedBy(func(data []byte) bool {
+			decodedMessage := &model.Message{}
+			err := msgpack.Unmarshal(data, decodedMessage)
+			assert.NoError(t, err)
+			assert.Equal(t, message, decodedMessage)
+
+			return true
+		}),
+	).Return(nil)
+
+	app := NewDeviceConnectApp(nil, client)
+
+	ctx := context.Background()
+	err := app.PublishMessageFromManagement(ctx, tenantID, deviceID, message)
+	assert.NoError(t, err)
+}
+
+func TestSubscribeMessagesFromDevice(t *testing.T) {
+	const tenantID = "abcd"
+	const deviceID = "1234567890"
+
+	subject := getMessageSubject(tenantID, deviceID, "device")
+
+	message := &model.Message{
+		Cmd:  "cmd",
+		Data: []byte("data"),
+	}
+
+	client := &nats_mocks.ClientInterface{}
+	client.On("Subscribe",
+		subject,
+		mock.MatchedBy(func(callback func(msg *nats.Msg)) bool {
+			data, err := msgpack.Marshal(message)
+			assert.NoError(t, err)
+			callback(&nats.Msg{Data: data})
+
+			return true
+		}),
+	).Return(nil)
+
+	app := NewDeviceConnectApp(nil, client)
+
+	ctx := context.Background()
+	out, err := app.SubscribeMessagesFromDevice(ctx, tenantID, deviceID)
+	assert.NoError(t, err)
+	assert.NotNil(t, out)
+
+	msg := <-out
+	assert.Equal(t, message, msg)
+}
+
+func TestSubscribeMessagesFromManagement(t *testing.T) {
+	const tenantID = "abcd"
+	const deviceID = "1234567890"
+
+	subject := getMessageSubject(tenantID, deviceID, "management")
+
+	message := &model.Message{
+		Cmd:  "cmd",
+		Data: []byte("data"),
+	}
+
+	client := &nats_mocks.ClientInterface{}
+	client.On("Subscribe",
+		subject,
+		mock.MatchedBy(func(callback func(msg *nats.Msg)) bool {
+			data, err := msgpack.Marshal(message)
+			assert.NoError(t, err)
+			callback(&nats.Msg{Data: data})
+
+			return true
+		}),
+	).Return(nil)
+
+	app := NewDeviceConnectApp(nil, client)
+
+	ctx := context.Background()
+	out, err := app.SubscribeMessagesFromManagement(ctx, tenantID, deviceID)
+	assert.NoError(t, err)
+	assert.NotNil(t, out)
+
+	msg := <-out
+	assert.Equal(t, message, msg)
 }

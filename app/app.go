@@ -17,11 +17,16 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
+	"github.com/nats-io/nats.go"
+	"github.com/vmihailenco/msgpack"
 )
+
+const channelSize = 100
 
 // App errors
 var (
@@ -38,6 +43,10 @@ type App interface {
 	UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error
 	PrepareUserSession(ctx context.Context, tenantID string, userID string, deviceID string) (*model.Session, error)
 	UpdateUserSessionStatus(ctx context.Context, tenantID string, sessionID string, status string) error
+	PublishMessageFromDevice(ctx context.Context, tenantID string, deviceID string, message *model.Message) error
+	PublishMessageFromManagement(ctx context.Context, tenantID string, deviceID string, message *model.Message) error
+	SubscribeMessagesFromDevice(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error)
+	SubscribeMessagesFromManagement(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error)
 }
 
 // DeviceConnectApp is an app object
@@ -97,4 +106,54 @@ func (a *DeviceConnectApp) PrepareUserSession(ctx context.Context, tenantID stri
 // UpdateUserSessionStatus updates a user session
 func (a *DeviceConnectApp) UpdateUserSessionStatus(ctx context.Context, tenantID, sessionID string, status string) error {
 	return a.store.UpdateSessionStatus(ctx, tenantID, sessionID, status)
+}
+
+// PublishMessageFromDevice publishes a message from the device to the message bus
+func (a *DeviceConnectApp) PublishMessageFromDevice(ctx context.Context, tenantID string, deviceID string, message *model.Message) error {
+	subject := getMessageSubject(tenantID, deviceID, "device")
+	return a.publishMessage(ctx, subject, message)
+}
+
+// PublishMessageFromManagement publishes a message from the management channel to the message bus
+func (a *DeviceConnectApp) PublishMessageFromManagement(ctx context.Context, tenantID string, deviceID string, message *model.Message) error {
+	subject := getMessageSubject(tenantID, deviceID, "management")
+	return a.publishMessage(ctx, subject, message)
+}
+
+func (a *DeviceConnectApp) publishMessage(ctx context.Context, subject string, message *model.Message) error {
+	data, err := msgpack.Marshal(message)
+	if err == nil {
+		err = a.client.Publish(subject, data)
+	}
+	return err
+}
+
+// SubscribeMessagesFromDevice subscribes to messagese from the device on the message bus
+func (a *DeviceConnectApp) SubscribeMessagesFromDevice(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error) {
+	subject := getMessageSubject(tenantID, deviceID, "device")
+	return a.subscribeMessages(ctx, subject)
+}
+
+// SubscribeMessagesFromManagement  subscribes to messagese from the management channel on the message bus
+func (a *DeviceConnectApp) SubscribeMessagesFromManagement(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error) {
+	subject := getMessageSubject(tenantID, deviceID, "management")
+	return a.subscribeMessages(ctx, subject)
+}
+
+func (a *DeviceConnectApp) subscribeMessages(ctx context.Context, subject string) (<-chan *model.Message, error) {
+	out := make(chan *model.Message, channelSize)
+	if err := a.client.Subscribe(subject, func(msg *nats.Msg) {
+		message := &model.Message{}
+		if err := msgpack.Unmarshal(msg.Data, message); err == nil {
+			out <- message
+		}
+	}); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+func getMessageSubject(tenantID, deviceID, channel string) string {
+	return fmt.Sprintf("%s/devices/%s/%s", tenantID, deviceID, channel)
 }
