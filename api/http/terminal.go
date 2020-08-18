@@ -30,10 +30,19 @@ const template = `<!doctype html>
 		<div id="terminal"></div>
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/msgpack5/4.2.0/msgpack5.min.js" integrity="sha512-D0GVJIuE4FlQJvwnzUBEQ6cb1f72Tg/4iELPcFZpU/a8QPvX805QUm13NhN1kcDtkbrL8Ji/+uyapjaXTqm00Q==" crossorigin="anonymous"></script>
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/3.14.5/xterm.min.js" integrity="sha512-2PRgAav8Os8vLcOAh1gSaDoNLe1fAyq8/G3QSdyjFFD+OqNjLeHE/8q4+S4MEZgPsuo+itHopj+hJvqS8XUQ8A==" crossorigin="anonymous"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/3.14.5/addons/fit/fit.min.js" integrity="sha512-+wh8VA1djpWk3Dj9/IJDu6Ufi4vVQ0zxLv9Vmfo70AbmYFJm0z3NLnV98vdRKBdPDV4Kwpi7EZdr8mDY9L8JIA==" crossorigin="anonymous"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/3.14.5/addons/search/search.min.js" integrity="sha512-OkVnWNhmCMHw8pYndhQ+yEMJzD1VrgqF12deRfRcqR6iWL4s8IkxTBwSrJZ2WgpevhD71S68dAqBPHv/VHGDAw==" crossorigin="anonymous"></script>
 		<script>
-			var term = new Terminal();
+			Terminal.applyAddon(fit)
+			Terminal.applyAddon(search)
+			var term = new Terminal({
+				cursorBlink: 'block',
+				macOptionIsMeta: true,
+				scrollback: 100
+			});
 			term.open(document.getElementById('terminal'));
-			term.resize(80, 25);
+			term.fit();
+			term.resize(80, 40);
 			//
 			var jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibWVuZGVyLnVzZXIiOnRydWUsIm1lbmRlci5wbGFuIjoiZW50ZXJwcmlzZSIsIm1lbmRlci50ZW5hbnQiOiJhYmNkIn0.sn10_eTex-otOTJ7WCp_7NUwiz9lBT0KiPOdZF9Jt4w";
 			var socket = new WebSocket("ws://" + window.location.host + "/api/management/v1/deviceconnect/devices/1234567890/connect?jwt=" + jwt);
@@ -43,11 +52,14 @@ const template = `<!doctype html>
 			socket.onmessage = function(event) {
 				event.data.arrayBuffer().then(function (data) {
 					obj = msgpack5().decode(data);
-					console.log(obj);
-					// data = JSON.parse(event.data) || {};
-					// if (data.cmd == "terminal") {
-					//	 term.write(atob(data.data).replace(/\r/g, "\n\r"));
-					// }
+					console.log("recv", obj);
+					if (obj.cmd == "shell") {
+						myString = "";
+						for (var i=0; i < obj.data.byteLength; i++) {
+							myString += String.fromCharCode(obj.data[i]);
+						}
+						term.write(myString);
+					}
 				});
 			};
 			socket.onclose = function(event) {
@@ -61,10 +73,11 @@ const template = `<!doctype html>
 				console.log("[error] " + error.message);
 			};
 			//
-			term.onData(function (data) {
-				term.write(data.replace(/\r/g, "\n\r"));
-				msg = {cmd: "terminal", data: btoa(data)};
-				socket.send(JSON.stringify(msg));
+			term.on('data', function (data) {
+				msg = {cmd: "shell", data: data};
+				console.log("send", msg);
+				encodedData = msgpack5().encode(msg);
+				socket.send(encodedData);
 			})
 		</script>
 	</body>
