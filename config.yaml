@@ -8,7 +8,7 @@ listen: :8080
 # Defauls to: "nats://localhost:4222"
 # Overwrite with environment variable: DEVICECONNECT_NATS_URI
 
-# nats_uri: "nats://localhost:4222"
+nats_uri: "nats://mender-nats:4222"
 
 # Mongodb connection string
 # Defaults to: "mongodb://localhost"
