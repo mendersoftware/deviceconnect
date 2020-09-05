@@ -41,6 +41,29 @@ func (_m *App) DeleteDevice(ctx context.Context, tenantID string, deviceID strin
 	return r0
 }
 
+// GetDevice provides a mock function with given fields: ctx, tenantID, deviceID
+func (_m *App) GetDevice(ctx context.Context, tenantID string, deviceID string) (*model.Device, error) {
+	ret := _m.Called(ctx, tenantID, deviceID)
+
+	var r0 *model.Device
+	if rf, ok := ret.Get(0).(func(context.Context, string, string) *model.Device); ok {
+		r0 = rf(ctx, tenantID, deviceID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*model.Device)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = rf(ctx, tenantID, deviceID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // HealthCheck provides a mock function with given fields: ctx
 func (_m *App) HealthCheck(ctx context.Context) error {
 	ret := _m.Called(ctx)

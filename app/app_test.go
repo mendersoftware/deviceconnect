@@ -115,6 +115,55 @@ func TestDeleteDevice(t *testing.T) {
 	store.AssertExpectations(t)
 }
 
+func TestGetDevice(t *testing.T) {
+	err := errors.New("error")
+	const tenantID = "1234"
+	const deviceID = "abcd"
+	device := &model.Device{
+		ID: deviceID,
+	}
+
+	store := &store_mocks.DataStore{}
+	store.On("GetDevice",
+		mock.MatchedBy(func(ctx context.Context) bool {
+			return true
+		}),
+		tenantID,
+		"not-found",
+	).Return(nil, nil)
+
+	store.On("GetDevice",
+		mock.MatchedBy(func(ctx context.Context) bool {
+			return true
+		}),
+		tenantID,
+		"error",
+	).Return(nil, err)
+
+	store.On("GetDevice",
+		mock.MatchedBy(func(ctx context.Context) bool {
+			return true
+		}),
+		tenantID,
+		deviceID,
+	).Return(device, nil)
+
+	app := NewDeviceConnectApp(store, nil)
+
+	ctx := context.Background()
+	_, res := app.GetDevice(ctx, tenantID, "error")
+	assert.Equal(t, err, res)
+
+	_, res = app.GetDevice(ctx, tenantID, "not-found")
+	assert.Equal(t, ErrDeviceNotFound, res)
+
+	dev, res := app.GetDevice(ctx, tenantID, deviceID)
+	assert.NoError(t, res)
+	assert.Equal(t, dev, device)
+
+	store.AssertExpectations(t)
+}
+
 func TestUpdateDeviceStatus(t *testing.T) {
 	err := errors.New("error")
 	const tenantID = "1234"

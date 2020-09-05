@@ -39,6 +39,7 @@ type App interface {
 	HealthCheck(ctx context.Context) error
 	ProvisionTenant(ctx context.Context, tenant *model.Tenant) error
 	ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error
+	GetDevice(ctx context.Context, tenantID string, deviceID string) (*model.Device, error)
 	DeleteDevice(ctx context.Context, tenantID string, deviceID string) error
 	UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error
 	PrepareUserSession(ctx context.Context, tenantID string, userID string, deviceID string) (*model.Session, error)
@@ -73,6 +74,17 @@ func (a *DeviceConnectApp) ProvisionTenant(ctx context.Context, tenant *model.Te
 // ProvisionDevice provisions a new tenant
 func (a *DeviceConnectApp) ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error {
 	return a.store.ProvisionDevice(ctx, tenantID, device.ID)
+}
+
+// GetDevice returns a device
+func (a *DeviceConnectApp) GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error) {
+	device, err := a.store.GetDevice(ctx, tenantID, deviceID)
+	if err != nil {
+		return nil, err
+	} else if device == nil {
+		return nil, ErrDeviceNotFound
+	}
+	return device, nil
 }
 
 // DeleteDevice provisions a new tenant

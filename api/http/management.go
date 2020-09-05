@@ -45,6 +45,36 @@ func NewManagementController(app app.App) *ManagementController {
 	return &ManagementController{app: app}
 }
 
+// GetDevice returns a device
+func (h ManagementController) GetDevice(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	idata := identity.FromContext(ctx)
+	if idata == nil || !idata.IsUser {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": ErrMissingUserAuthentication.Error(),
+		})
+		return
+	}
+	tenantID := idata.Tenant
+	deviceID := c.Param("deviceId")
+
+	device, err := h.app.GetDevice(ctx, tenantID, deviceID)
+	if err == app.ErrDeviceNotFound {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": err.Error(),
+		})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, device)
+}
+
 // Connect starts a websocket connection with the device
 func (h ManagementController) Connect(c *gin.Context) {
 	ctx := c.Request.Context()

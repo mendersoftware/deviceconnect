@@ -36,6 +36,102 @@ const JWTUser = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIi
 const JWTUserID = "1234567890"
 const JWTUserTenantID = "abcd"
 
+func TestManagementGetDevice(t *testing.T) {
+	testCases := []struct {
+		Name          string
+		DeviceID      string
+		Authorization string
+
+		GetDevice      *model.Device
+		GetDeviceError error
+
+		HTTPStatus int
+		Body       *model.Device
+	}{
+		{
+			Name:          "ok",
+			DeviceID:      "1234567890",
+			Authorization: "Bearer " + JWTUser,
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: 200,
+			Body: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+		},
+		{
+			Name:     "ko, missing auth",
+			DeviceID: "1234567890",
+
+			HTTPStatus: 400,
+		},
+		{
+			Name:          "ko, not found",
+			DeviceID:      "1234567890",
+			Authorization: "Bearer " + JWTUser,
+
+			GetDeviceError: app.ErrDeviceNotFound,
+
+			HTTPStatus: 404,
+		},
+		{
+			Name:          "ko, other error",
+			DeviceID:      "1234567890",
+			Authorization: "Bearer " + JWTUser,
+
+			GetDeviceError: errors.New("error"),
+
+			HTTPStatus: 400,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			app := &app_mocks.App{}
+			if tc.Authorization != "" {
+				app.On("GetDevice",
+					mock.MatchedBy(func(_ context.Context) bool {
+						return true
+					}),
+					JWTUserTenantID,
+					tc.DeviceID,
+				).Return(tc.GetDevice, tc.GetDeviceError)
+			}
+
+			router, _ := NewRouter(app)
+			s := httptest.NewServer(router)
+			defer s.Close()
+
+			url := strings.Replace(APIURLManagementDevice, ":deviceId", tc.DeviceID, 1)
+			req, err := http.NewRequest("GET", "http://localhost"+url, nil)
+			if tc.Authorization != "" {
+				req.Header.Set(headerAuthorization, tc.Authorization)
+			}
+			if !assert.NoError(t, err) {
+				t.FailNow()
+			}
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			assert.Equal(t, tc.HTTPStatus, w.Code)
+
+			if tc.HTTPStatus == http.StatusOK {
+				var response *model.Device
+				body := w.Body.Bytes()
+				_ = json.Unmarshal(body, &response)
+				assert.Equal(t, tc.Body, response)
+			}
+
+			app.AssertExpectations(t)
+		})
+	}
+}
+
 func TestManagementConnect(t *testing.T) {
 	testCases := []struct {
 		Name          string
@@ -102,7 +198,7 @@ func TestManagementConnect(t *testing.T) {
 			headers := http.Header{}
 			headers.Set(headerAuthorization, "Bearer "+JWTUser)
 
-			url = url + strings.Replace(APIURLManagementConnect, ":deviceId", tc.DeviceID, 1)
+			url = url + strings.Replace(APIURLManagementDeviceConnect, ":deviceId", tc.DeviceID, 1)
 			ws, _, err := websocket.DefaultDialer.Dial(url, headers)
 			assert.NoError(t, err)
 
@@ -195,7 +291,7 @@ func TestManagementConnectFailures(t *testing.T) {
 			}
 
 			router, _ := NewRouter(app)
-			url := strings.Replace(APIURLManagementConnect, ":deviceId", tc.DeviceID, 1)
+			url := strings.Replace(APIURLManagementDeviceConnect, ":deviceId", tc.DeviceID, 1)
 			req, err := http.NewRequest("GET", "http://localhost"+url, nil)
 			if !assert.NoError(t, err) {
 				t.FailNow()
