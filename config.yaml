@@ -14,13 +14,13 @@ nats_uri: "nats://mender-nats:4222"
 # Defaults to: "mongodb://localhost"
 # Overwrite with environment variable: DEVICECONNECT_MONGO_URL
 
-mongo-url: mongodb://mender-mongo:27017
+mongo_url: mongodb://mender-mongo:27017
 
 # Mongodb database name
 # Defaults to: "deviceconnect"
 # Overwrite with environment variable: DEVICECONNECT_MONGO_DBNAME
 
-mongo-dbname: deviceconnect
+mongo_dbname: deviceconnect
 
 # Enable SSL for mongo connections
 # Defaults to: false

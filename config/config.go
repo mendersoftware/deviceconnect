@@ -30,12 +30,12 @@ const (
 	SettingNatsURIDefault = "nats://localhost:4222"
 
 	// SettingMongo is the config key for the mongo URL
-	SettingMongo = "mongo-url"
+	SettingMongo = "mongo_url"
 	// SettingMongoDefault is the default value for the mongo URL
 	SettingMongoDefault = "mongodb://mender-mongo:27017"
 
 	// SettingDbName is the config key for the mongo database name
-	SettingDbName = "mongo-dbname"
+	SettingDbName = "mongo_dbname"
 	// SettingDbNameDefault is the default value for the mongo database name
 	SettingDbNameDefault = "deviceconnect"
 
