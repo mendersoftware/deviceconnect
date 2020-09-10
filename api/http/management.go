@@ -25,6 +25,7 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/mendersoftware/deviceconnect/app"
+	"github.com/mendersoftware/deviceconnect/client/useradm"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
@@ -37,12 +38,13 @@ var (
 
 // ManagementController container for end-points
 type ManagementController struct {
-	app app.App
+	app     app.App
+	useradm useradm.ClientInterface
 }
 
 // NewManagementController returns a new ManagementController
-func NewManagementController(app app.App) *ManagementController {
-	return &ManagementController{app: app}
+func NewManagementController(app app.App, useradm useradm.ClientInterface) *ManagementController {
+	return &ManagementController{app: app, useradm: useradm}
 }
 
 // GetDevice returns a device
@@ -87,6 +89,17 @@ func (h ManagementController) Connect(c *gin.Context) {
 		})
 		return
 	}
+
+	token := extractTokenFromRequest(c.Request)
+	err := h.useradm.Verify(ctx, token, c.Request.Method, c.Request.RequestURI)
+	if err != nil {
+		code := useradm.GetHTTPStatusCodeFromError(err)
+		c.JSON(code, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	tenantID := idata.Tenant
 	userID := idata.Subject
 	deviceID := c.Param("deviceId")

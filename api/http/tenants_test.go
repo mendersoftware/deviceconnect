@@ -79,7 +79,7 @@ func TestProvision(t *testing.T) {
 				).Return(tc.ProvisionTenantErr)
 			}
 
-			router, _ := NewRouter(deviceConnectApp)
+			router, _ := NewRouter(deviceConnectApp, nil, nil)
 
 			req, err := http.NewRequest("POST", APIURLInternalTenants, strings.NewReader(tc.Tenant))
 			if !assert.NoError(t, err) {

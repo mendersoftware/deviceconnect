@@ -15,6 +15,9 @@
 package http
 
 import (
+	"net/http"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/mendersoftware/go-lib-micro/identity"
@@ -30,13 +33,22 @@ func IdentityMiddleware(c *gin.Context) {
 	var idata identity.Identity
 	var err error
 
-	if jwt := req.URL.Query().Get("jwt"); jwt != "" {
+	if jwt := extractTokenFromRequest(req); jwt != "" {
 		idata, err = identity.ExtractIdentity(jwt)
-	} else {
-		idata, err = identity.ExtractIdentityFromHeaders(req.Header)
 	}
 	if err == nil {
 		ctx = identity.WithContext(ctx, &idata)
 		c.Request = req.WithContext(ctx)
 	}
+}
+
+func extractTokenFromRequest(req *http.Request) string {
+	jwt := req.URL.Query().Get("jwt")
+	if jwt == "" {
+		auth := strings.Split(req.Header.Get(headerAuthorization), " ")
+		if len(auth) == 2 && auth[0] == "Bearer" {
+			jwt = auth[1]
+		}
+	}
+	return jwt
 }

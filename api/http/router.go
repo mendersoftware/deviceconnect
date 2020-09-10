@@ -19,6 +19,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mendersoftware/deviceconnect/app"
+	"github.com/mendersoftware/deviceconnect/client/deviceauth"
+	"github.com/mendersoftware/deviceconnect/client/useradm"
 	"github.com/mendersoftware/go-lib-micro/log"
 )
 
@@ -43,7 +45,7 @@ const (
 )
 
 // NewRouter returns the gin router
-func NewRouter(deviceConnectApp app.App) (*gin.Engine, error) {
+func NewRouter(deviceConnectApp app.App, deviceauth deviceauth.ClientInterface, useradm useradm.ClientInterface) (*gin.Engine, error) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DisableConsoleColor()
 
@@ -62,12 +64,12 @@ func NewRouter(deviceConnectApp app.App) (*gin.Engine, error) {
 	tenants := NewTenantsController(deviceConnectApp)
 	router.POST(APIURLInternalTenants, tenants.Provision)
 
-	device := NewDeviceController(deviceConnectApp)
+	device := NewDeviceController(deviceConnectApp, deviceauth)
 	router.GET(APIURLDevicesConnect, device.Connect)
 	router.POST(APIURLInternalDevices, device.Provision)
 	router.DELETE(APIURLInternalDevicesID, device.Delete)
 
-	management := NewManagementController(deviceConnectApp)
+	management := NewManagementController(deviceConnectApp, useradm)
 	router.GET(APIURLManagementDevice, management.GetDevice)
 	router.GET(APIURLManagementDeviceConnect, management.Connect)
 

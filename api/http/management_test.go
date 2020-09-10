@@ -26,6 +26,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/mendersoftware/deviceconnect/app"
 	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
+	useradm_mocks "github.com/mendersoftware/deviceconnect/client/useradm/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -103,7 +104,7 @@ func TestManagementGetDevice(t *testing.T) {
 				).Return(tc.GetDevice, tc.GetDeviceError)
 			}
 
-			router, _ := NewRouter(app)
+			router, _ := NewRouter(app, nil, nil)
 			s := httptest.NewServer(router)
 			defer s.Close()
 
@@ -189,7 +190,17 @@ func TestManagementConnect(t *testing.T) {
 				model.DeviceStatusDisconnected,
 			).Return(nil)
 
-			router, _ := NewRouter(app)
+			useradm := &useradm_mocks.ClientInterface{}
+			useradm.On("Verify",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				}),
+				JWTUser,
+				http.MethodGet,
+				strings.Replace(APIURLManagementDeviceConnect, ":deviceId", tc.DeviceID, 1),
+			).Return(nil)
+
+			router, _ := NewRouter(app, nil, useradm)
 			s := httptest.NewServer(router)
 			defer s.Close()
 
@@ -240,6 +251,7 @@ func TestManagementConnectFailures(t *testing.T) {
 		SessionID             string
 		PrepareUserSessionErr error
 		Authorization         string
+		verify                bool
 		HTTPStatus            int
 		HTTPError             error
 	}{
@@ -248,6 +260,7 @@ func TestManagementConnectFailures(t *testing.T) {
 			SessionID:     "1",
 			Authorization: "Bearer " + JWTUser,
 			HTTPStatus:    http.StatusBadRequest,
+			verify:        true,
 		},
 		{
 			Name:                  "ko, session preparation failure",
@@ -255,6 +268,7 @@ func TestManagementConnectFailures(t *testing.T) {
 			PrepareUserSessionErr: errors.New("Error"),
 			Authorization:         "Bearer " + JWTUser,
 			HTTPStatus:            http.StatusBadRequest,
+			verify:                true,
 		},
 		{
 			Name:                  "ko, device not found",
@@ -262,6 +276,7 @@ func TestManagementConnectFailures(t *testing.T) {
 			PrepareUserSessionErr: app.ErrDeviceNotFound,
 			Authorization:         "Bearer " + JWTUser,
 			HTTPStatus:            http.StatusNotFound,
+			verify:                true,
 		},
 		{
 			Name:       "ko, missing authorization header",
@@ -290,7 +305,19 @@ func TestManagementConnectFailures(t *testing.T) {
 				).Return(&model.Session{ID: tc.SessionID}, tc.PrepareUserSessionErr)
 			}
 
-			router, _ := NewRouter(app)
+			useradm := &useradm_mocks.ClientInterface{}
+			if tc.verify {
+				useradm.On("Verify",
+					mock.MatchedBy(func(_ context.Context) bool {
+						return true
+					}),
+					JWTUser,
+					mock.AnythingOfType("string"),
+					mock.AnythingOfType("string"),
+				).Return(nil)
+			}
+
+			router, _ := NewRouter(app, nil, useradm)
 			url := strings.Replace(APIURLManagementDeviceConnect, ":deviceId", tc.DeviceID, 1)
 			req, err := http.NewRequest("GET", "http://localhost"+url, nil)
 			if !assert.NoError(t, err) {
@@ -312,6 +339,8 @@ func TestManagementConnectFailures(t *testing.T) {
 				value, _ := response["error"]
 				assert.Equal(t, tc.HTTPError.Error(), value)
 			}
+
+			useradm.AssertExpectations(t)
 		})
 	}
 }

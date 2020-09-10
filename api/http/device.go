@@ -26,6 +26,7 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/mendersoftware/deviceconnect/app"
+	"github.com/mendersoftware/deviceconnect/client/deviceauth"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
@@ -55,12 +56,13 @@ var (
 
 // DeviceController container for end-points
 type DeviceController struct {
-	app app.App
+	app        app.App
+	deviceauth deviceauth.ClientInterface
 }
 
 // NewDeviceController returns a new DeviceController
-func NewDeviceController(app app.App) *DeviceController {
-	return &DeviceController{app: app}
+func NewDeviceController(app app.App, deviceauth deviceauth.ClientInterface) *DeviceController {
+	return &DeviceController{app: app, deviceauth: deviceauth}
 }
 
 // Provision responds to POST /tenants/:tenantId/devices
@@ -124,6 +126,16 @@ func (h DeviceController) Connect(c *gin.Context) {
 	if idata == nil || !idata.IsDevice {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": ErrMissingAuthentication.Error(),
+		})
+		return
+	}
+
+	token := extractTokenFromRequest(c.Request)
+	err := h.deviceauth.Verify(ctx, token, c.Request.Method, c.Request.RequestURI)
+	if err != nil {
+		code := deviceauth.GetHTTPStatusCodeFromError(err)
+		c.JSON(code, gin.H{
+			"error": err.Error(),
 		})
 		return
 	}

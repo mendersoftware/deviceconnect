@@ -32,7 +32,7 @@ type Client struct {
 	conn *nats.Conn
 }
 
-// NewClient returns a new StatusController
+// NewClient returns a new Client
 func NewClient() *Client {
 	return new(Client)
 }

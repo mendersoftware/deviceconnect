@@ -50,3 +50,17 @@ mongo_dbname: deviceconnect
 # Overwrite with environment variable: DEVICECONNECT_MONGO_PASSWORD
 
 # mongo_password: secret
+
+
+# deviceauth service URL
+# Defaults to: "http://mender-device-auth:8080"
+# Overwrite with environment variable: DEVICECONNECT_DEVICEAUTH_URL
+
+# deviceauth_url: http://mender-device-auth:8080
+
+
+# useradm service URL
+# Defaults to: "http://mender-useradm:8080"
+# Overwrite with environment variable: DEVICECONNECT_USERADM_URL
+
+# useradm_url: http://mender-useradm:8080

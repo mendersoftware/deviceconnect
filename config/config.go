@@ -59,6 +59,16 @@ const (
 	SettingDebugLog = "debug_log"
 	// SettingDebugLogDefault is the default value for the debug log enabling
 	SettingDebugLogDefault = false
+
+	// SettingDeviceAuthURL is the config key for the deviceauth url
+	SettingDeviceAuthURL = "deviceauth_url"
+	// SettingDeviceAuthURLDefault is the default value for the deviceauth url
+	SettingDeviceAuthURLDefault = "http://mender-device-auth:8080"
+
+	// SettingUseradmURL is the config key for the deviceauth url
+	SettingUseradmURL = "useradm_url"
+	// SettingUseradmURLDefault is the default value for the deviceauth url
+	SettingUseradmURLDefault = "http://mender-useradm:8080"
 )
 
 var (
@@ -71,5 +81,7 @@ var (
 		{Key: SettingDbSSL, Value: SettingDbSSLDefault},
 		{Key: SettingDbSSLSkipVerify, Value: SettingDbSSLSkipVerifyDefault},
 		{Key: SettingDebugLog, Value: SettingDebugLogDefault},
+		{Key: SettingDeviceAuthURL, Value: SettingDeviceAuthURLDefault},
+		{Key: SettingUseradmURL, Value: SettingUseradmURLDefault},
 	}
 )

@@ -27,7 +27,9 @@ import (
 
 	api "github.com/mendersoftware/deviceconnect/api/http"
 	"github.com/mendersoftware/deviceconnect/app"
+	"github.com/mendersoftware/deviceconnect/client/deviceauth"
 	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
+	"github.com/mendersoftware/deviceconnect/client/useradm"
 	dconfig "github.com/mendersoftware/deviceconnect/config"
 	"github.com/mendersoftware/deviceconnect/store"
 )
@@ -47,11 +49,18 @@ func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 	}
 	deviceConnectApp := app.NewDeviceConnectApp(dataStore, client)
 
-	var listen = conf.GetString(dconfig.SettingListen)
-	router, err := api.NewRouter(deviceConnectApp)
+	var deviceauthURL = conf.GetString(dconfig.SettingDeviceAuthURL)
+	deviceauth := deviceauth.NewClient(deviceauthURL)
+
+	var useradmURL = conf.GetString(dconfig.SettingUseradmURL)
+	useradm := useradm.NewClient(useradmURL)
+
+	router, err := api.NewRouter(deviceConnectApp, deviceauth, useradm)
 	if err != nil {
 		l.Fatal(err)
 	}
+
+	var listen = conf.GetString(dconfig.SettingListen)
 	srv := &http.Server{
 		Addr:    listen,
 		Handler: router,
