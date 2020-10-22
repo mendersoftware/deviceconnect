@@ -6,7 +6,7 @@ require (
 	github.com/gin-gonic/gin v1.6.3
 	github.com/gorilla/websocket v1.4.2
 	github.com/mendersoftware/go-lib-micro v0.0.0-20201019140359-9ab5866239d8
-	github.com/nats-io/nats-server/v2 v2.1.8 // indirect
+	github.com/nats-io/nats-server/v2 v2.1.8
 	github.com/nats-io/nats.go v1.10.0
 	github.com/pkg/errors v0.9.1
 	github.com/satori/go.uuid v1.2.0

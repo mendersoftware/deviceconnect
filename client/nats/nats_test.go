@@ -17,35 +17,60 @@ package clientnats
 import (
 	"context"
 	"flag"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/mendersoftware/go-lib-micro/config"
+	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
-
-	dconfig "github.com/mendersoftware/deviceconnect/config"
 )
 
+var natsPort int32 = 14420
+
+func setupTestServer() *server.Server {
+	port := atomic.AddInt32(&natsPort, 1)
+	opts := &server.Options{
+		Port: int(port),
+	}
+	srv, err := server.NewServer(opts)
+	if err != nil {
+		panic(err)
+	}
+	go srv.Start()
+	// Wait for a second to go routine to setup listener
+	for i := 0; srv.Addr() == nil && i < 1000; i++ {
+		time.Sleep(time.Millisecond)
+	}
+	if srv.Addr() == nil {
+		panic("failed to setup NATS test server")
+	}
+	return srv
+}
+
 func TestConnect(t *testing.T) {
+	t.Parallel()
 	flag.Parse()
 	if testing.Short() {
 		t.Skip()
 	}
+	srv := setupTestServer()
+	defer srv.Shutdown()
 
 	client := NewClient()
 	assert.NotNil(t, client)
 
 	ctx := context.Background()
-	err := client.Connect(ctx, "nats://127.0.0.1:9999")
+
+	err := client.Connect(ctx, "nats://localhost:1439")
 	assert.Error(t, err)
 
-	natsURI := config.Config.GetString(dconfig.SettingNatsURI)
-	err = client.Connect(ctx, natsURI)
+	err = client.Connect(ctx, srv.Addr().String())
 	assert.NoError(t, err)
 }
 
 func TestSubscribePublish(t *testing.T) {
+	t.Parallel()
 	flag.Parse()
 	if testing.Short() {
 		t.Skip()
@@ -54,10 +79,11 @@ func TestSubscribePublish(t *testing.T) {
 	client := NewClient()
 	assert.NotNil(t, client)
 
-	natsURI := config.Config.GetString(dconfig.SettingNatsURI)
+	srv := setupTestServer()
+	defer srv.Shutdown()
 
 	ctx := context.Background()
-	err := client.Connect(ctx, natsURI)
+	err := client.Connect(ctx, srv.Addr().String())
 	assert.NoError(t, err)
 
 	var recv *nats.Msg
