@@ -33,7 +33,7 @@ func routerLogger(logger logrus.FieldLogger) gin.HandlerFunc {
 		start := time.Now()
 		c.Next()
 		stop := time.Since(start)
-		latency := math.Ceil(float64(stop.Nanoseconds())) / 1000000.0
+		latency := math.Ceil(float64(stop.Nanoseconds()) / 1000000.0)
 		statusCode := c.Writer.Status()
 		method := c.Request.Method
 		clientIP := c.ClientIP()

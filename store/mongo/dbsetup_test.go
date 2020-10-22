@@ -26,7 +26,12 @@ var db mtesting.TestDBRunner
 func TestMain(m *testing.M) {
 	status := mtesting.WithDB(func(d mtesting.TestDBRunner) int {
 		db = d
-		defer db.Client().Disconnect(db.CTX())
+		defer func() {
+			err := db.Client().Disconnect(db.CTX())
+			if err != nil {
+				panic(err)
+			}
+		}()
 		return m.Run()
 	})
 

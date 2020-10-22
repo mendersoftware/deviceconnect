@@ -216,7 +216,7 @@ func TestManagementConnect(t *testing.T) {
 			pingReceived := false
 			ws.SetPingHandler(func(message string) error {
 				pingReceived = true
-				ws.SetReadDeadline(time.Now().Add(time.Duration(pongWait) * time.Second))
+				_ = ws.SetReadDeadline(time.Now().Add(time.Duration(pongWait) * time.Second))
 				return ws.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(writeWait))
 			})
 
@@ -335,8 +335,8 @@ func TestManagementConnectFailures(t *testing.T) {
 			if tc.HTTPError != nil {
 				var response map[string]string
 				body := w.Body.Bytes()
-				err = json.Unmarshal(body, &response)
-				value, _ := response["error"]
+				_ = json.Unmarshal(body, &response)
+				value := response["error"]
 				assert.Equal(t, tc.HTTPError.Error(), value)
 			}
 

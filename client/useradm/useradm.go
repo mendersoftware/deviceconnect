@@ -61,11 +61,6 @@ func NewClient(URI string) *Client {
 	}
 }
 
-func (c *Client) withHTTPClient(httpClient HTTPClient) *Client {
-	c.httpClient = httpClient
-	return c
-}
-
 // Verify verifies a user JWT token
 func (c *Client) Verify(ctx context.Context, token string, method string, uri string) error {
 	l := log.FromContext(ctx)
@@ -84,7 +79,9 @@ func (c *Client) Verify(ctx context.Context, token string, method string, uri st
 	if err != nil {
 		l.Error(errors.Wrap(err, "error while making the http request"))
 		return ErrInternalError
-	} else if resp.StatusCode == http.StatusOK {
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
 		return nil
 	} else if resp.StatusCode == http.StatusForbidden {
 		return ErrForbidden

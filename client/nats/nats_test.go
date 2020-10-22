@@ -88,12 +88,14 @@ func TestSubscribePublish(t *testing.T) {
 
 	var recv *nats.Msg
 	const subject = "deviceconnect-test"
-	client.Subscribe(subject, func(msg *nats.Msg) {
+	err = client.Subscribe(subject, func(msg *nats.Msg) {
 		recv = msg
 	})
+	assert.NoError(t, err)
 
 	msg := []byte("message")
-	client.Publish(subject, msg)
+	err = client.Publish(subject, msg)
+	assert.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
 		time.Sleep(100 * time.Millisecond)

@@ -1,5 +1,6 @@
 GO ?= go
 GOFMT ?= gofmt "-s"
+DOCKER ?= docker
 PACKAGES ?= $(shell $(GO) list ./...)
 GOFILES := $(shell find . -name "*.go" -type f -not -path './vendor/*')
 
@@ -24,10 +25,8 @@ fmt:
 
 .PHONY: lint
 lint:
-	for pkg in ${PACKAGES}; do \
-		golint -set_exit_status $$pkg || GOLINT_FAILED=1; \
-	done; \
-	[ -z "$$GOLINT_FAILED" ]
+	$(DOCKER) run --rm -t -v $(shell pwd):/app -w /app \
+		golangci/golangci-lint:v1.31.0 golangci-lint run -v
 
 .PHONY: vet
 vet:

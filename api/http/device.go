@@ -118,6 +118,7 @@ func (h DeviceController) Delete(c *gin.Context) {
 }
 
 // Connect starts a websocket connection with the device
+// TODO: Add proper error handling
 func (h DeviceController) Connect(c *gin.Context) {
 	ctx := c.Request.Context()
 	l := log.FromContext(ctx)
@@ -151,14 +152,28 @@ func (h DeviceController) Connect(c *gin.Context) {
 	defer ws.Close()
 
 	// handle the ping-pong connection health check
-	ws.SetReadDeadline(time.Now().Add(pongWait * time.Second))
+	err = ws.SetReadDeadline(time.Now().Add(pongWait * time.Second))
+	if err != nil {
+		l.Error(err)
+		return
+	}
 	ws.SetPongHandler(func(string) error {
-		ws.SetReadDeadline(time.Now().Add(pongWait * time.Second))
-		return nil
+		return ws.SetReadDeadline(time.Now().Add(pongWait * time.Second))
 	})
 
 	// update the device status on websocket opening
-	h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusConnected)
+	err = h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusConnected)
+	if err != nil {
+		l.Error(err)
+		return
+	}
+	defer func() {
+		// update the device status on websocket closing
+		err = h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusDisconnected)
+		if err != nil {
+			l.Error(err)
+		}
+	}()
 
 	// go-routine to read from the webservice
 	done := make(chan struct{})
@@ -210,7 +225,10 @@ func (h DeviceController) Connect(c *gin.Context) {
 			if err != nil {
 				l.Fatal(err)
 			}
-			ws.WriteMessage(websocket.BinaryMessage, data)
+			err = ws.WriteMessage(websocket.BinaryMessage, data)
+			if err != nil {
+				l.Fatal(err)
+			}
 		case <-done:
 			stop = true
 			break
@@ -224,7 +242,4 @@ func (h DeviceController) Connect(c *gin.Context) {
 			break
 		}
 	}
-
-	// update the device status on websocket closing
-	h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusDisconnected)
 }

@@ -28,7 +28,8 @@ func (m *migration1_0_0) Up(from migrate.Version) error {
 
 	// unique index devices.websocket_id
 	indexOptions := mopts.Index()
-	indexOptions.SetBackground(false)
+	// staticcheck will complain on (mongo 4.2) deprecation warning in docs
+	indexOptions.SetBackground(false) //nolint:staticcheck
 	indexOptions.SetName("user_id_device_id")
 	indexOptions.SetUnique(true)
 	userDeviceIDIndex := mongo.IndexModel{

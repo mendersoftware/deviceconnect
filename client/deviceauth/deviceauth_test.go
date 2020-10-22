@@ -100,7 +100,7 @@ func TestVerify(t *testing.T) {
 			).Return(tc.httpResponse, tc.httpError)
 
 			client := NewClient(testURI)
-			client.withHTTPClient(mockHTTPClient)
+			client.httpClient = mockHTTPClient
 
 			ctx := context.Background()
 			res := client.Verify(ctx, tc.token, tc.method, tc.uri)
