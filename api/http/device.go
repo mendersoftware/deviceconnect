@@ -118,7 +118,6 @@ func (h DeviceController) Delete(c *gin.Context) {
 }
 
 // Connect starts a websocket connection with the device
-// TODO: Add proper error handling
 func (h DeviceController) Connect(c *gin.Context) {
 	ctx := c.Request.Context()
 	l := log.FromContext(ctx)
@@ -131,24 +130,16 @@ func (h DeviceController) Connect(c *gin.Context) {
 		return
 	}
 
-	token := extractTokenFromRequest(c.Request)
-	err := h.deviceauth.Verify(ctx, token, c.Request.Method, c.Request.RequestURI)
-	if err != nil {
-		code := deviceauth.GetHTTPStatusCodeFromError(err)
-		c.JSON(code, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
 	// upgrade get request to websocket protocol
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
 		l.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal error",
+		})
 		return
 	}
-
 	defer ws.Close()
 
 	// handle the ping-pong connection health check

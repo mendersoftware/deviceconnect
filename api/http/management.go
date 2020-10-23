@@ -90,16 +90,6 @@ func (h ManagementController) Connect(c *gin.Context) {
 		return
 	}
 
-	token := extractTokenFromRequest(c.Request)
-	err := h.useradm.Verify(ctx, token, c.Request.Method, c.Request.RequestURI)
-	if err != nil {
-		code := useradm.GetHTTPStatusCodeFromError(err)
-		c.JSON(code, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
 	tenantID := idata.Tenant
 	userID := idata.Subject
 	deviceID := c.Param("deviceId")
@@ -123,6 +113,9 @@ func (h ManagementController) Connect(c *gin.Context) {
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
 		l.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal error",
+		})
 		return
 	}
 
