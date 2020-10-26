@@ -26,7 +26,6 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/mendersoftware/deviceconnect/app"
-	"github.com/mendersoftware/deviceconnect/client/deviceauth"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
@@ -56,13 +55,12 @@ var (
 
 // DeviceController container for end-points
 type DeviceController struct {
-	app        app.App
-	deviceauth deviceauth.ClientInterface
+	app app.App
 }
 
 // NewDeviceController returns a new DeviceController
-func NewDeviceController(app app.App, deviceauth deviceauth.ClientInterface) *DeviceController {
-	return &DeviceController{app: app, deviceauth: deviceauth}
+func NewDeviceController(app app.App) *DeviceController {
+	return &DeviceController{app: app}
 }
 
 // Provision responds to POST /tenants/:tenantId/devices

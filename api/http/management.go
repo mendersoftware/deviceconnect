@@ -25,7 +25,6 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/mendersoftware/deviceconnect/app"
-	"github.com/mendersoftware/deviceconnect/client/useradm"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
@@ -38,13 +37,12 @@ var (
 
 // ManagementController container for end-points
 type ManagementController struct {
-	app     app.App
-	useradm useradm.ClientInterface
+	app app.App
 }
 
 // NewManagementController returns a new ManagementController
-func NewManagementController(app app.App, useradm useradm.ClientInterface) *ManagementController {
-	return &ManagementController{app: app, useradm: useradm}
+func NewManagementController(app app.App) *ManagementController {
+	return &ManagementController{app: app}
 }
 
 // GetDevice returns a device
