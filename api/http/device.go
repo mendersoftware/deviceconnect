@@ -50,7 +50,9 @@ var upgrader = websocket.Upgrader{
 
 // HTTP errors
 var (
-	ErrMissingAuthentication = errors.New("missing or non-device identity in the authorization headers")
+	ErrMissingAuthentication = errors.New(
+		"missing or non-device identity in the authorization headers",
+	)
 )
 
 // DeviceController container for end-points
@@ -151,14 +153,20 @@ func (h DeviceController) Connect(c *gin.Context) {
 	})
 
 	// update the device status on websocket opening
-	err = h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusConnected)
+	err = h.app.UpdateDeviceStatus(
+		ctx, idata.Tenant,
+		idata.Subject, model.DeviceStatusConnected,
+	)
 	if err != nil {
 		l.Error(err)
 		return
 	}
 	defer func() {
 		// update the device status on websocket closing
-		err = h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusDisconnected)
+		err = h.app.UpdateDeviceStatus(
+			ctx, idata.Tenant,
+			idata.Subject, model.DeviceStatusDisconnected,
+		)
 		if err != nil {
 			l.Error(err)
 		}
@@ -167,24 +175,23 @@ func (h DeviceController) Connect(c *gin.Context) {
 	// go-routine to read from the webservice
 	done := make(chan struct{})
 	go func() {
-		for {
-			_, data, err := ws.ReadMessage()
+		var (
+			data []byte
+			err  error
+		)
+		for err == nil {
+			_, data, err = ws.ReadMessage()
 			if err != nil {
-				close(done)
-				return
+				break
 			}
 			m := &model.Message{}
 			err = msgpack.Unmarshal(data, m)
 			if err != nil {
-				close(done)
-				return
+				break
 			}
 			err = h.app.PublishMessageFromDevice(ctx, idata.Tenant, idata.Subject, m)
-			if err != nil {
-				close(done)
-				return
-			}
 		}
+		close(done)
 	}()
 
 	// subscribe to messages from the device
@@ -196,7 +203,11 @@ func (h DeviceController) Connect(c *gin.Context) {
 	// periodic ping
 	sendPing := func() bool {
 		pongWaitString := strconv.Itoa(pongWait)
-		if err := ws.WriteControl(websocket.PingMessage, []byte(pongWaitString), time.Now().Add(writeWait*time.Second)); err != nil {
+		if err := ws.WriteControl(
+			websocket.PingMessage,
+			[]byte(pongWaitString),
+			time.Now().Add(writeWait*time.Second),
+		); err != nil {
 			return false
 		}
 		return true

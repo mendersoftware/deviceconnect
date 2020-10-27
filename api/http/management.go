@@ -32,7 +32,9 @@ import (
 
 // HTTP errors
 var (
-	ErrMissingUserAuthentication = errors.New("missing or non-useer identity in the authorization headers")
+	ErrMissingUserAuthentication = errors.New(
+		"missing or non-user identity in the authorization headers",
+	)
 )
 
 // ManagementController container for end-points
@@ -136,6 +138,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 	)
 	if err != nil {
 		l.Error(err)
+		return
 	}
 	defer func() {
 		// update the device status on websocket closing
@@ -151,25 +154,26 @@ func (h ManagementController) Connect(c *gin.Context) {
 	// go-routine to read from the webservice
 	done := make(chan struct{})
 	go func() {
-		for {
-			_, data, err := ws.ReadMessage()
+		var (
+			err  error
+			data []byte
+		)
+		for err == nil {
+			_, data, err = ws.ReadMessage()
 			if err != nil {
-				close(done)
-				return
+				break
 			}
 			m := &model.Message{}
 			err = msgpack.Unmarshal(data, m)
 			if err != nil {
-				close(done)
-				return
+				break
 			}
 
-			err = h.app.PublishMessageFromManagement(ctx, idata.Tenant, session.DeviceID, m)
-			if err != nil {
-				close(done)
-				return
-			}
+			err = h.app.PublishMessageFromManagement(
+				ctx, idata.Tenant, session.DeviceID, m,
+			)
 		}
+		close(done)
 	}()
 
 	// subscribe to messages from the device
@@ -178,42 +182,41 @@ func (h ManagementController) Connect(c *gin.Context) {
 		return
 	}
 
-	// periodic ping
-	sendPing := func() bool {
-		pongWaitString := strconv.Itoa(pongWait)
-		if err := ws.WriteControl(websocket.PingMessage, []byte(pongWaitString), time.Now().Add(writeWait*time.Second)); err != nil {
-			return false
-		}
-		return true
-	}
-	sendPing()
-
 	pingPeriod := (pongWait * time.Second * 9) / 10
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
+Loop:
 	for {
-		stop := false
 		select {
 		case message := <-messages:
 			data, err := msgpack.Marshal(message)
 			if err != nil {
-				l.Fatal(err)
+				l.Error(err)
+				break Loop
 			}
 			err = ws.WriteMessage(websocket.BinaryMessage, data)
 			if err != nil {
-				l.Fatal(err)
+				l.Error(err)
+				break Loop
 			}
 		case <-done:
-			stop = true
-			break
+			break Loop
 		case <-ticker.C:
-			if !sendPing() {
-				stop = false
-				break
+			if !websocketPing(ws) {
+				break Loop
 			}
 		}
-		if stop {
-			break
-		}
 	}
+}
+
+func websocketPing(conn *websocket.Conn) bool {
+	pongWaitString := strconv.Itoa(pongWait)
+	if err := conn.WriteControl(
+		websocket.PingMessage,
+		[]byte(pongWaitString),
+		time.Now().Add(writeWait*time.Second),
+	); err != nil {
+		return false
+	}
+	return true
 }

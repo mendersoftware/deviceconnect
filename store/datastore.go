@@ -27,8 +27,8 @@ type DataStore interface {
 	ProvisionDevice(ctx context.Context, tenantID string, deviceID string) error
 	DeleteDevice(ctx context.Context, tenantID, deviceID string) error
 	GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error)
-	UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error
-	UpsertSession(ctx context.Context, tenantID, userID, deviceID string) (*model.Session, error)
+	UpdateDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error
+	UpsertSession(ctx context.Context, tenantID, userID, devID string) (*model.Session, error)
 	GetSession(ctx context.Context, tenantID, sessionID string) (*model.Session, error)
 	UpdateSessionStatus(ctx context.Context, tenantID, sessionID, status string) error
 }

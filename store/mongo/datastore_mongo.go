@@ -156,7 +156,7 @@ func (db *DataStoreMongo) ProvisionTenant(ctx context.Context, tenantID string) 
 }
 
 // ProvisionDevice provisions a new device
-func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID string, deviceID string) error {
+func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID, deviceID string) error {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
@@ -183,7 +183,11 @@ func (db *DataStoreMongo) DeleteDevice(ctx context.Context, tenantID, deviceID s
 }
 
 // GetDevice returns a device
-func (db *DataStoreMongo) GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error) {
+func (db *DataStoreMongo) GetDevice(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+) (*model.Device, error) {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
@@ -201,7 +205,12 @@ func (db *DataStoreMongo) GetDevice(ctx context.Context, tenantID, deviceID stri
 }
 
 // UpdateDeviceStatus updates a device status
-func (db *DataStoreMongo) UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error {
+func (db *DataStoreMongo) UpdateDeviceStatus(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+	status string,
+) error {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
@@ -218,7 +227,12 @@ func (db *DataStoreMongo) UpdateDeviceStatus(ctx context.Context, tenantID strin
 }
 
 // UpsertSession upserts a user session connecting to a device
-func (db *DataStoreMongo) UpsertSession(ctx context.Context, tenantID, userID, deviceID string) (*model.Session, error) {
+func (db *DataStoreMongo) UpsertSession(
+	ctx context.Context,
+	tenantID string,
+	userID string,
+	deviceID string,
+) (*model.Session, error) {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
 
@@ -252,7 +266,12 @@ func (db *DataStoreMongo) UpsertSession(ctx context.Context, tenantID, userID, d
 }
 
 // UpdateSessionStatus updates a session status
-func (db *DataStoreMongo) UpdateSessionStatus(ctx context.Context, tenantID, sessionID, status string) error {
+func (db *DataStoreMongo) UpdateSessionStatus(
+	ctx context.Context,
+	tenantID string,
+	sessionID string,
+	status string,
+) error {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
 
@@ -269,7 +288,11 @@ func (db *DataStoreMongo) UpdateSessionStatus(ctx context.Context, tenantID, ses
 }
 
 // GetSession returns a device
-func (db *DataStoreMongo) GetSession(ctx context.Context, tenantID, sessionID string) (*model.Session, error) {
+func (db *DataStoreMongo) GetSession(
+	ctx context.Context,
+	tenantID string,
+	sessionID string,
+) (*model.Session, error) {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
 
