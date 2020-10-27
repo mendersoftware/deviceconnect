@@ -5,7 +5,7 @@ PACKAGES ?= $(shell $(GO) list ./...)
 GOFILES := $(shell find . -name "*.go" -type f -not -path './vendor/*')
 
 .PHONY: all
-all: fmt lint vet test
+all: fmt lint test
 
 .PHONY: build
 build:
@@ -25,12 +25,7 @@ fmt:
 
 .PHONY: lint
 lint:
-	$(DOCKER) run --rm -t -v $(shell pwd):/app -w /app \
-		golangci/golangci-lint:v1.31.0 golangci-lint run -v
-
-.PHONY: vet
-vet:
-	$(GO) vet $(PACKAGES)
+	golangci-lint run -v
 
 .PHONY: clean
 clean:
