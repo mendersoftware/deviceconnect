@@ -15,11 +15,15 @@
 package http
 
 import (
-	"context"
+	"net/http"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/mendersoftware/deviceconnect/app"
-	"github.com/mendersoftware/go-lib-micro/log"
+	"github.com/mendersoftware/go-lib-micro/accesslog"
+	"github.com/mendersoftware/go-lib-micro/identity"
+	"github.com/mendersoftware/go-lib-micro/requestid"
 )
 
 // API URL used by the HTTP router
@@ -47,13 +51,41 @@ func NewRouter(deviceConnectApp app.App) (*gin.Engine, error) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DisableConsoleColor()
 
-	ctx := context.Background()
-	l := log.FromContext(ctx)
-
 	router := gin.New()
-	router.Use(IdentityMiddleware)
-	router.Use(routerLogger(l))
+	router.Use(accesslog.Middleware())
 	router.Use(gin.Recovery())
+	router.Use(identity.Middleware(
+		identity.NewMiddlewareOptions().
+			SetPathRegex(`^/api/(devices|management)/v[0-9]/`),
+	))
+	router.Use(requestid.Middleware())
+	router.Use(cors.New(cors.Config{
+		AllowAllOrigins:  true,
+		AllowCredentials: true,
+		AllowHeaders: []string{
+			"Accept",
+			"Allow",
+			"Content-Type",
+			"Origin",
+			"Authorization",
+			"Accept-Encoding",
+			"Access-Control-Request-Headers",
+			"Header-Access-Control-Request",
+		},
+		AllowMethods: []string{
+			http.MethodGet,
+			http.MethodPost,
+			http.MethodPut,
+			http.MethodDelete,
+			http.MethodOptions,
+		},
+		AllowWebSockets: true,
+		ExposeHeaders: []string{
+			"Location",
+			"Link",
+		},
+		MaxAge: time.Hour * 12,
+	}))
 
 	status := NewStatusController(deviceConnectApp)
 	router.GET(APIURLInternalAlive, status.Alive)

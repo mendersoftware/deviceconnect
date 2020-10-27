@@ -182,6 +182,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 		return
 	}
 
+	websocketPing(ws)
 	pingPeriod := (pongWait * time.Second * 9) / 10
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()

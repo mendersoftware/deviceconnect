@@ -68,7 +68,7 @@ func TestManagementGetDevice(t *testing.T) {
 			Name:     "ko, missing auth",
 			DeviceID: "1234567890",
 
-			HTTPStatus: 400,
+			HTTPStatus: 401,
 		},
 		{
 			Name:          "ko, not found",
@@ -265,14 +265,14 @@ func TestManagementConnectFailures(t *testing.T) {
 		},
 		{
 			Name:       "ko, missing authorization header",
-			HTTPStatus: http.StatusBadRequest,
-			HTTPError:  ErrMissingUserAuthentication,
+			HTTPStatus: http.StatusUnauthorized,
+			HTTPError:  errors.New("Authorization not present in header"),
 		},
 		{
 			Name:          "ko, malformed authorization header",
 			Authorization: "malformed",
-			HTTPStatus:    http.StatusBadRequest,
-			HTTPError:     ErrMissingUserAuthentication,
+			HTTPStatus:    http.StatusUnauthorized,
+			HTTPError:     errors.New("malformed Authorization header"),
 		},
 	}
 

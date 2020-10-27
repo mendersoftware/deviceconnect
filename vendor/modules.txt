@@ -25,6 +25,9 @@ github.com/cpuguy83/go-md2man/v2/md2man
 github.com/davecgh/go-spew/spew
 # github.com/fsnotify/fsnotify v1.4.7
 github.com/fsnotify/fsnotify
+# github.com/gin-contrib/cors v1.3.1
+## explicit
+github.com/gin-contrib/cors
 # github.com/gin-contrib/sse v0.1.0
 github.com/gin-contrib/sse
 # github.com/gin-gonic/gin v1.6.3
@@ -47,6 +50,8 @@ github.com/go-stack/stack
 github.com/golang/protobuf/proto
 # github.com/golang/snappy v0.0.1
 github.com/golang/snappy
+# github.com/google/uuid v1.1.2
+github.com/google/uuid
 # github.com/gorilla/websocket v1.4.2
 ## explicit
 github.com/gorilla/websocket
@@ -77,14 +82,18 @@ github.com/leodido/go-urn
 github.com/magiconair/properties
 # github.com/mattn/go-isatty v0.0.12
 github.com/mattn/go-isatty
-# github.com/mendersoftware/go-lib-micro v0.0.0-20201019140359-9ab5866239d8
+# github.com/mendersoftware/go-lib-micro v0.0.0-20201026100742-d6284fa5c72e
 ## explicit
+github.com/mendersoftware/go-lib-micro/accesslog
 github.com/mendersoftware/go-lib-micro/config
 github.com/mendersoftware/go-lib-micro/identity
 github.com/mendersoftware/go-lib-micro/log
 github.com/mendersoftware/go-lib-micro/mongo/dbtest
 github.com/mendersoftware/go-lib-micro/mongo/migrate
 github.com/mendersoftware/go-lib-micro/mongo/testing
+github.com/mendersoftware/go-lib-micro/requestid
+github.com/mendersoftware/go-lib-micro/requestlog
+github.com/mendersoftware/go-lib-micro/rest.utils
 github.com/mendersoftware/go-lib-micro/store
 # github.com/mitchellh/mapstructure v1.1.2
 github.com/mitchellh/mapstructure

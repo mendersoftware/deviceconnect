@@ -132,14 +132,14 @@ func TestDeviceConnectFailures(t *testing.T) {
 		},
 		{
 			Name:       "ko, missing authorization header",
-			HTTPStatus: http.StatusBadRequest,
-			HTTPError:  ErrMissingAuthentication,
+			HTTPStatus: http.StatusUnauthorized,
+			HTTPError:  errors.New("Authorization not present in header"),
 		},
 		{
 			Name:          "ko, malformed authorization header",
 			Authorization: "malformed",
-			HTTPStatus:    http.StatusBadRequest,
-			HTTPError:     ErrMissingAuthentication,
+			HTTPStatus:    http.StatusUnauthorized,
+			HTTPError:     errors.New("malformed Authorization header"),
 		},
 	}
 
