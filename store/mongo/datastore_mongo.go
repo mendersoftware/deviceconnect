@@ -69,12 +69,6 @@ func doMigrations(ctx context.Context, client *mongo.Client,
 	return nil
 }
 
-func disconnectClient(parentCtx context.Context, client *mongo.Client) {
-	ctx, cancel := context.WithTimeout(parentCtx, 1*time.Second)
-	defer cancel()
-	client.Disconnect(ctx)
-}
-
 // NewClient returns a mongo client
 func NewClient(ctx context.Context, c config.Reader) (*mongo.Client, error) {
 
@@ -112,8 +106,11 @@ func NewClient(ctx context.Context, c config.Reader) (*mongo.Client, error) {
 	clientOptions.SetWriteConcern(wc)
 
 	// Set 10s timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
 	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to connect to mongo server")
@@ -159,7 +156,7 @@ func (db *DataStoreMongo) ProvisionTenant(ctx context.Context, tenantID string) 
 }
 
 // ProvisionDevice provisions a new device
-func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID string, deviceID string) error {
+func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID, deviceID string) error {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
@@ -186,7 +183,11 @@ func (db *DataStoreMongo) DeleteDevice(ctx context.Context, tenantID, deviceID s
 }
 
 // GetDevice returns a device
-func (db *DataStoreMongo) GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error) {
+func (db *DataStoreMongo) GetDevice(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+) (*model.Device, error) {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
@@ -204,7 +205,12 @@ func (db *DataStoreMongo) GetDevice(ctx context.Context, tenantID, deviceID stri
 }
 
 // UpdateDeviceStatus updates a device status
-func (db *DataStoreMongo) UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error {
+func (db *DataStoreMongo) UpdateDeviceStatus(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+	status string,
+) error {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
@@ -221,7 +227,12 @@ func (db *DataStoreMongo) UpdateDeviceStatus(ctx context.Context, tenantID strin
 }
 
 // UpsertSession upserts a user session connecting to a device
-func (db *DataStoreMongo) UpsertSession(ctx context.Context, tenantID, userID, deviceID string) (*model.Session, error) {
+func (db *DataStoreMongo) UpsertSession(
+	ctx context.Context,
+	tenantID string,
+	userID string,
+	deviceID string,
+) (*model.Session, error) {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
 
@@ -255,7 +266,12 @@ func (db *DataStoreMongo) UpsertSession(ctx context.Context, tenantID, userID, d
 }
 
 // UpdateSessionStatus updates a session status
-func (db *DataStoreMongo) UpdateSessionStatus(ctx context.Context, tenantID, sessionID, status string) error {
+func (db *DataStoreMongo) UpdateSessionStatus(
+	ctx context.Context,
+	tenantID string,
+	sessionID string,
+	status string,
+) error {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
 
@@ -272,7 +288,11 @@ func (db *DataStoreMongo) UpdateSessionStatus(ctx context.Context, tenantID, ses
 }
 
 // GetSession returns a device
-func (db *DataStoreMongo) GetSession(ctx context.Context, tenantID, sessionID string) (*model.Session, error) {
+func (db *DataStoreMongo) GetSession(
+	ctx context.Context,
+	tenantID string,
+	sessionID string,
+) (*model.Session, error) {
 	dbname := store.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
 
@@ -290,12 +310,15 @@ func (db *DataStoreMongo) GetSession(ctx context.Context, tenantID, sessionID st
 }
 
 // Close disconnects the client
-func (db *DataStoreMongo) Close() {
-	ctx := context.Background()
-	disconnectClient(ctx, db.client)
+func (db *DataStoreMongo) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	err := db.client.Disconnect(ctx)
+	return err
 }
 
-func (db *DataStoreMongo) dropDatabase() error {
+//nolint:unused
+func (db *DataStoreMongo) DropDatabase() error {
 	ctx := context.Background()
 	err := db.client.Database(db.dbName).Drop(ctx)
 	return err

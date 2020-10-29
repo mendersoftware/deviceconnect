@@ -20,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+//nolint:lll      // skip line width restrictions here
 const template = `<!doctype html>
 <html>
 	<head>

@@ -35,6 +35,7 @@ var (
 )
 
 // App interface describes app objects
+//nolint:lll
 type App interface {
 	HealthCheck(ctx context.Context) error
 	ProvisionTenant(ctx context.Context, tenant *model.Tenant) error
@@ -72,12 +73,20 @@ func (a *DeviceConnectApp) ProvisionTenant(ctx context.Context, tenant *model.Te
 }
 
 // ProvisionDevice provisions a new tenant
-func (a *DeviceConnectApp) ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error {
+func (a *DeviceConnectApp) ProvisionDevice(
+	ctx context.Context,
+	tenantID string,
+	device *model.Device,
+) error {
 	return a.store.ProvisionDevice(ctx, tenantID, device.ID)
 }
 
 // GetDevice returns a device
-func (a *DeviceConnectApp) GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error) {
+func (a *DeviceConnectApp) GetDevice(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+) (*model.Device, error) {
 	device, err := a.store.GetDevice(ctx, tenantID, deviceID)
 	if err != nil {
 		return nil, err
@@ -93,12 +102,18 @@ func (a *DeviceConnectApp) DeleteDevice(ctx context.Context, tenantID, deviceID 
 }
 
 // UpdateDeviceStatus provisions a new tenant
-func (a *DeviceConnectApp) UpdateDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error {
+func (a *DeviceConnectApp) UpdateDeviceStatus(
+	ctx context.Context,
+	tenantID, deviceID, status string,
+) error {
 	return a.store.UpdateDeviceStatus(ctx, tenantID, deviceID, status)
 }
 
 // PrepareUserSession prepares a new user session
-func (a *DeviceConnectApp) PrepareUserSession(ctx context.Context, tenantID string, userID string, deviceID string) (*model.Session, error) {
+func (a *DeviceConnectApp) PrepareUserSession(
+	ctx context.Context,
+	tenantID, userID, deviceID string,
+) (*model.Session, error) {
 	device, err := a.store.GetDevice(ctx, tenantID, deviceID)
 	if err != nil {
 		return nil, err
@@ -116,23 +131,42 @@ func (a *DeviceConnectApp) PrepareUserSession(ctx context.Context, tenantID stri
 }
 
 // UpdateUserSessionStatus updates a user session
-func (a *DeviceConnectApp) UpdateUserSessionStatus(ctx context.Context, tenantID, sessionID string, status string) error {
+func (a *DeviceConnectApp) UpdateUserSessionStatus(
+	ctx context.Context,
+	tenantID string,
+	sessionID string,
+	status string,
+) error {
 	return a.store.UpdateSessionStatus(ctx, tenantID, sessionID, status)
 }
 
 // PublishMessageFromDevice publishes a message from the device to the message bus
-func (a *DeviceConnectApp) PublishMessageFromDevice(ctx context.Context, tenantID string, deviceID string, message *model.Message) error {
+func (a *DeviceConnectApp) PublishMessageFromDevice(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+	message *model.Message,
+) error {
 	subject := getMessageSubject(tenantID, deviceID, "device")
 	return a.publishMessage(ctx, subject, message)
 }
 
 // PublishMessageFromManagement publishes a message from the management channel to the message bus
-func (a *DeviceConnectApp) PublishMessageFromManagement(ctx context.Context, tenantID string, deviceID string, message *model.Message) error {
+func (a *DeviceConnectApp) PublishMessageFromManagement(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+	message *model.Message,
+) error {
 	subject := getMessageSubject(tenantID, deviceID, "management")
 	return a.publishMessage(ctx, subject, message)
 }
 
-func (a *DeviceConnectApp) publishMessage(ctx context.Context, subject string, message *model.Message) error {
+func (a *DeviceConnectApp) publishMessage(
+	ctx context.Context,
+	subject string,
+	message *model.Message,
+) error {
 	data, err := msgpack.Marshal(message)
 	if err == nil {
 		err = a.client.Publish(subject, data)
@@ -141,18 +175,30 @@ func (a *DeviceConnectApp) publishMessage(ctx context.Context, subject string, m
 }
 
 // SubscribeMessagesFromDevice subscribes to messagese from the device on the message bus
-func (a *DeviceConnectApp) SubscribeMessagesFromDevice(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error) {
+func (a *DeviceConnectApp) SubscribeMessagesFromDevice(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+) (<-chan *model.Message, error) {
 	subject := getMessageSubject(tenantID, deviceID, "device")
 	return a.subscribeMessages(ctx, subject)
 }
 
-// SubscribeMessagesFromManagement  subscribes to messagese from the management channel on the message bus
-func (a *DeviceConnectApp) SubscribeMessagesFromManagement(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error) {
+// SubscribeMessagesFromManagement  subscribes to messagese from the
+// management channel on the message bus
+func (a *DeviceConnectApp) SubscribeMessagesFromManagement(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+) (<-chan *model.Message, error) {
 	subject := getMessageSubject(tenantID, deviceID, "management")
 	return a.subscribeMessages(ctx, subject)
 }
 
-func (a *DeviceConnectApp) subscribeMessages(ctx context.Context, subject string) (<-chan *model.Message, error) {
+func (a *DeviceConnectApp) subscribeMessages(
+	ctx context.Context,
+	subject string,
+) (<-chan *model.Message, error) {
 	out := make(chan *model.Message, channelSize)
 	if err := a.client.Subscribe(subject, func(msg *nats.Msg) {
 		message := &model.Message{}

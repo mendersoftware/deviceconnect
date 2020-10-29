@@ -26,7 +26,6 @@ import (
 
 	"github.com/gorilla/websocket"
 	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
-	deviceauth_mocks "github.com/mendersoftware/deviceconnect/client/deviceauth/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -76,17 +75,7 @@ func TestDeviceConnect(t *testing.T) {
 				model.DeviceStatusDisconnected,
 			).Return(nil)
 
-			deviceauth := &deviceauth_mocks.ClientInterface{}
-			deviceauth.On("Verify",
-				mock.MatchedBy(func(_ context.Context) bool {
-					return true
-				}),
-				JWT,
-				http.MethodGet,
-				APIURLDevicesConnect,
-			).Return(nil)
-
-			router, _ := NewRouter(app, deviceauth, nil)
+			router, _ := NewRouter(app)
 			s := httptest.NewServer(router)
 			defer s.Close()
 
@@ -101,7 +90,7 @@ func TestDeviceConnect(t *testing.T) {
 			pingReceived := false
 			ws.SetPingHandler(func(message string) error {
 				pingReceived = true
-				ws.SetReadDeadline(time.Now().Add(time.Duration(pongWait) * time.Second))
+				_ = ws.SetReadDeadline(time.Now().Add(time.Duration(pongWait) * time.Second))
 				return ws.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(writeWait))
 			})
 
@@ -125,7 +114,6 @@ func TestDeviceConnect(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 
 			app.AssertExpectations(t)
-			deviceauth.AssertExpectations(t)
 		})
 	}
 }
@@ -134,7 +122,6 @@ func TestDeviceConnectFailures(t *testing.T) {
 	testCases := []struct {
 		Name          string
 		Authorization string
-		verify        bool
 		HTTPStatus    int
 		HTTPError     error
 	}{
@@ -142,37 +129,24 @@ func TestDeviceConnectFailures(t *testing.T) {
 			Name:          "ko, unable to upgrade",
 			Authorization: "Bearer " + JWT,
 			HTTPStatus:    http.StatusBadRequest,
-			verify:        true,
 		},
 		{
 			Name:       "ko, missing authorization header",
-			HTTPStatus: http.StatusBadRequest,
-			HTTPError:  ErrMissingAuthentication,
+			HTTPStatus: http.StatusUnauthorized,
+			HTTPError:  errors.New("Authorization not present in header"),
 		},
 		{
 			Name:          "ko, malformed authorization header",
 			Authorization: "malformed",
-			HTTPStatus:    http.StatusBadRequest,
-			HTTPError:     ErrMissingAuthentication,
+			HTTPStatus:    http.StatusUnauthorized,
+			HTTPError:     errors.New("malformed Authorization header"),
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 
-			deviceauth := &deviceauth_mocks.ClientInterface{}
-			if tc.verify {
-				deviceauth.On("Verify",
-					mock.MatchedBy(func(_ context.Context) bool {
-						return true
-					}),
-					JWT,
-					mock.AnythingOfType("string"),
-					mock.AnythingOfType("string"),
-				).Return(nil)
-			}
-
-			router, _ := NewRouter(nil, deviceauth, nil)
+			router, _ := NewRouter(nil)
 			req, err := http.NewRequest("GET", "http://localhost"+APIURLDevicesConnect, nil)
 			if !assert.NoError(t, err) {
 				t.FailNow()
@@ -189,12 +163,10 @@ func TestDeviceConnectFailures(t *testing.T) {
 			if tc.HTTPError != nil {
 				var response map[string]string
 				body := w.Body.Bytes()
-				err = json.Unmarshal(body, &response)
-				value, _ := response["error"]
+				_ = json.Unmarshal(body, &response)
+				value := response["error"]
 				assert.Equal(t, tc.HTTPError.Error(), value)
 			}
-
-			deviceauth.AssertExpectations(t)
 		})
 	}
 }
@@ -256,7 +228,7 @@ func TestProvisionDevice(t *testing.T) {
 				).Return(tc.ProvisionDeviceErr)
 			}
 
-			router, _ := NewRouter(deviceConnectApp, nil, nil)
+			router, _ := NewRouter(deviceConnectApp)
 
 			url := strings.Replace(APIURLInternalDevices, ":tenantId", tc.TenantID, 1)
 			req, err := http.NewRequest("POST", url, strings.NewReader(tc.Device))
@@ -315,7 +287,7 @@ func TestDeleteDevice(t *testing.T) {
 				).Return(tc.ProvisionDeviceErr)
 			}
 
-			router, _ := NewRouter(deviceConnectApp, nil, nil)
+			router, _ := NewRouter(deviceConnectApp)
 
 			url := strings.Replace(APIURLInternalDevicesID, ":tenantId", tc.TenantID, 1)
 			url = strings.Replace(url, ":deviceId", tc.DeviceID, 1)

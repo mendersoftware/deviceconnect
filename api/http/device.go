@@ -26,7 +26,6 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/mendersoftware/deviceconnect/app"
-	"github.com/mendersoftware/deviceconnect/client/deviceauth"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
@@ -51,18 +50,19 @@ var upgrader = websocket.Upgrader{
 
 // HTTP errors
 var (
-	ErrMissingAuthentication = errors.New("missing or non-device identity in the authorization headers")
+	ErrMissingAuthentication = errors.New(
+		"missing or non-device identity in the authorization headers",
+	)
 )
 
 // DeviceController container for end-points
 type DeviceController struct {
-	app        app.App
-	deviceauth deviceauth.ClientInterface
+	app app.App
 }
 
 // NewDeviceController returns a new DeviceController
-func NewDeviceController(app app.App, deviceauth deviceauth.ClientInterface) *DeviceController {
-	return &DeviceController{app: app, deviceauth: deviceauth}
+func NewDeviceController(app app.App) *DeviceController {
+	return &DeviceController{app: app}
 }
 
 // Provision responds to POST /tenants/:tenantId/devices
@@ -130,57 +130,68 @@ func (h DeviceController) Connect(c *gin.Context) {
 		return
 	}
 
-	token := extractTokenFromRequest(c.Request)
-	err := h.deviceauth.Verify(ctx, token, c.Request.Method, c.Request.RequestURI)
-	if err != nil {
-		code := deviceauth.GetHTTPStatusCodeFromError(err)
-		c.JSON(code, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
 	// upgrade get request to websocket protocol
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
 		l.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal error",
+		})
 		return
 	}
-
 	defer ws.Close()
 
 	// handle the ping-pong connection health check
-	ws.SetReadDeadline(time.Now().Add(pongWait * time.Second))
+	err = ws.SetReadDeadline(time.Now().Add(pongWait * time.Second))
+	if err != nil {
+		l.Error(err)
+		return
+	}
 	ws.SetPongHandler(func(string) error {
-		ws.SetReadDeadline(time.Now().Add(pongWait * time.Second))
-		return nil
+		return ws.SetReadDeadline(time.Now().Add(pongWait * time.Second))
 	})
 
 	// update the device status on websocket opening
-	h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusConnected)
+	err = h.app.UpdateDeviceStatus(
+		ctx, idata.Tenant,
+		idata.Subject, model.DeviceStatusConnected,
+	)
+	if err != nil {
+		l.Error(err)
+		return
+	}
+	defer func() {
+		// update the device status on websocket closing
+		err = h.app.UpdateDeviceStatus(
+			ctx, idata.Tenant,
+			idata.Subject, model.DeviceStatusDisconnected,
+		)
+		if err != nil {
+			l.Error(err)
+		}
+	}()
 
 	// go-routine to read from the webservice
 	done := make(chan struct{})
 	go func() {
-		for {
-			_, data, err := ws.ReadMessage()
+		var (
+			data []byte
+			err  error
+		)
+		for err == nil {
+			_, data, err = ws.ReadMessage()
 			if err != nil {
-				close(done)
-				return
+				break
 			}
 			m := &model.Message{}
 			err = msgpack.Unmarshal(data, m)
 			if err != nil {
-				close(done)
-				return
+				break
 			}
 			err = h.app.PublishMessageFromDevice(ctx, idata.Tenant, idata.Subject, m)
-			if err != nil {
-				close(done)
-				return
-			}
 		}
+		close(done)
 	}()
 
 	// subscribe to messages from the device
@@ -192,7 +203,11 @@ func (h DeviceController) Connect(c *gin.Context) {
 	// periodic ping
 	sendPing := func() bool {
 		pongWaitString := strconv.Itoa(pongWait)
-		if err := ws.WriteControl(websocket.PingMessage, []byte(pongWaitString), time.Now().Add(writeWait*time.Second)); err != nil {
+		if err := ws.WriteControl(
+			websocket.PingMessage,
+			[]byte(pongWaitString),
+			time.Now().Add(writeWait*time.Second),
+		); err != nil {
 			return false
 		}
 		return true
@@ -210,7 +225,10 @@ func (h DeviceController) Connect(c *gin.Context) {
 			if err != nil {
 				l.Fatal(err)
 			}
-			ws.WriteMessage(websocket.BinaryMessage, data)
+			err = ws.WriteMessage(websocket.BinaryMessage, data)
+			if err != nil {
+				l.Fatal(err)
+			}
 		case <-done:
 			stop = true
 			break
@@ -224,7 +242,4 @@ func (h DeviceController) Connect(c *gin.Context) {
 			break
 		}
 	}
-
-	// update the device status on websocket closing
-	h.app.UpdateDeviceStatus(ctx, idata.Tenant, idata.Subject, model.DeviceStatusDisconnected)
 }

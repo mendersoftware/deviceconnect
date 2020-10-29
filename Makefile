@@ -1,10 +1,11 @@
 GO ?= go
 GOFMT ?= gofmt "-s"
+DOCKER ?= docker
 PACKAGES ?= $(shell $(GO) list ./...)
 GOFILES := $(shell find . -name "*.go" -type f -not -path './vendor/*')
 
 .PHONY: all
-all: fmt lint vet test
+all: fmt lint test
 
 .PHONY: build
 build:
@@ -24,14 +25,7 @@ fmt:
 
 .PHONY: lint
 lint:
-	for pkg in ${PACKAGES}; do \
-		golint -set_exit_status $$pkg || GOLINT_FAILED=1; \
-	done; \
-	[ -z "$$GOLINT_FAILED" ]
-
-.PHONY: vet
-vet:
-	$(GO) vet $(PACKAGES)
+	golangci-lint run -v
 
 .PHONY: clean
 clean:

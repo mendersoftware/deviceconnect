@@ -13,9 +13,19 @@ include:
     file: '.gitlab-ci-check-golang-unittests.yml'
   - project: 'Northern.tech/Mender/mendertesting'
     file: '.gitlab-ci-check-apidocs.yml'
+  - project: 'Northern.tech/Mender/mendertesting'
+    file: '.gitlab-ci-github-status-updates.yml'
+  - project: 'Northern.tech/Mender/mendertesting'
+    file: '.gitlab-ci-check-docker-build.yml'
 
 test:static:
+  before_script:
+    - |
+      curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | \
+           sh -s -- -b $(go env GOPATH)/bin v1.31.0
   image: golang:1.14
+  script:
+    - golangci-lint run -v
 
 test:unit:
   image: golang:1.14
@@ -24,4 +34,3 @@ test:unit:
     - nats
   variables:
     DEVICECONNECT_MONGO_URL: "mongodb://mongo"
-    DEVICECONNECT_NATS_URI: "nats://nats:4222"

@@ -27,7 +27,7 @@ import (
 func TestTerminal(t *testing.T) {
 	deviceConnectApp := &app_mocks.App{}
 
-	router, _ := NewRouter(deviceConnectApp, nil, nil)
+	router, _ := NewRouter(deviceConnectApp)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", URLTerminal, nil)

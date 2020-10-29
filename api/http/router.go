@@ -15,13 +15,15 @@
 package http
 
 import (
-	"context"
+	"net/http"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/mendersoftware/deviceconnect/app"
-	"github.com/mendersoftware/deviceconnect/client/deviceauth"
-	"github.com/mendersoftware/deviceconnect/client/useradm"
-	"github.com/mendersoftware/go-lib-micro/log"
+	"github.com/mendersoftware/go-lib-micro/accesslog"
+	"github.com/mendersoftware/go-lib-micro/identity"
+	"github.com/mendersoftware/go-lib-micro/requestid"
 )
 
 // API URL used by the HTTP router
@@ -45,17 +47,45 @@ const (
 )
 
 // NewRouter returns the gin router
-func NewRouter(deviceConnectApp app.App, deviceauth deviceauth.ClientInterface, useradm useradm.ClientInterface) (*gin.Engine, error) {
+func NewRouter(deviceConnectApp app.App) (*gin.Engine, error) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DisableConsoleColor()
 
-	ctx := context.Background()
-	l := log.FromContext(ctx)
-
 	router := gin.New()
-	router.Use(IdentityMiddleware)
-	router.Use(routerLogger(l))
+	router.Use(accesslog.Middleware())
 	router.Use(gin.Recovery())
+	router.Use(identity.Middleware(
+		identity.NewMiddlewareOptions().
+			SetPathRegex(`^/api/(devices|management)/v[0-9]/`),
+	))
+	router.Use(requestid.Middleware())
+	router.Use(cors.New(cors.Config{
+		AllowAllOrigins:  true,
+		AllowCredentials: true,
+		AllowHeaders: []string{
+			"Accept",
+			"Allow",
+			"Content-Type",
+			"Origin",
+			"Authorization",
+			"Accept-Encoding",
+			"Access-Control-Request-Headers",
+			"Header-Access-Control-Request",
+		},
+		AllowMethods: []string{
+			http.MethodGet,
+			http.MethodPost,
+			http.MethodPut,
+			http.MethodDelete,
+			http.MethodOptions,
+		},
+		AllowWebSockets: true,
+		ExposeHeaders: []string{
+			"Location",
+			"Link",
+		},
+		MaxAge: time.Hour * 12,
+	}))
 
 	status := NewStatusController(deviceConnectApp)
 	router.GET(APIURLInternalAlive, status.Alive)
@@ -64,12 +94,12 @@ func NewRouter(deviceConnectApp app.App, deviceauth deviceauth.ClientInterface, 
 	tenants := NewTenantsController(deviceConnectApp)
 	router.POST(APIURLInternalTenants, tenants.Provision)
 
-	device := NewDeviceController(deviceConnectApp, deviceauth)
+	device := NewDeviceController(deviceConnectApp)
 	router.GET(APIURLDevicesConnect, device.Connect)
 	router.POST(APIURLInternalDevices, device.Provision)
 	router.DELETE(APIURLInternalDevicesID, device.Delete)
 
-	management := NewManagementController(deviceConnectApp, useradm)
+	management := NewManagementController(deviceConnectApp)
 	router.GET(APIURLManagementDevice, management.GetDevice)
 	router.GET(APIURLManagementDeviceConnect, management.Connect)
 

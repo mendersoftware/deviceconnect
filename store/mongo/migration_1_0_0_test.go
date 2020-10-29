@@ -65,7 +65,7 @@ func TestMigration_1_0_0(t *testing.T) {
 		if tc.dbVer != "" {
 			ver, err := migrate.NewVersion(tc.dbVer)
 			assert.NoError(t, err)
-			migrate.UpdateMigrationInfo(ctx, *ver, c, tc.db)
+			_ = migrate.UpdateMigrationInfo(ctx, *ver, c, tc.db)
 		}
 
 		migrations := []migrate.Migration{
