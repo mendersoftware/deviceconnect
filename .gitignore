@@ -2,7 +2,6 @@
 *.[56789ao]
 *.a[56789o]
 *.so
-*.pyc
 ._*
 .nfs.*
 [56789a].out
@@ -13,6 +12,7 @@
 .*.swp
 deviceconnect
 
+# Golang files
 coverage.txt
 coverage-acceptance.txt
 coverage-acceptance-worker.txt
@@ -21,3 +21,11 @@ coverage-acceptance-worker.txt
 .idea
 
 *.go.skip
+
+# Python generated files
+__pycache__
+*.pyc
+.pytest_cache
+
+# Emacs local variables
+.dir-locals.el
