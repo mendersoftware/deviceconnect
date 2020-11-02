@@ -29,7 +29,7 @@ from internal_api.exceptions import ApiValueError
 from internal_api.exceptions import ApiKeyError
 from internal_api.exceptions import ApiException
 # import models into sdk package
+from internal_api.models.device import Device
 from internal_api.models.error import Error
-from internal_api.models.inline_object import InlineObject
-from internal_api.models.inline_object1 import InlineObject1
+from internal_api.models.new_tenant import NewTenant
 

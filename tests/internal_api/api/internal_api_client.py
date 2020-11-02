@@ -374,7 +374,7 @@ class InternalAPIClient(object):
 
         :param async_req bool: execute request asynchronously
         :param str tenant_id: ID of tenant the device belongs to. (required)
-        :param InlineObject1 inline_object1:
+        :param Device device:
         :param _preload_content: if False, the urllib3.HTTPResponse object will
                                  be returned without reading/decoding response
                                  data. Default is True.
@@ -399,7 +399,7 @@ class InternalAPIClient(object):
 
         :param async_req bool: execute request asynchronously
         :param str tenant_id: ID of tenant the device belongs to. (required)
-        :param InlineObject1 inline_object1:
+        :param Device device:
         :param _return_http_data_only: response data without head status code
                                        and headers
         :param _preload_content: if False, the urllib3.HTTPResponse object will
@@ -418,7 +418,7 @@ class InternalAPIClient(object):
 
         all_params = [
             'tenant_id',
-            'inline_object1'
+            'device'
         ]
         all_params.extend(
             [
@@ -456,8 +456,8 @@ class InternalAPIClient(object):
         local_var_files = {}
 
         body_params = None
-        if 'inline_object1' in local_var_params:
-            body_params = local_var_params['inline_object1']
+        if 'device' in local_var_params:
+            body_params = local_var_params['device']
         # HTTP header `Accept`
         header_params['Accept'] = self.api_client.select_header_accept(
             ['application/json'])  # noqa: E501
@@ -494,7 +494,7 @@ class InternalAPIClient(object):
         >>> result = thread.get()
 
         :param async_req bool: execute request asynchronously
-        :param InlineObject inline_object:
+        :param NewTenant new_tenant:
         :param _preload_content: if False, the urllib3.HTTPResponse object will
                                  be returned without reading/decoding response
                                  data. Default is True.
@@ -518,7 +518,7 @@ class InternalAPIClient(object):
         >>> result = thread.get()
 
         :param async_req bool: execute request asynchronously
-        :param InlineObject inline_object:
+        :param NewTenant new_tenant:
         :param _return_http_data_only: response data without head status code
                                        and headers
         :param _preload_content: if False, the urllib3.HTTPResponse object will
@@ -536,7 +536,7 @@ class InternalAPIClient(object):
         local_var_params = locals()
 
         all_params = [
-            'inline_object'
+            'new_tenant'
         ]
         all_params.extend(
             [
@@ -568,8 +568,8 @@ class InternalAPIClient(object):
         local_var_files = {}
 
         body_params = None
-        if 'inline_object' in local_var_params:
-            body_params = local_var_params['inline_object']
+        if 'new_tenant' in local_var_params:
+            body_params = local_var_params['new_tenant']
         # HTTP header `Accept`
         header_params['Accept'] = self.api_client.select_header_accept(
             ['application/json'])  # noqa: E501

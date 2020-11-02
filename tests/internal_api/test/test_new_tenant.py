@@ -17,11 +17,11 @@ import unittest
 import datetime
 
 import internal_api
-from internal_api.models.inline_object import InlineObject  # noqa: E501
+from internal_api.models.new_tenant import NewTenant  # noqa: E501
 from internal_api.rest import ApiException
 
-class TestInlineObject(unittest.TestCase):
-    """InlineObject unit test stubs"""
+class TestNewTenant(unittest.TestCase):
+    """NewTenant unit test stubs"""
 
     def setUp(self):
         pass
@@ -30,22 +30,22 @@ class TestInlineObject(unittest.TestCase):
         pass
 
     def make_instance(self, include_optional):
-        """Test InlineObject
+        """Test NewTenant
             include_option is a boolean, when False only required
             params are included, when True both required and
             optional params are included """
-        # model = internal_api.models.inline_object.InlineObject()  # noqa: E501
+        # model = internal_api.models.new_tenant.NewTenant()  # noqa: E501
         if include_optional :
-            return InlineObject(
+            return NewTenant(
                 tenant_id = '0'
             )
         else :
-            return InlineObject(
+            return NewTenant(
                 tenant_id = '0',
         )
 
-    def testInlineObject(self):
-        """Test InlineObject"""
+    def testNewTenant(self):
+        """Test NewTenant"""
         inst_req_only = self.make_instance(include_optional=False)
         inst_req_and_optional = self.make_instance(include_optional=True)
 

@@ -71,13 +71,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                tenant_id:
-                  type: string
-                  description: ID of new tenant.
-              required:
-                - tenant_id
+              $ref: '#/components/schemas/NewTenant'
       responses:
         201:
           description: Tenant initialized successfully.
@@ -103,14 +97,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                device_id:
-                  type: string
-                  format: uuid
-                  description: ID of the new device.
-              required:
-                - device_id
+              $ref: '#/components/schemas/Device'
       responses:
         201:
           description: Device was provisioned successfully.
@@ -163,6 +150,25 @@ components:
       example:
         error: "<error description>"
         request_id: "eed14d55-d996-42cd-8248-e806663810a8"
+
+    NewTenant:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+          description: ID of new tenant.
+      required:
+        - tenant_id
+
+    Device:
+      type: object
+      properties:
+        device_id:
+          type: string
+          format: uuid
+          description: ID of the new device.
+      required:
+        - device_id
 
 
   responses:

@@ -5,3 +5,13 @@
 # The patterns follow closely to .gitignore or .dockerignore.
 */docs/**
 *README*
+
+/.travis.yml
+/.gitignore
+/.gitlab-ci.yml
+/.travis.yml
+/docs/
+/git_push.sh
+/setup.cfg
+/setup.py
+tox.ini

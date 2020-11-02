@@ -18,6 +18,7 @@ all: fmt lint docs build
 docs: $(patsubst docs/%.yml,tests/%,$(DOCFILES))
 
 tests/%: docs/%.yml
+	rm -r $@; \
 	docker run --rm -t -v $(ROOTDIR):$(ROOTDIR) -w $(ROOTDIR) \
 		-u $(shell id -u):$(shell id -g) \
 		openapitools/openapi-generator-cli:v4.3.1 generate \

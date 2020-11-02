@@ -8,7 +8,7 @@ additionalProperties:
   hideGenerationTimestamp: true
 
 globalProperties:
-  - apiTests: false
-  - apiDocs: false
-  - modelTests: false
-  - modelDocs: false
+  apiDocs: false
+  apiTests: false
+  modelDocs: false
+  modelTests: false
