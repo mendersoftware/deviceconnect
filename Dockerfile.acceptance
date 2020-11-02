@@ -1,0 +1,24 @@
+FROM golang:1.14-alpine3.12 as builder
+RUN apk add --no-cache \
+    xz-dev \
+    musl-dev \
+    gcc
+RUN mkdir -p /go/src/github.com/mendersoftware/deviceconnect
+COPY . /go/src/github.com/mendersoftware/deviceconnect
+RUN cd /go/src/github.com/mendersoftware/deviceconnect && \
+    env CGO_ENABLED=1 go test -c -o deviceconnect.test \
+    -cover -covermode=atomic
+
+FROM alpine:3.12
+RUN apk add --no-cache ca-certificates xz
+RUN mkdir -p /etc/deviceconnect
+COPY ./config.yaml /etc/deviceconnect
+COPY --from=builder /go/src/github.com/mendersoftware/deviceconnect/deviceconnect.test /usr/bin
+ENTRYPOINT ["/usr/bin/deviceconnect.test", \
+        "-test.coverprofile=/testing/coverage-acceptance.txt", \
+        "-acceptance-testing", \
+        "--", "--config=/etc/deviceconnect/config.yaml", \
+        "server", "--automigrate"]
+
+EXPOSE 8080
+STOPSIGNAL SIGINT
