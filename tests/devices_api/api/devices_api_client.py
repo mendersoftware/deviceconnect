@@ -47,8 +47,10 @@ class DevicesAPIClient(object):
         >>> result = thread.get()
 
         :param async_req bool: execute request asynchronously
-        :param str connection: Mandatory websocket request header
+        :param str connection: Standard websocket request header.
+        :param str upgrade: Standard websocket request header.
         :param str sec_websocket_key: Standard websocket request header.
+        :param int sec_websocket_version: Standard websocket request header.
         :param _preload_content: if False, the urllib3.HTTPResponse object will
                                  be returned without reading/decoding response
                                  data. Default is True.
@@ -73,8 +75,10 @@ class DevicesAPIClient(object):
         >>> result = thread.get()
 
         :param async_req bool: execute request asynchronously
-        :param str connection: Mandatory websocket request header
+        :param str connection: Standard websocket request header.
+        :param str upgrade: Standard websocket request header.
         :param str sec_websocket_key: Standard websocket request header.
+        :param int sec_websocket_version: Standard websocket request header.
         :param _return_http_data_only: response data without head status code
                                        and headers
         :param _preload_content: if False, the urllib3.HTTPResponse object will
@@ -93,7 +97,9 @@ class DevicesAPIClient(object):
 
         all_params = [
             'connection',
-            'sec_websocket_key'
+            'upgrade',
+            'sec_websocket_key',
+            'sec_websocket_version'
         ]
         all_params.extend(
             [
@@ -122,8 +128,12 @@ class DevicesAPIClient(object):
         header_params = {}
         if 'connection' in local_var_params:
             header_params['Connection'] = local_var_params['connection']  # noqa: E501
+        if 'upgrade' in local_var_params:
+            header_params['Upgrade'] = local_var_params['upgrade']  # noqa: E501
         if 'sec_websocket_key' in local_var_params:
             header_params['Sec-Websocket-Key'] = local_var_params['sec_websocket_key']  # noqa: E501
+        if 'sec_websocket_version' in local_var_params:
+            header_params['Sec-Websocket-Version'] = local_var_params['sec_websocket_version']  # noqa: E501
 
         form_params = []
         local_var_files = {}

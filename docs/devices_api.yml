@@ -48,12 +48,27 @@ paths:
             type: string
             enum:
               - Upgrade
-          description: Mandatory websocket request header
+          description: Standard websocket request header.
+        - in: header
+          name: Upgrade
+          schema:
+            type: string
+            format: base64
+            enum:
+              - websocket
+          description: Standard websocket request header.
         - in: header
           name: Sec-Websocket-Key
           schema:
             type: string
             format: base64
+          description: Standard websocket request header.
+        - in: header
+          name: Sec-Websocket-Version
+          schema:
+            type: integer
+            enum:
+              - 13
           description: Standard websocket request header.
 
 
