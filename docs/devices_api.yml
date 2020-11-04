@@ -33,13 +33,13 @@ paths:
       tags:
         - DevicesAPI
       operationId: Connect
-      summary: >
+      summary: >-
         Connect the device and make it available to the server.
-      description: >
+      description: >-
         Calling /connect will upgrade the connection to a persistent
-        websocket connection and making the device available to the
-        management api. The device must provide it's identity using
-        the DeviceJWT either as Authorization header or as a cookie named
+        websocket connection and make the device available to the
+        management API. The device must provide DeviceJWT identity either as
+        Authorization (Bearer) header or as a cookie named
         'JWT'.
       parameters:
         - in: header
@@ -70,8 +70,6 @@ paths:
             enum:
               - 13
           description: Standard websocket request header.
-
-
       responses:
         101:
           description: |
