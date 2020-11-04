@@ -29,6 +29,7 @@ import (
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
+	"github.com/mendersoftware/go-lib-micro/rest.utils"
 )
 
 const (
@@ -38,15 +39,6 @@ const (
 	// Seconds allowed to write a message to the peer.
 	writeWait = 10
 )
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	Subprotocols:    []string{"binary"},
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
 
 // HTTP errors
 var (
@@ -130,14 +122,27 @@ func (h DeviceController) Connect(c *gin.Context) {
 		return
 	}
 
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		Subprotocols:    []string{"binary"},
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+		Error: func(
+			w http.ResponseWriter, r *http.Request, s int, e error) {
+			rest.RenderError(c, s, e)
+		},
+	}
+
 	// upgrade get request to websocket protocol
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
+		err = errors.Wrap(err,
+			"failed to upgrade the request to "+
+				"websocket protocol",
+		)
 		l.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal error",
-		})
 		return
 	}
 	defer ws.Close()
@@ -182,11 +187,13 @@ func (h DeviceController) Connect(c *gin.Context) {
 		for err == nil {
 			_, data, err = ws.ReadMessage()
 			if err != nil {
+				l.Error(err)
 				break
 			}
 			m := &model.Message{}
 			err = msgpack.Unmarshal(data, m)
 			if err != nil {
+				l.Error(err)
 				break
 			}
 			err = h.app.PublishMessageFromDevice(ctx, idata.Tenant, idata.Subject, m)
