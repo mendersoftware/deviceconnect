@@ -63,10 +63,10 @@ bin/deviceconnect.docker: Dockerfile $(SRCFILES)
 
 bin/deviceconnect.acceptance.docker: Dockerfile.acceptance $(GOFILES)
 	docker rmi $(DOCKERIMAGE):$(DOCKERTESTTAG) 2>/dev/null; \
-	docker build . -f Dockerfile.acceptance -t $(DOCKERIMAGE):$(DOCKERTESTTAG) && \
+	docker build . -f Dockerfile.acceptance -t $(DOCKERIMAGE):$(DOCKERTESTTAG)
 	docker save $(DOCKERIMAGE):$(DOCKERTESTTAG) -o $@
 
-bin/acceptance.docker: tests/Dockerfile
+bin/acceptance.docker: tests/Dockerfile tests/requirements.txt
 	docker rmi tests 2>/dev/null; \
 	docker build tests -f tests/Dockerfile -t testing
 	docker save testing -o $@
@@ -83,12 +83,15 @@ docker-acceptance: bin/acceptance.docker
 .PHONY: acceptance-tests
 acceptance-tests: docker-acceptance docker-test docs
 	docker-compose \
-		-f tests/docker-compose.acceptance.open-source.yml \
+		-f tests/docker-compose.yml \
 		-p acceptance \
-		up -d && \
+		up -d
 	docker attach acceptance_tester_1; \
 	docker-compose \
-		-f tests/docker-compose.acceptance.open-source.yml \
+		-f tests/docker-compose.yml \
+		-p acceptance logs --no-color > tests/acceptance-logs.txt; \
+	docker-compose \
+		-f tests/docker-compose.yml \
 		-p acceptance down
 
 

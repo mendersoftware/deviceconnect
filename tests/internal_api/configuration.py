@@ -55,7 +55,7 @@ class Configuration(object):
 
     _default = None
 
-    def __init__(self, host="https://hosted.mender.io/api/internal/v1/deviceconnect",
+    def __init__(self, host="https://mender-deviceconnect:8080/api/internal/v1/deviceconnect",
                  api_key=None, api_key_prefix=None,
                  username=None, password=None,
                  discard_unknown_keys=False,
@@ -336,7 +336,7 @@ class Configuration(object):
         """
         return [
             {
-                'url': "https://hosted.mender.io/api/internal/v1/deviceconnect",
+                'url': "https://mender-deviceconnect:8080/api/internal/v1/deviceconnect",
                 'description': "No description provided",
             }
         ]

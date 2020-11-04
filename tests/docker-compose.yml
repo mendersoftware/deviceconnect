@@ -10,7 +10,7 @@ services:
       depends_on:
         - mender-deviceconnect
         - mmock
-      command: --host 'mender-deviceconnect:8080' -k 'not Enterprise'
+      command: --host 'mender-deviceconnect:8080'
       environment:
         TESTING_MMOCK_HOST: "mmock:8080"
         TESTING_HOST: "mender-deviceconnect:8080"
@@ -37,7 +37,7 @@ services:
             - mender-workflows
 
     mender-mongo:
-      image: "mongo:4.2"
+      image: "mongo:4.4"
       networks:
         mender: {}
 

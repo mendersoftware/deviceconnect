@@ -28,7 +28,7 @@ __pycache__
 
 # Pytest results
 /tests/results.xml
-/tests/acceptance.*
+/tests/acceptance*
 
 # Emacs local variables
 .dir-locals.el

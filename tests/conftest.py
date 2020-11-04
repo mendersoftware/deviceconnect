@@ -1,8 +1,15 @@
+import base64
+import json
 import os
+import uuid
+import pytest
 
-from devices_api import configuration as dconf
-from internal_api import configuration as iconf
-from management_api import configuration as mconf
+import bson
+import pymongo
+
+import devices_api
+import internal_api
+import management_api
 
 
 def pytest_addoption(parser):
@@ -18,12 +25,52 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     host = config.getoption("host")
-    dconf.Configuration.set_default(
-        dconf.Configuration(host="http://" + host + "/api/devices/v1/deviceconnect")
+    devices_api.Configuration.set_default(
+        devices_api.Configuration(
+            host="http://" + host + "/api/devices/v1/deviceconnect"
+        )
     )
-    iconf.Configuration.set_default(
-        iconf.Configuration(host="http://" + host + "/api/internal/v1/deviceconnect")
+    internal_api.Configuration.set_default(
+        internal_api.Configuration(
+            host="http://" + host + "/api/internal/v1/deviceconnect"
+        )
     )
-    mconf.Configuration.set_default(
-        mconf.Configuration(host="http://" + host + "/api/management/v1/deviceconnect")
+    management_api.Configuration.set_default(
+        management_api.Configuration(
+            host="http://" + host + "/api/management/v1/deviceconnect"
+        )
     )
+
+
+@pytest.fixture(scope="session")
+def mongo():
+    return pymongo.MongoClient("mongodb://mender-mongo")
+
+
+def mongo_cleanup(client):
+    dbs = client.list_database_names()
+    for db in dbs:
+        if db in ["local", "admin", "config"]:
+            continue
+        client.drop_database(db)
+
+
+@pytest.fixture(scope="function")
+def clean_mongo(mongo):
+    mongo_cleanup(client=mongo)
+    yield mongo
+    mongo_cleanup(client=mongo)
+
+
+@pytest.fixture(scope="function")
+def tenant(tenant_id=None):
+    """
+    This fixture provisions a new tenant database.
+    :param tenant_id: can be indirectly overridden with
+                      @pytest.mark.fixture decorator.
+    """
+    if tenant_id is None:
+        tenant_id = str(bson.objectid.ObjectId())
+    client = internal_api.InternalAPIClient()
+    client.provision_tenant(new_tenant=internal_api.NewTenant(tenant_id=tenant_id))
+    yield tenant_id
