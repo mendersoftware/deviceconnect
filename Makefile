@@ -39,9 +39,7 @@ $(BINFILE).test: $(GOFILES)
 		-coverpkg $(PACKAGES)
 
 $(COVERFILE): $(GOFILES)
-	$(GO) test -cover -coverprofile=$@ ${TEST_FLAGS} ./... && \
-		echo "\n==>\033[32m Ok\033[m\n" || \
-		exit 1
+	$(GO) test -cover -covermode=atomic -coverprofile=$@ ${TEST_FLAGS} ./...
 
 .PHONY: docs
 docs: $(patsubst docs/%.yml,tests/%,$(DOCFILES))
@@ -86,10 +84,17 @@ acceptance-tests: docker-acceptance docker-test docs
 		-f tests/docker-compose.yml \
 		-p acceptance \
 		up -d
-	docker attach acceptance_tester_1; \
-	docker-compose \
-		-f tests/docker-compose.yml \
-		-p acceptance logs --no-color > tests/acceptance-logs.txt; \
+	docker attach acceptance_tester_1
+
+.PHONY: acceptance-tests-logs
+acceptance-tests-logs:
+	for service in $(shell docker-compose -f tests/docker-compose.yml -p acceptance ps -a --services); do \
+		docker-compose -p acceptance -f tests/docker-compose.yml \
+				logs --no-color $$service > "tests/acceptance.$${service}.logs"; \
+	done
+
+.PHONY: acceptance-tests-down
+acceptance-tests-down:
 	docker-compose \
 		-f tests/docker-compose.yml \
 		-p acceptance down
@@ -107,4 +112,6 @@ lint:
 clean:
 	$(GO) clean -modcache -x -i ./...
 	find . -name coverage.txt -delete
+	rm -f tests/acceptance.*.logs tests/results.xml \
+		tests/coverage-acceptance.txt coverage.txt
 	rm -f bin/*
