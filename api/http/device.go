@@ -17,7 +17,6 @@ package http
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -115,7 +114,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 	l := log.FromContext(ctx)
 
 	idata := identity.FromContext(ctx)
-	if idata == nil || !idata.IsDevice {
+	if !idata.IsDevice {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": ErrMissingAuthentication.Error(),
 		})
@@ -208,19 +207,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 	}
 
 	// periodic ping
-	sendPing := func() bool {
-		pongWaitString := strconv.Itoa(pongWait)
-		if err := ws.WriteControl(
-			websocket.PingMessage,
-			[]byte(pongWaitString),
-			time.Now().Add(writeWait*time.Second),
-		); err != nil {
-			return false
-		}
-		return true
-	}
-	sendPing()
-
+	websocketPing(ws)
 	pingPeriod := (pongWait * time.Second * 9) / 10
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
@@ -240,7 +227,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 			stop = true
 			break
 		case <-ticker.C:
-			if !sendPing() {
+			if !websocketPing(ws) {
 				stop = false
 				break
 			}

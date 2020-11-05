@@ -84,7 +84,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 	l := log.FromContext(ctx)
 
 	idata := identity.FromContext(ctx)
-	if idata == nil || !idata.IsUser {
+	if !idata.IsUser {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": ErrMissingUserAuthentication.Error(),
 		})
@@ -199,6 +199,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 	pingPeriod := (pongWait * time.Second * 9) / 10
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
+
 Loop:
 	for {
 		select {
