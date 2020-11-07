@@ -12,7 +12,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/satori/go.uuid v1.2.0
 	github.com/stretchr/testify v1.6.1
-	github.com/urfave/cli v1.22.4
+	github.com/urfave/cli v1.22.5
 	github.com/vmihailenco/msgpack v4.0.4+incompatible
 	github.com/vmihailenco/msgpack/v5 v5.0.0-rc.2
 	go.mongodb.org/mongo-driver v1.4.2
