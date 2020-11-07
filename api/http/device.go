@@ -17,7 +17,6 @@ package http
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +28,7 @@ import (
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
+	"github.com/mendersoftware/go-lib-micro/rest.utils"
 )
 
 const (
@@ -38,15 +38,6 @@ const (
 	// Seconds allowed to write a message to the peer.
 	writeWait = 10
 )
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	Subprotocols:    []string{"binary"},
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
 
 // HTTP errors
 var (
@@ -123,21 +114,34 @@ func (h DeviceController) Connect(c *gin.Context) {
 	l := log.FromContext(ctx)
 
 	idata := identity.FromContext(ctx)
-	if idata == nil || !idata.IsDevice {
+	if !idata.IsDevice {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": ErrMissingAuthentication.Error(),
 		})
 		return
 	}
 
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		Subprotocols:    []string{"binary"},
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+		Error: func(
+			w http.ResponseWriter, r *http.Request, s int, e error) {
+			rest.RenderError(c, s, e)
+		},
+	}
+
 	// upgrade get request to websocket protocol
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
+		err = errors.Wrap(err,
+			"failed to upgrade the request to "+
+				"websocket protocol",
+		)
 		l.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal error",
-		})
 		return
 	}
 	defer ws.Close()
@@ -182,11 +186,13 @@ func (h DeviceController) Connect(c *gin.Context) {
 		for err == nil {
 			_, data, err = ws.ReadMessage()
 			if err != nil {
+				l.Error(err)
 				break
 			}
 			m := &model.Message{}
 			err = msgpack.Unmarshal(data, m)
 			if err != nil {
+				l.Error(err)
 				break
 			}
 			err = h.app.PublishMessageFromDevice(ctx, idata.Tenant, idata.Subject, m)
@@ -201,19 +207,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 	}
 
 	// periodic ping
-	sendPing := func() bool {
-		pongWaitString := strconv.Itoa(pongWait)
-		if err := ws.WriteControl(
-			websocket.PingMessage,
-			[]byte(pongWaitString),
-			time.Now().Add(writeWait*time.Second),
-		); err != nil {
-			return false
-		}
-		return true
-	}
-	sendPing()
-
+	websocketPing(ws)
 	pingPeriod := (pongWait * time.Second * 9) / 10
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
@@ -233,7 +227,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 			stop = true
 			break
 		case <-ticker.C:
-			if !sendPing() {
+			if !websocketPing(ws) {
 				stop = false
 				break
 			}

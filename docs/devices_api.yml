@@ -3,8 +3,7 @@ openapi: 3.0.3
 info:
   title: Device Connect
   description: |
-    API for managing persistent device connections.
-    Intended for use by the web GUI
+    Device facing API for managing persistent device connections.
 
   version: "1"
 
@@ -18,63 +17,31 @@ info:
     url: https://www.apache.org/licenses/LICENSE-2.0.html
 
 servers:
-  - url: https://hosted.mender.io/api/management/v1/deviceconnect
+  - url: https://hosted.mender.io/api/devices/v1/deviceconnect
 
 # Global security definitions
 security:
-  - ManagementJWT: []
+  - DeviceJWT: []
 
 tags:
-  - name: ManagementAPI
+  - name: DevicesAPI
 
 paths:
-  /devices/{id}:
-    get:
-      tags:
-        - ManagementAPI
-      operationId: Get device
-      summary: Fetch the state of a device.
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-          description: ID for the target device.
-      responses:
-        200:
-          description: Successful response.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DeviceState'
-        400:
-          $ref: '#/components/responses/InvalidRequestError'
-        404:
-          description: Device not found.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: "Device not found"
-                request_id: "eed14d55-d996-42cd-8248-e806663810aa"
-        500:
-          $ref: '#/components/responses/InternalServerError'
 
-  /devices/{id}/connect:
+  /connect:
     get:
       tags:
-        - ManagementAPI
+        - DevicesAPI
       operationId: Connect
-      summary: Establish permanent connection with device
+      summary: >-
+        Connect the device and make it available to the server.
+      description: >-
+        Calling /connect will upgrade the connection to a persistent
+        websocket connection and make the device available to the
+        management API. The device must provide DeviceJWT identity either as
+        Authorization (Bearer) header or as a cookie named
+        'JWT'.
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-          description: ID for the target device.
         - in: header
           name: Connection
           schema:
@@ -107,44 +74,34 @@ paths:
         101:
           description: |
             Successful response - change to websocket protocol.
+          headers:
+            Sec-Websocket-Accept:
+              schema:
+                type: string
+                format: base64
+              description: Standard websocket upgrade response header.
+            Upgrade:
+              schema:
+                type: string
+                enum:
+                  - websocket
+
         400:
           $ref: '#/components/responses/InvalidRequestError'
-        404:
-          description: Device not found.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
         500:
           $ref: '#/components/responses/InternalServerError'
 
 
 components:
   securitySchemes:
-    ManagementJWT:
+    DeviceJWT:
       type: http
       scheme: bearer
       bearerFormat: JWT
       description: |
-        JWT token issued by 'POST /api/management/v1/useradm/auth/login'
-
-        The JWT can be alternatively passed as a cookie named "JWT".
+        JWT token issued by 'POST /api/devices/v1/authentication/auth_requests'
 
   schemas:
-    DeviceState:
-      type: object
-      properties:
-        device_id:
-          type: string
-          format: uuid
-          description: Device ID.
-        status:
-          type: string
-          enum:
-            - connected
-            - disconnected
-          description: Device status.
-
     Error:
       type: object
       properties:

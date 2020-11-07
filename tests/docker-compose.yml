@@ -1,0 +1,50 @@
+version: '2.1'
+services:
+
+    tester:
+      image: testing
+      networks:
+        mender: {}
+      volumes:
+        - ".:/testing"
+      depends_on:
+        - mender-deviceconnect
+        - mmock
+      command: --host 'mender-deviceconnect:8080'
+      environment:
+        TESTING_MMOCK_HOST: "mmock:8080"
+        TESTING_HOST: "mender-deviceconnect:8080"
+
+    mender-deviceconnect:
+      image: mendersoftware/deviceconnect:prtest
+      networks:
+        mender:
+          aliases:
+            - mender-deviceconnect
+      volumes:
+        - ".:/testing"
+      depends_on:
+        - mender-mongo
+      environment:
+        DEVICECONNECT_NATS_URL: "nats://mender-nats"
+
+    mmock:
+      image: "jordimartin/mmock:v3.0.0"
+      networks:
+        mender:
+          aliases:
+            - mmock
+            - mender-workflows
+
+    mender-mongo:
+      image: "mongo:4.4"
+      networks:
+        mender: {}
+
+    mender-nats:
+      image: "nats:2.1-alpine3.11"
+      networks:
+        mender: {}
+
+networks:
+  mender: {}

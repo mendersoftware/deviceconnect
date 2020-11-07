@@ -28,6 +28,7 @@ import (
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
+	"github.com/mendersoftware/go-lib-micro/rest.utils"
 )
 
 // HTTP errors
@@ -83,7 +84,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 	l := log.FromContext(ctx)
 
 	idata := identity.FromContext(ctx)
-	if idata == nil || !idata.IsUser {
+	if !idata.IsUser {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": ErrMissingUserAuthentication.Error(),
 		})
@@ -96,7 +97,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 
 	// Prepare the user session
 	session, err := h.app.PrepareUserSession(ctx, tenantID, userID, deviceID)
-	if err == app.ErrDeviceNotFound {
+	if err == app.ErrDeviceNotFound || err == app.ErrDeviceNotConnected {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": err.Error(),
 		})
@@ -109,6 +110,18 @@ func (h ManagementController) Connect(c *gin.Context) {
 	}
 
 	// upgrade get request to websocket protocol
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		Subprotocols:    []string{"binary"},
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+		Error: func(
+			w http.ResponseWriter, r *http.Request, s int, e error) {
+			rest.RenderError(c, s, e)
+		},
+	}
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
@@ -186,6 +199,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 	pingPeriod := (pongWait * time.Second * 9) / 10
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
+
 Loop:
 	for {
 		select {
