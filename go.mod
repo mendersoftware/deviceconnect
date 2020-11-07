@@ -11,12 +11,11 @@ require (
 	github.com/nats-io/nats.go v1.10.0
 	github.com/pkg/errors v0.9.1
 	github.com/satori/go.uuid v1.2.0
-	github.com/sirupsen/logrus v1.7.0
 	github.com/stretchr/testify v1.6.1
 	github.com/urfave/cli v1.22.4
 	github.com/vmihailenco/msgpack v4.0.4+incompatible
 	github.com/vmihailenco/msgpack/v5 v5.0.0-beta.1
-	go.mongodb.org/mongo-driver v1.4.2
+	go.mongodb.org/mongo-driver v1.4.3
 	golang.org/x/sys v0.0.0-20201020230747-6e5568b54d1a
 	google.golang.org/protobuf v1.25.0 // indirect
 )
