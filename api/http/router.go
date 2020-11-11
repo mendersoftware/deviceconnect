@@ -42,8 +42,6 @@ const (
 
 	APIURLManagementDevice        = APIURLManagement + "/devices/:deviceId"
 	APIURLManagementDeviceConnect = APIURLManagement + "/devices/:deviceId/connect"
-
-	URLTerminal = "/"
 )
 
 // NewRouter returns the gin router
@@ -102,9 +100,6 @@ func NewRouter(deviceConnectApp app.App) (*gin.Engine, error) {
 	management := NewManagementController(deviceConnectApp)
 	router.GET(APIURLManagementDevice, management.GetDevice)
 	router.GET(APIURLManagementDeviceConnect, management.Connect)
-
-	terminal := NewTerminalController()
-	router.GET(URLTerminal, terminal.Terminal)
 
 	return router, nil
 }
