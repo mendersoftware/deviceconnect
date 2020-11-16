@@ -16,11 +16,13 @@ package model
 
 // Message constants
 const (
-	CmdShell = "shell"
+	TypeShell = "shell"
 )
 
 // Message represents a message between the device and the backend
 type Message struct {
-	Cmd  string `json:"cmd" msgpack:"cmd"`
-	Data []byte `json:"data" msgpack:"data"`
+	Type      string `json:"type" msgpack:"type"`
+	SessionID string `json:"session_id" msgpack:"session_id"`
+	Status    int    `json:"status_code" msgpack:"status_code"`
+	Data      []byte `json:"data" msgpack:"data"`
 }
