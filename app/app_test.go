@@ -320,7 +320,7 @@ func TestPublishMessageFromDevice(t *testing.T) {
 	subject := getMessageSubject(tenantID, deviceID, "device")
 
 	message := &model.Message{
-		Cmd:  "cmd",
+		Type: model.TypeShell,
 		Data: []byte("data"),
 	}
 
@@ -351,7 +351,7 @@ func TestPublishMessageFromManagement(t *testing.T) {
 	subject := getMessageSubject(tenantID, deviceID, "management")
 
 	message := &model.Message{
-		Cmd:  "cmd",
+		Type: model.TypeShell,
 		Data: []byte("data"),
 	}
 
@@ -382,7 +382,7 @@ func TestSubscribeMessagesFromDevice(t *testing.T) {
 	subject := getMessageSubject(tenantID, deviceID, "device")
 
 	message := &model.Message{
-		Cmd:  "cmd",
+		Type: model.TypeShell,
 		Data: []byte("data"),
 	}
 
@@ -416,7 +416,7 @@ func TestSubscribeMessagesFromManagement(t *testing.T) {
 	subject := getMessageSubject(tenantID, deviceID, "management")
 
 	message := &model.Message{
-		Cmd:  "cmd",
+		Type: model.TypeShell,
 		Data: []byte("data"),
 	}
 
