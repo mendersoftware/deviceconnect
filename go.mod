@@ -14,7 +14,7 @@ require (
 	github.com/stretchr/testify v1.6.1
 	github.com/urfave/cli v1.22.5
 	github.com/vmihailenco/msgpack v4.0.4+incompatible
-	github.com/vmihailenco/msgpack/v5 v5.0.0-rc.2
+	github.com/vmihailenco/msgpack/v5 v5.0.0
 	go.mongodb.org/mongo-driver v1.4.3
 	golang.org/x/sys v0.0.0-20201020230747-6e5568b54d1a
 	google.golang.org/protobuf v1.25.0 // indirect
