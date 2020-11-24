@@ -31,6 +31,7 @@ const (
 	uriSearch = "/api/internal/v2/inventory/tenants/:id/filters/search"
 )
 
+//go:generate ../../utils/mockgen.sh
 type Client interface {
 	Search(
 		ctx context.Context,

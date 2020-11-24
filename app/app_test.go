@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/vmihailenco/msgpack/v5"
 
+	inv_mocks "github.com/mendersoftware/deviceconnect/client/inventory/mocks"
 	nats_mocks "github.com/mendersoftware/deviceconnect/client/nats/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 	store_mocks "github.com/mendersoftware/deviceconnect/store/mocks"
@@ -441,4 +442,81 @@ func TestSubscribeMessagesFromManagement(t *testing.T) {
 
 	msg := <-out
 	assert.Equal(t, message, msg)
+}
+
+func TestRemoteTerminalAllowed(t *testing.T) {
+	testCases := []struct {
+		name                    string
+		tenantID                string
+		deviceID                string
+		groups                  []string
+		inventorySearchErr      error
+		inventorySearchResCount int
+
+		allowed bool
+		err     error
+	}{
+		{
+			name:                    "ok, true",
+			tenantID:                "1",
+			deviceID:                "2",
+			groups:                  []string{"a", "b"},
+			inventorySearchResCount: 1,
+
+			allowed: true,
+		},
+		{
+			name:                    "ok, false",
+			tenantID:                "1",
+			deviceID:                "2",
+			groups:                  []string{"a", "b"},
+			inventorySearchResCount: 0,
+
+			allowed: false,
+		},
+		{
+			name:                    "ko, inventory error",
+			tenantID:                "1",
+			deviceID:                "2",
+			groups:                  []string{"a", "b"},
+			inventorySearchResCount: 0,
+			inventorySearchErr:      errors.New("search error"),
+
+			allowed: false,
+			err:     errors.New("search error"),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			inv := &inv_mocks.Client{}
+			inv.On("Search",
+				mock.MatchedBy(func(ctx context.Context) bool {
+					return true
+				}),
+				tc.tenantID,
+				model.SearchParams{
+					Page:    1,
+					PerPage: 1,
+					Filters: []model.FilterPredicate{
+						{
+							Scope:     model.InventoryGroupScope,
+							Attribute: model.InventoryGroupAttributeName,
+							Type:      "$in",
+							Value:     tc.groups,
+						},
+					},
+					DeviceIDs: []string{tc.deviceID},
+				},
+			).Return([]model.InvDevice{}, tc.inventorySearchResCount, tc.inventorySearchErr)
+
+			app := NewDeviceConnectApp(nil, nil, inv)
+
+			ctx := context.Background()
+			allowed, err := app.RemoteTerminalAllowed(ctx, tc.tenantID, tc.deviceID, tc.groups)
+			assert.Equal(t, tc.allowed, allowed)
+			assert.Equal(t, tc.err, err)
+
+			inv.AssertExpectations(t)
+		})
+	}
 }
