@@ -36,6 +36,7 @@ var (
 
 // App interface describes app objects
 //nolint:lll
+//go:generate ../utils/mockgen.sh
 type App interface {
 	HealthCheck(ctx context.Context) error
 	ProvisionTenant(ctx context.Context, tenant *model.Tenant) error
