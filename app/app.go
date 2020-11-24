@@ -51,6 +51,7 @@ type App interface {
 	PublishMessageFromManagement(ctx context.Context, tenantID string, deviceID string, message *model.Message) error
 	SubscribeMessagesFromDevice(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error)
 	SubscribeMessagesFromManagement(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error)
+	RemoteTerminalAllowed(ctx context.Context, tenantID string, deviceID string, groups []string) (bool, error)
 }
 
 // DeviceConnectApp is an app object
@@ -217,4 +218,35 @@ func (a *DeviceConnectApp) subscribeMessages(
 
 func getMessageSubject(tenantID, deviceID, channel string) string {
 	return fmt.Sprintf("%s/devices/%s/%s", tenantID, deviceID, channel)
+}
+
+func buildRBACFilter(deviceID string, groups []string) model.SearchParams {
+	searchParams := model.SearchParams{
+		Page:    1,
+		PerPage: 1,
+		Filters: []model.FilterPredicate{
+			{
+				Scope:     model.InventoryGroupScope,
+				Attribute: model.InventoryGroupAttributeName,
+				Type:      "$in",
+				Value:     groups,
+			},
+		},
+		DeviceIDs: []string{deviceID},
+	}
+	return searchParams
+}
+
+func (a *DeviceConnectApp) RemoteTerminalAllowed(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+	groups []string) (bool, error) {
+	_, num, err := a.inventory.Search(ctx, tenantID, buildRBACFilter(deviceID, groups))
+	if err != nil {
+		return false, err
+	} else if num != 1 {
+		return false, nil
+	}
+	return true, nil
 }
