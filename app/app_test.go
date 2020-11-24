@@ -39,7 +39,7 @@ func TestHealthCheck(t *testing.T) {
 		}),
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.HealthCheck(ctx)
@@ -60,7 +60,7 @@ func TestProvisionTenant(t *testing.T) {
 		tenantID,
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.ProvisionTenant(ctx, &model.Tenant{TenantID: tenantID})
@@ -83,7 +83,7 @@ func TestProvisionDevice(t *testing.T) {
 		deviceID,
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.ProvisionDevice(ctx, tenantID, &model.Device{ID: deviceID})
@@ -106,7 +106,7 @@ func TestDeleteDevice(t *testing.T) {
 		deviceID,
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.DeleteDevice(ctx, tenantID, deviceID)
@@ -148,7 +148,7 @@ func TestGetDevice(t *testing.T) {
 		deviceID,
 	).Return(device, nil)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	_, res := app.GetDevice(ctx, tenantID, "error")
@@ -179,7 +179,7 @@ func TestUpdateDeviceStatus(t *testing.T) {
 		mock.AnythingOfType("string"),
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.UpdateDeviceStatus(ctx, tenantID, deviceID, "anything")
@@ -277,7 +277,7 @@ func TestPrepareUserSession(t *testing.T) {
 				).Return(tc.session, tc.upsertSessionErr)
 			}
 
-			app := NewDeviceConnectApp(store, nil)
+			app := NewDeviceConnectApp(store, nil, nil)
 
 			ctx := context.Background()
 			session, err := app.PrepareUserSession(ctx, tc.tenantID, tc.userID, tc.deviceID)
@@ -304,7 +304,7 @@ func TestUpdateUserSessionStatus(t *testing.T) {
 		mock.AnythingOfType("string"),
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.UpdateUserSessionStatus(ctx, tenantID, deviceID, "anything")
@@ -337,7 +337,7 @@ func TestPublishMessageFromDevice(t *testing.T) {
 		}),
 	).Return(nil)
 
-	app := NewDeviceConnectApp(nil, client)
+	app := NewDeviceConnectApp(nil, client, nil)
 
 	ctx := context.Background()
 	err := app.PublishMessageFromDevice(ctx, tenantID, deviceID, message)
@@ -368,7 +368,7 @@ func TestPublishMessageFromManagement(t *testing.T) {
 		}),
 	).Return(nil)
 
-	app := NewDeviceConnectApp(nil, client)
+	app := NewDeviceConnectApp(nil, client, nil)
 
 	ctx := context.Background()
 	err := app.PublishMessageFromManagement(ctx, tenantID, deviceID, message)
@@ -398,7 +398,7 @@ func TestSubscribeMessagesFromDevice(t *testing.T) {
 		}),
 	).Return(nil)
 
-	app := NewDeviceConnectApp(nil, client)
+	app := NewDeviceConnectApp(nil, client, nil)
 
 	ctx := context.Background()
 	out, err := app.SubscribeMessagesFromDevice(ctx, tenantID, deviceID)
@@ -432,7 +432,7 @@ func TestSubscribeMessagesFromManagement(t *testing.T) {
 		}),
 	).Return(nil)
 
-	app := NewDeviceConnectApp(nil, client)
+	app := NewDeviceConnectApp(nil, client, nil)
 
 	ctx := context.Background()
 	out, err := app.SubscribeMessagesFromManagement(ctx, tenantID, deviceID)

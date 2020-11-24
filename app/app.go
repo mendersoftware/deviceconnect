@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/mendersoftware/deviceconnect/client/inventory"
 	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
@@ -54,13 +55,14 @@ type App interface {
 
 // DeviceConnectApp is an app object
 type DeviceConnectApp struct {
-	store  store.DataStore
-	client clientnats.ClientInterface
+	store     store.DataStore
+	client    clientnats.ClientInterface
+	inventory inventory.Client
 }
 
 // NewDeviceConnectApp returns a new DeviceConnectApp
-func NewDeviceConnectApp(store store.DataStore, client clientnats.ClientInterface) App {
-	return &DeviceConnectApp{store: store, client: client}
+func NewDeviceConnectApp(store store.DataStore, client clientnats.ClientInterface, inventory inventory.Client) App {
+	return &DeviceConnectApp{store: store, client: client, inventory: inventory}
 }
 
 // HealthCheck performs a health check and returns an error if it fails
