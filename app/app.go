@@ -62,7 +62,10 @@ type DeviceConnectApp struct {
 }
 
 // NewDeviceConnectApp returns a new DeviceConnectApp
-func NewDeviceConnectApp(store store.DataStore, client clientnats.ClientInterface, inventory inventory.Client) App {
+func NewDeviceConnectApp(
+	store store.DataStore,
+	client clientnats.ClientInterface,
+	inventory inventory.Client) App {
 	return &DeviceConnectApp{store: store, client: client, inventory: inventory}
 }
 
