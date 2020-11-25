@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/vmihailenco/msgpack/v5"
 
+	inv_mocks "github.com/mendersoftware/deviceconnect/client/inventory/mocks"
 	nats_mocks "github.com/mendersoftware/deviceconnect/client/nats/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 	store_mocks "github.com/mendersoftware/deviceconnect/store/mocks"
@@ -39,7 +40,7 @@ func TestHealthCheck(t *testing.T) {
 		}),
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.HealthCheck(ctx)
@@ -60,7 +61,7 @@ func TestProvisionTenant(t *testing.T) {
 		tenantID,
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.ProvisionTenant(ctx, &model.Tenant{TenantID: tenantID})
@@ -83,7 +84,7 @@ func TestProvisionDevice(t *testing.T) {
 		deviceID,
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.ProvisionDevice(ctx, tenantID, &model.Device{ID: deviceID})
@@ -106,7 +107,7 @@ func TestDeleteDevice(t *testing.T) {
 		deviceID,
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.DeleteDevice(ctx, tenantID, deviceID)
@@ -148,7 +149,7 @@ func TestGetDevice(t *testing.T) {
 		deviceID,
 	).Return(device, nil)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	_, res := app.GetDevice(ctx, tenantID, "error")
@@ -179,7 +180,7 @@ func TestUpdateDeviceStatus(t *testing.T) {
 		mock.AnythingOfType("string"),
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.UpdateDeviceStatus(ctx, tenantID, deviceID, "anything")
@@ -277,7 +278,7 @@ func TestPrepareUserSession(t *testing.T) {
 				).Return(tc.session, tc.upsertSessionErr)
 			}
 
-			app := NewDeviceConnectApp(store, nil)
+			app := NewDeviceConnectApp(store, nil, nil)
 
 			ctx := context.Background()
 			session, err := app.PrepareUserSession(ctx, tc.tenantID, tc.userID, tc.deviceID)
@@ -304,7 +305,7 @@ func TestUpdateUserSessionStatus(t *testing.T) {
 		mock.AnythingOfType("string"),
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil)
+	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.UpdateUserSessionStatus(ctx, tenantID, deviceID, "anything")
@@ -337,7 +338,7 @@ func TestPublishMessageFromDevice(t *testing.T) {
 		}),
 	).Return(nil)
 
-	app := NewDeviceConnectApp(nil, client)
+	app := NewDeviceConnectApp(nil, client, nil)
 
 	ctx := context.Background()
 	err := app.PublishMessageFromDevice(ctx, tenantID, deviceID, message)
@@ -368,7 +369,7 @@ func TestPublishMessageFromManagement(t *testing.T) {
 		}),
 	).Return(nil)
 
-	app := NewDeviceConnectApp(nil, client)
+	app := NewDeviceConnectApp(nil, client, nil)
 
 	ctx := context.Background()
 	err := app.PublishMessageFromManagement(ctx, tenantID, deviceID, message)
@@ -398,7 +399,7 @@ func TestSubscribeMessagesFromDevice(t *testing.T) {
 		}),
 	).Return(nil)
 
-	app := NewDeviceConnectApp(nil, client)
+	app := NewDeviceConnectApp(nil, client, nil)
 
 	ctx := context.Background()
 	out, err := app.SubscribeMessagesFromDevice(ctx, tenantID, deviceID)
@@ -432,7 +433,7 @@ func TestSubscribeMessagesFromManagement(t *testing.T) {
 		}),
 	).Return(nil)
 
-	app := NewDeviceConnectApp(nil, client)
+	app := NewDeviceConnectApp(nil, client, nil)
 
 	ctx := context.Background()
 	out, err := app.SubscribeMessagesFromManagement(ctx, tenantID, deviceID)
@@ -441,4 +442,81 @@ func TestSubscribeMessagesFromManagement(t *testing.T) {
 
 	msg := <-out
 	assert.Equal(t, message, msg)
+}
+
+func TestRemoteTerminalAllowed(t *testing.T) {
+	testCases := []struct {
+		name                    string
+		tenantID                string
+		deviceID                string
+		groups                  []string
+		inventorySearchErr      error
+		inventorySearchResCount int
+
+		allowed bool
+		err     error
+	}{
+		{
+			name:                    "ok, true",
+			tenantID:                "1",
+			deviceID:                "2",
+			groups:                  []string{"a", "b"},
+			inventorySearchResCount: 1,
+
+			allowed: true,
+		},
+		{
+			name:                    "ok, false",
+			tenantID:                "1",
+			deviceID:                "2",
+			groups:                  []string{"a", "b"},
+			inventorySearchResCount: 0,
+
+			allowed: false,
+		},
+		{
+			name:                    "ko, inventory error",
+			tenantID:                "1",
+			deviceID:                "2",
+			groups:                  []string{"a", "b"},
+			inventorySearchResCount: 0,
+			inventorySearchErr:      errors.New("search error"),
+
+			allowed: false,
+			err:     errors.New("search error"),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			inv := &inv_mocks.Client{}
+			inv.On("Search",
+				mock.MatchedBy(func(ctx context.Context) bool {
+					return true
+				}),
+				tc.tenantID,
+				model.SearchParams{
+					Page:    1,
+					PerPage: 1,
+					Filters: []model.FilterPredicate{
+						{
+							Scope:     model.InventoryGroupScope,
+							Attribute: model.InventoryGroupAttributeName,
+							Type:      "$in",
+							Value:     tc.groups,
+						},
+					},
+					DeviceIDs: []string{tc.deviceID},
+				},
+			).Return([]model.InvDevice{}, tc.inventorySearchResCount, tc.inventorySearchErr)
+
+			app := NewDeviceConnectApp(nil, nil, inv)
+
+			ctx := context.Background()
+			allowed, err := app.RemoteTerminalAllowed(ctx, tc.tenantID, tc.deviceID, tc.groups)
+			assert.Equal(t, tc.allowed, allowed)
+			assert.Equal(t, tc.err, err)
+
+			inv.AssertExpectations(t)
+		})
+	}
 }

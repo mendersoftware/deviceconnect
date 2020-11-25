@@ -15,8 +15,10 @@
 package http
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -78,7 +80,8 @@ func (h ManagementController) GetDevice(c *gin.Context) {
 	c.JSON(http.StatusOK, device)
 }
 
-// Connect starts a websocket connection with the device
+// Connect extracts identity from request, checks user permissions
+// and calls ConnectDevice
 func (h ManagementController) Connect(c *gin.Context) {
 	ctx := c.Request.Context()
 	l := log.FromContext(ctx)
@@ -94,6 +97,35 @@ func (h ManagementController) Connect(c *gin.Context) {
 	tenantID := idata.Tenant
 	userID := idata.Subject
 	deviceID := c.Param("deviceId")
+
+	if len(c.Request.Header.Get(model.RBACHeaderRemoteTerminalGroups)) > 1 {
+		groups := strings.Split(
+			c.Request.Header.Get(model.RBACHeaderRemoteTerminalGroups), ",")
+
+		allowed, err := h.app.RemoteTerminalAllowed(ctx, tenantID, deviceID, groups)
+		if err != nil {
+			l.Error(err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "internal error",
+			})
+			return
+		} else if !allowed {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "Access denied (RBAC).",
+			})
+			return
+		}
+	}
+
+	h.ConnectDevice(c, ctx, l, tenantID, userID, deviceID)
+}
+
+// ConnectDevice starts a websocket connection with the device
+func (h ManagementController) ConnectDevice(
+	c *gin.Context,
+	ctx context.Context,
+	l *log.Logger,
+	tenantID, userID, deviceID string) {
 
 	// Prepare the user session
 	session, err := h.app.PrepareUserSession(ctx, tenantID, userID, deviceID)
@@ -183,14 +215,14 @@ func (h ManagementController) Connect(c *gin.Context) {
 			}
 
 			err = h.app.PublishMessageFromManagement(
-				ctx, idata.Tenant, session.DeviceID, m,
+				ctx, tenantID, session.DeviceID, m,
 			)
 		}
 		close(done)
 	}()
 
 	// subscribe to messages from the device
-	messages, err := h.app.SubscribeMessagesFromDevice(ctx, idata.Tenant, session.DeviceID)
+	messages, err := h.app.SubscribeMessagesFromDevice(ctx, tenantID, session.DeviceID)
 	if err != nil {
 		return
 	}
