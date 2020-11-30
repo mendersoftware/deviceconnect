@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/mendersoftware/deviceconnect/client/inventory"
 	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
@@ -36,6 +37,7 @@ var (
 
 // App interface describes app objects
 //nolint:lll
+//go:generate ../utils/mockgen.sh
 type App interface {
 	HealthCheck(ctx context.Context) error
 	ProvisionTenant(ctx context.Context, tenant *model.Tenant) error
@@ -49,17 +51,22 @@ type App interface {
 	PublishMessageFromManagement(ctx context.Context, tenantID string, deviceID string, message *model.Message) error
 	SubscribeMessagesFromDevice(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error)
 	SubscribeMessagesFromManagement(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error)
+	RemoteTerminalAllowed(ctx context.Context, tenantID string, deviceID string, groups []string) (bool, error)
 }
 
 // DeviceConnectApp is an app object
 type DeviceConnectApp struct {
-	store  store.DataStore
-	client clientnats.ClientInterface
+	store     store.DataStore
+	client    clientnats.ClientInterface
+	inventory inventory.Client
 }
 
 // NewDeviceConnectApp returns a new DeviceConnectApp
-func NewDeviceConnectApp(store store.DataStore, client clientnats.ClientInterface) App {
-	return &DeviceConnectApp{store: store, client: client}
+func NewDeviceConnectApp(
+	store store.DataStore,
+	client clientnats.ClientInterface,
+	inventory inventory.Client) App {
+	return &DeviceConnectApp{store: store, client: client, inventory: inventory}
 }
 
 // HealthCheck performs a health check and returns an error if it fails
@@ -214,4 +221,35 @@ func (a *DeviceConnectApp) subscribeMessages(
 
 func getMessageSubject(tenantID, deviceID, channel string) string {
 	return fmt.Sprintf("%s/devices/%s/%s", tenantID, deviceID, channel)
+}
+
+func buildRBACFilter(deviceID string, groups []string) model.SearchParams {
+	searchParams := model.SearchParams{
+		Page:    1,
+		PerPage: 1,
+		Filters: []model.FilterPredicate{
+			{
+				Scope:     model.InventoryGroupScope,
+				Attribute: model.InventoryGroupAttributeName,
+				Type:      "$in",
+				Value:     groups,
+			},
+		},
+		DeviceIDs: []string{deviceID},
+	}
+	return searchParams
+}
+
+func (a *DeviceConnectApp) RemoteTerminalAllowed(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+	groups []string) (bool, error) {
+	_, num, err := a.inventory.Search(ctx, tenantID, buildRBACFilter(deviceID, groups))
+	if err != nil {
+		return false, err
+	} else if num != 1 {
+		return false, nil
+	}
+	return true, nil
 }

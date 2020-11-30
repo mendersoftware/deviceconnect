@@ -60,15 +60,15 @@ const (
 	// SettingDebugLogDefault is the default value for the debug log enabling
 	SettingDebugLogDefault = false
 
-	// SettingDeviceAuthURL is the config key for the deviceauth url
-	SettingDeviceAuthURL = "deviceauth_url"
-	// SettingDeviceAuthURLDefault is the default value for the deviceauth url
-	SettingDeviceAuthURLDefault = "http://mender-device-auth:8080"
+	// SettingInventoryURI is the config key for the inventory uri
+	SettingInventoryURI = "inventory_uri"
+	// SettingInventoryURIDefault is the default value for the inventory uri
+	SettingInventoryURIDefault = "http://mender-inventory:8080"
 
-	// SettingUseradmURL is the config key for the deviceauth url
-	SettingUseradmURL = "useradm_url"
-	// SettingUseradmURLDefault is the default value for the deviceauth url
-	SettingUseradmURLDefault = "http://mender-useradm:8080"
+	// SettingInventoryTimeout is the config key for the inventory timeout
+	SettingInventoryTimeout = "inventory_timeout"
+	// SettingInventoryTimeoutDefault is the default value for the inventory timeout
+	SettingInventoryTimeoutDefault = 10
 )
 
 var (
@@ -81,7 +81,7 @@ var (
 		{Key: SettingDbSSL, Value: SettingDbSSLDefault},
 		{Key: SettingDbSSLSkipVerify, Value: SettingDbSSLSkipVerifyDefault},
 		{Key: SettingDebugLog, Value: SettingDebugLogDefault},
-		{Key: SettingDeviceAuthURL, Value: SettingDeviceAuthURLDefault},
-		{Key: SettingUseradmURL, Value: SettingUseradmURLDefault},
+		{Key: SettingInventoryURI, Value: SettingInventoryURIDefault},
+		{Key: SettingInventoryTimeout, Value: SettingInventoryTimeoutDefault},
 	}
 )
