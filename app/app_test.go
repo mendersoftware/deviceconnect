@@ -28,6 +28,8 @@ import (
 	nats_mocks "github.com/mendersoftware/deviceconnect/client/nats/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 	store_mocks "github.com/mendersoftware/deviceconnect/store/mocks"
+	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/shell"
 )
 
 func TestHealthCheck(t *testing.T) {
@@ -320,16 +322,23 @@ func TestPublishMessageFromDevice(t *testing.T) {
 
 	subject := getMessageSubject(tenantID, deviceID, "device")
 
-	message := &model.Message{
-		Type: model.TypeShell,
-		Data: []byte("data"),
+	message := &ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:     ws.ProtoTypeShell,
+			MsgType:   shell.MessageTypeShellCommand,
+			SessionID: "any-session-id",
+			Properties: map[string]interface{}{
+				"status": "ok",
+			},
+		},
+		Body: []byte("data"),
 	}
 
 	client := &nats_mocks.ClientInterface{}
 	client.On("Publish",
 		subject,
 		mock.MatchedBy(func(data []byte) bool {
-			decodedMessage := &model.Message{}
+			decodedMessage := &ws.ProtoMsg{}
 			err := msgpack.Unmarshal(data, decodedMessage)
 			assert.NoError(t, err)
 			assert.Equal(t, message, decodedMessage)
@@ -351,16 +360,23 @@ func TestPublishMessageFromManagement(t *testing.T) {
 
 	subject := getMessageSubject(tenantID, deviceID, "management")
 
-	message := &model.Message{
-		Type: model.TypeShell,
-		Data: []byte("data"),
+	message := &ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:     ws.ProtoTypeShell,
+			MsgType:   shell.MessageTypeShellCommand,
+			SessionID: "any-session-id",
+			Properties: map[string]interface{}{
+				"status": "ok",
+			},
+		},
+		Body: []byte("data"),
 	}
 
 	client := &nats_mocks.ClientInterface{}
 	client.On("Publish",
 		subject,
 		mock.MatchedBy(func(data []byte) bool {
-			decodedMessage := &model.Message{}
+			decodedMessage := &ws.ProtoMsg{}
 			err := msgpack.Unmarshal(data, decodedMessage)
 			assert.NoError(t, err)
 			assert.Equal(t, message, decodedMessage)
@@ -382,9 +398,16 @@ func TestSubscribeMessagesFromDevice(t *testing.T) {
 
 	subject := getMessageSubject(tenantID, deviceID, "device")
 
-	message := &model.Message{
-		Type: model.TypeShell,
-		Data: []byte("data"),
+	message := &ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:     ws.ProtoTypeShell,
+			MsgType:   shell.MessageTypeShellCommand,
+			SessionID: "any-session-id",
+			Properties: map[string]interface{}{
+				"status": "ok",
+			},
+		},
+		Body: []byte("data"),
 	}
 
 	client := &nats_mocks.ClientInterface{}
@@ -416,9 +439,16 @@ func TestSubscribeMessagesFromManagement(t *testing.T) {
 
 	subject := getMessageSubject(tenantID, deviceID, "management")
 
-	message := &model.Message{
-		Type: model.TypeShell,
-		Data: []byte("data"),
+	message := &ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:     ws.ProtoTypeShell,
+			MsgType:   shell.MessageTypeShellCommand,
+			SessionID: "any-session-id",
+			Properties: map[string]interface{}{
+				"status": "ok",
+			},
+		},
+		Body: []byte("data"),
 	}
 
 	client := &nats_mocks.ClientInterface{}
