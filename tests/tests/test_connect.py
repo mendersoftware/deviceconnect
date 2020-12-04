@@ -74,12 +74,51 @@ class _TestConnect:
                 raise Exception("Expected status code 101")
 
             with management_api_connect(dev.id, tenant_id=tenant_id) as user_conn:
-                user_conn.send(msgpack.dumps({"type": "shell", "data": None,}))
+                user_conn.send(
+                    msgpack.dumps(
+                        {
+                            "hdr": {
+                                "proto": 1,
+                                "typ": "shell",
+                                "sid": "session-id",
+                                "props": {"status": "ok"},
+                            },
+                            "body": None,
+                        }
+                    )
+                )
                 msg = dev_conn.recv()
-                assert msgpack.loads(msg) == {"type": "shell", "data": None, "session_id": "", "status_code": 0}
-                dev_conn.send(msgpack.dumps({"type": "shell", "data": b"sh-5.0$ "}))
+                assert msgpack.loads(msg) == {
+                    "hdr": {
+                        "proto": 1,
+                        "typ": "shell",
+                        "sid": "session-id",
+                        "props": {"status": "ok"},
+                    },
+                }
+                dev_conn.send(
+                    msgpack.dumps(
+                        {
+                            "hdr": {
+                                "proto": 1,
+                                "typ": "shell",
+                                "sid": "session-id",
+                                "props": {"status": "ok"},
+                            },
+                            "body": b"sh-5.0$ ",
+                        }
+                    )
+                )
                 msg = user_conn.recv()
-                assert msgpack.loads(msg) == {"type": "shell", "data": b"sh-5.0$ ", "session_id": "", "status_code": 0}
+                assert msgpack.loads(msg) == {
+                    "hdr": {
+                        "proto": 1,
+                        "typ": "shell",
+                        "sid": "session-id",
+                        "props": {"status": "ok"},
+                    },
+                    "body": b"sh-5.0$ ",
+                }
 
         try:
             api_mgmt.connect(
