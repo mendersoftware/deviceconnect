@@ -125,7 +125,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
-		Subprotocols:    []string{"binary"},
+		Subprotocols:    []string{"protomsg/msgpack"},
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
