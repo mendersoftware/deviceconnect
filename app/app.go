@@ -23,6 +23,7 @@ import (
 	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
+	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/nats-io/nats.go"
 	"github.com/vmihailenco/msgpack"
 )
@@ -47,10 +48,10 @@ type App interface {
 	UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error
 	PrepareUserSession(ctx context.Context, tenantID string, userID string, deviceID string) (*model.Session, error)
 	UpdateUserSessionStatus(ctx context.Context, tenantID string, sessionID string, status string) error
-	PublishMessageFromDevice(ctx context.Context, tenantID string, deviceID string, message *model.Message) error
-	PublishMessageFromManagement(ctx context.Context, tenantID string, deviceID string, message *model.Message) error
-	SubscribeMessagesFromDevice(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error)
-	SubscribeMessagesFromManagement(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error)
+	PublishMessageFromDevice(ctx context.Context, tenantID string, deviceID string, message *ws.ProtoMsg) error
+	PublishMessageFromManagement(ctx context.Context, tenantID string, deviceID string, message *ws.ProtoMsg) error
+	SubscribeMessagesFromDevice(ctx context.Context, tenantID string, deviceID string) (<-chan *ws.ProtoMsg, error)
+	SubscribeMessagesFromManagement(ctx context.Context, tenantID string, deviceID string) (<-chan *ws.ProtoMsg, error)
 	RemoteTerminalAllowed(ctx context.Context, tenantID string, deviceID string, groups []string) (bool, error)
 }
 
@@ -152,7 +153,7 @@ func (a *DeviceConnectApp) PublishMessageFromDevice(
 	ctx context.Context,
 	tenantID string,
 	deviceID string,
-	message *model.Message,
+	message *ws.ProtoMsg,
 ) error {
 	subject := getMessageSubject(tenantID, deviceID, "device")
 	return a.publishMessage(ctx, subject, message)
@@ -163,7 +164,7 @@ func (a *DeviceConnectApp) PublishMessageFromManagement(
 	ctx context.Context,
 	tenantID string,
 	deviceID string,
-	message *model.Message,
+	message *ws.ProtoMsg,
 ) error {
 	subject := getMessageSubject(tenantID, deviceID, "management")
 	return a.publishMessage(ctx, subject, message)
@@ -172,7 +173,7 @@ func (a *DeviceConnectApp) PublishMessageFromManagement(
 func (a *DeviceConnectApp) publishMessage(
 	ctx context.Context,
 	subject string,
-	message *model.Message,
+	message *ws.ProtoMsg,
 ) error {
 	data, err := msgpack.Marshal(message)
 	if err == nil {
@@ -186,7 +187,7 @@ func (a *DeviceConnectApp) SubscribeMessagesFromDevice(
 	ctx context.Context,
 	tenantID string,
 	deviceID string,
-) (<-chan *model.Message, error) {
+) (<-chan *ws.ProtoMsg, error) {
 	subject := getMessageSubject(tenantID, deviceID, "device")
 	return a.subscribeMessages(ctx, subject)
 }
@@ -197,7 +198,7 @@ func (a *DeviceConnectApp) SubscribeMessagesFromManagement(
 	ctx context.Context,
 	tenantID string,
 	deviceID string,
-) (<-chan *model.Message, error) {
+) (<-chan *ws.ProtoMsg, error) {
 	subject := getMessageSubject(tenantID, deviceID, "management")
 	return a.subscribeMessages(ctx, subject)
 }
@@ -205,10 +206,10 @@ func (a *DeviceConnectApp) SubscribeMessagesFromManagement(
 func (a *DeviceConnectApp) subscribeMessages(
 	ctx context.Context,
 	subject string,
-) (<-chan *model.Message, error) {
-	out := make(chan *model.Message, channelSize)
+) (<-chan *ws.ProtoMsg, error) {
+	out := make(chan *ws.ProtoMsg, channelSize)
 	if err := a.client.Subscribe(subject, func(msg *nats.Msg) {
-		message := &model.Message{}
+		message := &ws.ProtoMsg{}
 		if err := msgpack.Unmarshal(msg.Data, message); err == nil {
 			out <- message
 		}
