@@ -1,5 +1,5 @@
 [![Build Status](https://gitlab.com/Northern.tech/Mender/deviceconnect/badges/master/pipeline.svg)](https://gitlab.com/Northern.tech/Mender/deviceconnect/pipelines)
-[![codecov](https://codecov.io/gh/mendersoftware/deviceconnect/branch/master/graph/badge.svg)](https://codecov.io/gh/mendersoftware/deviceconnect)
+[![Coverage Status](https://coveralls.io/repos/github/mendersoftware/deviceconnect/badge.svg?branch=master)](https://coveralls.io/github/mendersoftware/deviceconnect?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/mendersoftware/deviceconnect)](https://goreportcard.com/report/github.com/mendersoftware/deviceconnect)
 [![Docker pulls](https://img.shields.io/docker/pulls/mendersoftware/deviceconnect.svg?maxAge=3600)](https://hub.docker.com/r/mendersoftware/deviceconnect/)
 
