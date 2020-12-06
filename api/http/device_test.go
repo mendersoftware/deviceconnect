@@ -57,7 +57,7 @@ func TestDeviceConnect(t *testing.T) {
 				JWTDeviceID,
 			).Return(make(<-chan *model.Message), nil)
 
-			app.On("UpdateDeviceStatus",
+			app.On("UpsertDeviceStatus",
 				mock.MatchedBy(func(_ context.Context) bool {
 					return true
 				}),
@@ -66,7 +66,7 @@ func TestDeviceConnect(t *testing.T) {
 				model.DeviceStatusConnected,
 			).Return(nil)
 
-			app.On("UpdateDeviceStatus",
+			app.On("UpsertDeviceStatus",
 				mock.MatchedBy(func(_ context.Context) bool {
 					return true
 				}),

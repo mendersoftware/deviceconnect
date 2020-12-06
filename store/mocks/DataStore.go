@@ -129,8 +129,8 @@ func (_m *DataStore) ProvisionTenant(ctx context.Context, tenantID string) error
 	return r0
 }
 
-// UpdateDeviceStatus provides a mock function with given fields: ctx, tenantID, deviceID, status
-func (_m *DataStore) UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error {
+// UpsertDeviceStatus provides a mock function with given fields: ctx, tenantID, deviceID, status
+func (_m *DataStore) UpsertDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error {
 	ret := _m.Called(ctx, tenantID, deviceID, status)
 
 	var r0 error

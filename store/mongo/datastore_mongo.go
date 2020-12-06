@@ -204,8 +204,8 @@ func (db *DataStoreMongo) GetDevice(
 	return device, nil
 }
 
-// UpdateDeviceStatus updates a device status
-func (db *DataStoreMongo) UpdateDeviceStatus(
+// UpsertDeviceStatus upserts the connection status of a device
+func (db *DataStoreMongo) UpsertDeviceStatus(
 	ctx context.Context,
 	tenantID string,
 	deviceID string,
@@ -215,6 +215,8 @@ func (db *DataStoreMongo) UpdateDeviceStatus(
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
 	updateOpts := &mopts.UpdateOptions{}
+	updateOpts.SetUpsert(true)
+
 	_, err := coll.UpdateOne(ctx,
 		bson.M{"_id": deviceID},
 		bson.M{

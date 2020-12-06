@@ -76,7 +76,7 @@ func TestProvisionAndDeleteDevice(t *testing.T) {
 	assert.Nil(t, device)
 }
 
-func TestUpdateDeviceStatus(t *testing.T) {
+func TestUpsertDeviceStatus(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping TestPing in short mode.")
 	}
@@ -96,10 +96,18 @@ func TestUpdateDeviceStatus(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, model.DeviceStatusDisconnected, device.Status)
 
-	err = ds.UpdateDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusConnected)
+	err = ds.UpsertDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusConnected)
 	assert.NoError(t, err)
 
 	device, err = ds.GetDevice(ctx, tenantID, deviceID)
+	assert.NoError(t, err)
+	assert.Equal(t, model.DeviceStatusConnected, device.Status)
+
+	const anotherDeviceID = "efgh"
+	err = ds.UpsertDeviceStatus(ctx, tenantID, anotherDeviceID, model.DeviceStatusConnected)
+	assert.NoError(t, err)
+
+	device, err = ds.GetDevice(ctx, tenantID, anotherDeviceID)
 	assert.NoError(t, err)
 	assert.Equal(t, model.DeviceStatusConnected, device.Status)
 }
