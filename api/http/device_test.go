@@ -27,6 +27,7 @@ import (
 	"github.com/gorilla/websocket"
 	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
+	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -55,7 +56,7 @@ func TestDeviceConnect(t *testing.T) {
 				}),
 				JWTUserTenantID,
 				JWTDeviceID,
-			).Return(make(<-chan *model.Message), nil)
+			).Return(make(<-chan *ws.ProtoMsg), nil)
 
 			app.On("UpdateDeviceStatus",
 				mock.MatchedBy(func(_ context.Context) bool {

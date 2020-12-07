@@ -209,6 +209,8 @@ github.com/mattn/go-isatty v0.0.12/go.mod h1:cbi8OIDigv2wuxKPP5vlRcQ1OAZbq2CE4Ky
 github.com/matttproud/golang_protobuf_extensions v1.0.1/go.mod h1:D8He9yQNgCq6Z5Ld7szi9bcBfOoFv/3dc6xSMkL2PC0=
 github.com/mendersoftware/go-lib-micro v0.0.0-20201026100742-d6284fa5c72e h1:oPLWAViZP8fPTgj17zLopZPjDiTDTIiBofQTkvMl1w4=
 github.com/mendersoftware/go-lib-micro v0.0.0-20201026100742-d6284fa5c72e/go.mod h1:YS+R6BzblKr9btU1DrlcgKlZX9l63J60pRtcn9stzx0=
+github.com/mendersoftware/go-lib-micro v0.0.0-20201130081948-4c9081b6f34e h1:c8mpBbxoKN+aUo2n7vyTPebvGr/YK5xPWxPgF5mBMYc=
+github.com/mendersoftware/go-lib-micro v0.0.0-20201130081948-4c9081b6f34e/go.mod h1:Rc0zHheMTwavpoWxg+0BGP2FizkMml1yMBpFpXepttI=
 github.com/mendersoftware/mendertesting v0.0.2-0.20201017134033-a52f7a79af4f/go.mod h1:dE4yKtX64TQV1Z0hZtb1q0IZspCnB9q2qhcPeQONkUQ=
 github.com/miekg/dns v1.0.14/go.mod h1:W1PPwlIAgtquWBMBEV9nkV9Cazfe8ScdGz/Lj7v3Nrg=
 github.com/mitchellh/cli v1.0.0/go.mod h1:hNIlj7HEI86fIcpObd7a0FcrxTWetlwJDGcceTlRvqc=

@@ -19,6 +19,7 @@ package mocks
 import (
 	context "context"
 
+	"github.com/mendersoftware/go-lib-micro/ws"
 	model "github.com/mendersoftware/deviceconnect/model"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -131,11 +132,11 @@ func (_m *App) ProvisionTenant(ctx context.Context, tenant *model.Tenant) error 
 }
 
 // PublishMessageFromDevice provides a mock function with given fields: ctx, tenantID, deviceID, message
-func (_m *App) PublishMessageFromDevice(ctx context.Context, tenantID string, deviceID string, message *model.Message) error {
+func (_m *App) PublishMessageFromDevice(ctx context.Context, tenantID string, deviceID string, message *ws.ProtoMsg) error {
 	ret := _m.Called(ctx, tenantID, deviceID, message)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, *model.Message) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, *ws.ProtoMsg) error); ok {
 		r0 = rf(ctx, tenantID, deviceID, message)
 	} else {
 		r0 = ret.Error(0)
@@ -145,11 +146,11 @@ func (_m *App) PublishMessageFromDevice(ctx context.Context, tenantID string, de
 }
 
 // PublishMessageFromManagement provides a mock function with given fields: ctx, tenantID, deviceID, message
-func (_m *App) PublishMessageFromManagement(ctx context.Context, tenantID string, deviceID string, message *model.Message) error {
+func (_m *App) PublishMessageFromManagement(ctx context.Context, tenantID string, deviceID string, message *ws.ProtoMsg) error {
 	ret := _m.Called(ctx, tenantID, deviceID, message)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, *model.Message) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, *ws.ProtoMsg) error); ok {
 		r0 = rf(ctx, tenantID, deviceID, message)
 	} else {
 		r0 = ret.Error(0)
@@ -180,15 +181,15 @@ func (_m *App) RemoteTerminalAllowed(ctx context.Context, tenantID string, devic
 }
 
 // SubscribeMessagesFromDevice provides a mock function with given fields: ctx, tenantID, deviceID
-func (_m *App) SubscribeMessagesFromDevice(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error) {
+func (_m *App) SubscribeMessagesFromDevice(ctx context.Context, tenantID string, deviceID string) (<-chan *ws.ProtoMsg, error) {
 	ret := _m.Called(ctx, tenantID, deviceID)
 
-	var r0 <-chan *model.Message
-	if rf, ok := ret.Get(0).(func(context.Context, string, string) <-chan *model.Message); ok {
+	var r0 <-chan *ws.ProtoMsg
+	if rf, ok := ret.Get(0).(func(context.Context, string, string) <-chan *ws.ProtoMsg); ok {
 		r0 = rf(ctx, tenantID, deviceID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(<-chan *model.Message)
+			r0 = ret.Get(0).(<-chan *ws.ProtoMsg)
 		}
 	}
 
@@ -203,15 +204,15 @@ func (_m *App) SubscribeMessagesFromDevice(ctx context.Context, tenantID string,
 }
 
 // SubscribeMessagesFromManagement provides a mock function with given fields: ctx, tenantID, deviceID
-func (_m *App) SubscribeMessagesFromManagement(ctx context.Context, tenantID string, deviceID string) (<-chan *model.Message, error) {
+func (_m *App) SubscribeMessagesFromManagement(ctx context.Context, tenantID string, deviceID string) (<-chan *ws.ProtoMsg, error) {
 	ret := _m.Called(ctx, tenantID, deviceID)
 
-	var r0 <-chan *model.Message
-	if rf, ok := ret.Get(0).(func(context.Context, string, string) <-chan *model.Message); ok {
+	var r0 <-chan *ws.ProtoMsg
+	if rf, ok := ret.Get(0).(func(context.Context, string, string) <-chan *ws.ProtoMsg); ok {
 		r0 = rf(ctx, tenantID, deviceID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(<-chan *model.Message)
+			r0 = ret.Get(0).(<-chan *ws.ProtoMsg)
 		}
 	}
 

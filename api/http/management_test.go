@@ -27,6 +27,7 @@ import (
 	"github.com/mendersoftware/deviceconnect/app"
 	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
+	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -167,7 +168,7 @@ func TestManagementConnect(t *testing.T) {
 				}),
 				JWTUserTenantID,
 				tc.DeviceID,
-			).Return(make(<-chan *model.Message), nil)
+			).Return(make(<-chan *ws.ProtoMsg), nil)
 
 			app.On("PrepareUserSession",
 				mock.MatchedBy(func(_ context.Context) bool {

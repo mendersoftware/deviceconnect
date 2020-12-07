@@ -31,6 +31,7 @@ import (
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
 	"github.com/mendersoftware/go-lib-micro/rest.utils"
+	"github.com/mendersoftware/go-lib-micro/ws"
 )
 
 // HTTP errors
@@ -145,7 +146,7 @@ func (h ManagementController) ConnectDevice(
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
-		Subprotocols:    []string{"binary"},
+		Subprotocols:    []string{"protomsg/msgpack"},
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
@@ -154,7 +155,7 @@ func (h ManagementController) ConnectDevice(
 			rest.RenderError(c, s, e)
 		},
 	}
-	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	webSock, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
 		l.Error(err)
@@ -164,16 +165,16 @@ func (h ManagementController) ConnectDevice(
 		return
 	}
 
-	defer ws.Close()
+	defer webSock.Close()
 
 	// handle the ping-pong connection health check
-	err = ws.SetReadDeadline(time.Now().Add(pongWait * time.Second))
+	err = webSock.SetReadDeadline(time.Now().Add(pongWait * time.Second))
 	if err != nil {
 		l.Error(err)
 		return
 	}
-	ws.SetPongHandler(func(string) error {
-		return ws.SetReadDeadline(time.Now().Add(pongWait * time.Second))
+	webSock.SetPongHandler(func(string) error {
+		return webSock.SetReadDeadline(time.Now().Add(pongWait * time.Second))
 	})
 
 	// update the session status on websocket opening
@@ -204,11 +205,11 @@ func (h ManagementController) ConnectDevice(
 			data []byte
 		)
 		for err == nil {
-			_, data, err = ws.ReadMessage()
+			_, data, err = webSock.ReadMessage()
 			if err != nil {
 				break
 			}
-			m := &model.Message{}
+			m := &ws.ProtoMsg{}
 			err = msgpack.Unmarshal(data, m)
 			if err != nil {
 				break
@@ -227,7 +228,7 @@ func (h ManagementController) ConnectDevice(
 		return
 	}
 
-	websocketPing(ws)
+	websocketPing(webSock)
 	pingPeriod := (pongWait * time.Second * 9) / 10
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
@@ -241,7 +242,7 @@ Loop:
 				l.Error(err)
 				break Loop
 			}
-			err = ws.WriteMessage(websocket.BinaryMessage, data)
+			err = webSock.WriteMessage(websocket.BinaryMessage, data)
 			if err != nil {
 				l.Error(err)
 				break Loop
@@ -249,7 +250,7 @@ Loop:
 		case <-done:
 			break Loop
 		case <-ticker.C:
-			if !websocketPing(ws) {
+			if !websocketPing(webSock) {
 				break Loop
 			}
 		}

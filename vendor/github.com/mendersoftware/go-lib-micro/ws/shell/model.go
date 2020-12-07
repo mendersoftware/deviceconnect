@@ -12,17 +12,18 @@
 //    See the License for the specific language governing permissions and
 //    limitations under the License.
 
-package model
+package shell
 
-// Message constants
+type MenderShellMessageStatus int
+
 const (
-	TypeShell = "shell"
+	MessageTypeShellCommand = "shell"
+	MessageTypeSpawnShell   = "new"
+	MessageTypeStopShell    = "stop"
 )
 
-// Message represents a message between the device and the backend
-type Message struct {
-	Type      string `json:"type" msgpack:"type"`
-	SessionID string `json:"session_id" msgpack:"session_id"`
-	Status    int    `json:"status_code" msgpack:"status_code"`
-	Data      []byte `json:"data" msgpack:"data"`
-}
+const (
+	NormalMessage MenderShellMessageStatus = iota + 1
+	ErrorMessage
+	ControlMessage
+)
