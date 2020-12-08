@@ -103,7 +103,7 @@ func (a *DeviceConnectApp) GetDevice(
 	return device, nil
 }
 
-// DeleteDevice decomissions a new tenant
+// DeleteDevice decommissions a device
 func (a *DeviceConnectApp) DeleteDevice(ctx context.Context, tenantID, deviceID string) error {
 	return a.store.DeleteDevice(ctx, tenantID, deviceID)
 }
