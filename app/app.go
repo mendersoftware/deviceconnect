@@ -17,7 +17,7 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
+	"strings"
 
 	"github.com/mendersoftware/deviceconnect/client/inventory"
 	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
@@ -221,7 +221,7 @@ func (a *DeviceConnectApp) subscribeMessages(
 }
 
 func getMessageSubject(tenantID, deviceID, channel string) string {
-	return fmt.Sprintf("%s/devices/%s/%s", tenantID, deviceID, channel)
+	return strings.Join([]string{tenantID, "devices", deviceID, channel}, ".")
 }
 
 func buildRBACFilter(deviceID string, groups []string) model.SearchParams {
