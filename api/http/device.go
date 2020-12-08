@@ -158,7 +158,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 	})
 
 	// update the device status on websocket opening
-	err = h.app.UpdateDeviceStatus(
+	err = h.app.UpsertDeviceStatus(
 		ctx, idata.Tenant,
 		idata.Subject, model.DeviceStatusConnected,
 	)
@@ -168,7 +168,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 	}
 	defer func() {
 		// update the device status on websocket closing
-		err = h.app.UpdateDeviceStatus(
+		err = h.app.UpsertDeviceStatus(
 			ctx, idata.Tenant,
 			idata.Subject, model.DeviceStatusDisconnected,
 		)

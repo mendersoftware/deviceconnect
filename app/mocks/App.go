@@ -226,8 +226,8 @@ func (_m *App) SubscribeMessagesFromManagement(ctx context.Context, tenantID str
 	return r0, r1
 }
 
-// UpdateDeviceStatus provides a mock function with given fields: ctx, tenantID, deviceID, status
-func (_m *App) UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error {
+// UpsertDeviceStatus provides a mock function with given fields: ctx, tenantID, deviceID, status
+func (_m *App) UpsertDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error {
 	ret := _m.Called(ctx, tenantID, deviceID, status)
 
 	var r0 error

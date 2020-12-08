@@ -45,7 +45,7 @@ type App interface {
 	ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error
 	GetDevice(ctx context.Context, tenantID string, deviceID string) (*model.Device, error)
 	DeleteDevice(ctx context.Context, tenantID string, deviceID string) error
-	UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error
+	UpsertDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error
 	PrepareUserSession(ctx context.Context, tenantID string, userID string, deviceID string) (*model.Session, error)
 	UpdateUserSessionStatus(ctx context.Context, tenantID string, sessionID string, status string) error
 	PublishMessageFromDevice(ctx context.Context, tenantID string, deviceID string, message *ws.ProtoMsg) error
@@ -80,7 +80,7 @@ func (a *DeviceConnectApp) ProvisionTenant(ctx context.Context, tenant *model.Te
 	return a.store.ProvisionTenant(ctx, tenant.TenantID)
 }
 
-// ProvisionDevice provisions a new tenant
+// ProvisionDevice provisions a new device
 func (a *DeviceConnectApp) ProvisionDevice(
 	ctx context.Context,
 	tenantID string,
@@ -104,17 +104,17 @@ func (a *DeviceConnectApp) GetDevice(
 	return device, nil
 }
 
-// DeleteDevice provisions a new tenant
+// DeleteDevice decommissions a device
 func (a *DeviceConnectApp) DeleteDevice(ctx context.Context, tenantID, deviceID string) error {
 	return a.store.DeleteDevice(ctx, tenantID, deviceID)
 }
 
-// UpdateDeviceStatus provisions a new tenant
-func (a *DeviceConnectApp) UpdateDeviceStatus(
+// UpsertDeviceStatus upserts the connection status of a device
+func (a *DeviceConnectApp) UpsertDeviceStatus(
 	ctx context.Context,
 	tenantID, deviceID, status string,
 ) error {
-	return a.store.UpdateDeviceStatus(ctx, tenantID, deviceID, status)
+	return a.store.UpsertDeviceStatus(ctx, tenantID, deviceID, status)
 }
 
 // PrepareUserSession prepares a new user session

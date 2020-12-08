@@ -167,13 +167,13 @@ func TestGetDevice(t *testing.T) {
 	store.AssertExpectations(t)
 }
 
-func TestUpdateDeviceStatus(t *testing.T) {
+func TestUpsertDeviceStatus(t *testing.T) {
 	err := errors.New("error")
 	const tenantID = "1234"
 	const deviceID = "abcd"
 
 	store := &store_mocks.DataStore{}
-	store.On("UpdateDeviceStatus",
+	store.On("UpsertDeviceStatus",
 		mock.MatchedBy(func(ctx context.Context) bool {
 			return true
 		}),
@@ -185,7 +185,7 @@ func TestUpdateDeviceStatus(t *testing.T) {
 	app := NewDeviceConnectApp(store, nil, nil)
 
 	ctx := context.Background()
-	res := app.UpdateDeviceStatus(ctx, tenantID, deviceID, "anything")
+	res := app.UpsertDeviceStatus(ctx, tenantID, deviceID, "anything")
 	assert.Equal(t, err, res)
 
 	store.AssertExpectations(t)
