@@ -21,6 +21,7 @@ import (
 
 	"github.com/mendersoftware/deviceconnect/client/inventory"
 	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
+	"github.com/mendersoftware/deviceconnect/client/workflows"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
 	"github.com/mendersoftware/go-lib-micro/ws"
@@ -60,14 +61,17 @@ type DeviceConnectApp struct {
 	store     store.DataStore
 	client    clientnats.ClientInterface
 	inventory inventory.Client
+	workflows workflows.Client
 }
 
 // NewDeviceConnectApp returns a new DeviceConnectApp
 func NewDeviceConnectApp(
 	store store.DataStore,
 	client clientnats.ClientInterface,
-	inventory inventory.Client) App {
-	return &DeviceConnectApp{store: store, client: client, inventory: inventory}
+	inventory inventory.Client,
+	wflows workflows.Client,
+) App {
+	return &DeviceConnectApp{store: store, client: client, inventory: inventory, workflows: wflows}
 }
 
 // HealthCheck performs a health check and returns an error if it fails

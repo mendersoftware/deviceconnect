@@ -69,6 +69,11 @@ const (
 	SettingInventoryTimeout = "inventory_timeout"
 	// SettingInventoryTimeoutDefault is the default value for the inventory timeout
 	SettingInventoryTimeoutDefault = 10
+
+	// SettingWorkflowsURL sets the base URL for the workflows orchestrator.
+	SettingWorkflowsURL = "workflows_url"
+	// SettingWorkflowsURLDefault sets the default workflows URL.
+	SettingWorkflowsURLDefault = "http://mender-workflows:8080"
 )
 
 var (
@@ -83,5 +88,6 @@ var (
 		{Key: SettingDebugLog, Value: SettingDebugLogDefault},
 		{Key: SettingInventoryURI, Value: SettingInventoryURIDefault},
 		{Key: SettingInventoryTimeout, Value: SettingInventoryTimeoutDefault},
+		{Key: SettingWorkflowsURL, Value: SettingWorkflowsURLDefault},
 	}
 )

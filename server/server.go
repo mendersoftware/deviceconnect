@@ -29,6 +29,7 @@ import (
 	"github.com/mendersoftware/deviceconnect/app"
 	"github.com/mendersoftware/deviceconnect/client/inventory"
 	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
+	"github.com/mendersoftware/deviceconnect/client/workflows"
 	dconfig "github.com/mendersoftware/deviceconnect/config"
 	"github.com/mendersoftware/deviceconnect/store"
 )
@@ -50,7 +51,8 @@ func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 		config.Config.GetString(dconfig.SettingInventoryURI),
 		config.Config.GetInt(dconfig.SettingInventoryTimeout),
 	)
-	deviceConnectApp := app.NewDeviceConnectApp(dataStore, client, inventory)
+	wflows := workflows.NewClient(config.Config.GetString(dconfig.SettingWorkflowsURI))
+	deviceConnectApp := app.NewDeviceConnectApp(dataStore, client, inventory, wflows)
 
 	router, err := api.NewRouter(deviceConnectApp)
 	if err != nil {
