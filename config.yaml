@@ -56,3 +56,9 @@ mongo_dbname: deviceconnect
 ## Overwrite with environment variable DEVICECONNECT_WORKFLOWS_URL
 #
 # workflows_url: http://mender-workflows:8080
+
+## enable/disable audit logging
+## Defaults to: false
+## Overwrite with environment variable DEVICECONNECT_ENABLE_AUDIT
+#
+# enable_audit: false

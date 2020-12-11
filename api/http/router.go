@@ -20,6 +20,8 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/nats-io/nats.go"
+
 	"github.com/mendersoftware/deviceconnect/app"
 	"github.com/mendersoftware/go-lib-micro/accesslog"
 	"github.com/mendersoftware/go-lib-micro/identity"
@@ -45,7 +47,10 @@ const (
 )
 
 // NewRouter returns the gin router
-func NewRouter(deviceConnectApp app.App) (*gin.Engine, error) {
+func NewRouter(
+	app app.App,
+	natsClient *nats.Conn,
+) (*gin.Engine, error) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DisableConsoleColor()
 
@@ -85,19 +90,19 @@ func NewRouter(deviceConnectApp app.App) (*gin.Engine, error) {
 		MaxAge: time.Hour * 12,
 	}))
 
-	status := NewStatusController(deviceConnectApp)
+	status := NewStatusController(app)
 	router.GET(APIURLInternalAlive, status.Alive)
 	router.GET(APIURLInternalHealth, status.Health)
 
-	tenants := NewTenantsController(deviceConnectApp)
+	tenants := NewTenantsController(app)
 	router.POST(APIURLInternalTenants, tenants.Provision)
 
-	device := NewDeviceController(deviceConnectApp)
+	device := NewDeviceController(app, natsClient)
 	router.GET(APIURLDevicesConnect, device.Connect)
 	router.POST(APIURLInternalDevices, device.Provision)
 	router.DELETE(APIURLInternalDevicesID, device.Delete)
 
-	management := NewManagementController(deviceConnectApp)
+	management := NewManagementController(app, natsClient)
 	router.GET(APIURLManagementDevice, management.GetDevice)
 	router.GET(APIURLManagementDeviceConnect, management.Connect)
 

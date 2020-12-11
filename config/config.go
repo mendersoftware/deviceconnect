@@ -74,6 +74,11 @@ const (
 	SettingWorkflowsURL = "workflows_url"
 	// SettingWorkflowsURLDefault sets the default workflows URL.
 	SettingWorkflowsURLDefault = "http://mender-workflows:8080"
+
+	// SettingEnableAuditLogs enables/disables audit logging.
+	SettingEnableAuditLogs = "enable_audit"
+	// SettingEnableAuditLogsDefault is disabled by default.
+	SettingEnableAuditLogsDefault = false
 )
 
 var (
@@ -89,5 +94,6 @@ var (
 		{Key: SettingInventoryURI, Value: SettingInventoryURIDefault},
 		{Key: SettingInventoryTimeout, Value: SettingInventoryTimeoutDefault},
 		{Key: SettingWorkflowsURL, Value: SettingWorkflowsURLDefault},
+		{Key: SettingEnableAuditLogs, Value: SettingEnableAuditLogsDefault},
 	}
 )
