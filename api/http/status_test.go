@@ -30,7 +30,7 @@ import (
 func TestAlive(t *testing.T) {
 	deviceConnectApp := &app_mocks.App{}
 
-	router, _ := NewRouter(deviceConnectApp)
+	router, _ := NewRouter(deviceConnectApp, nil)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", APIURLInternalAlive, nil)
@@ -68,7 +68,7 @@ func TestHealth(t *testing.T) {
 					return true
 				})).Return(tc.HealthCheckErr)
 
-			router, _ := NewRouter(deviceConnectApp)
+			router, _ := NewRouter(deviceConnectApp, nil)
 			req, err := http.NewRequest("GET", APIURLInternalHealth, nil)
 			if !assert.NoError(t, err) {
 				t.FailNow()
