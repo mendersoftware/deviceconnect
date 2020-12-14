@@ -19,9 +19,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mendersoftware/deviceconnect/model"
-	"github.com/mendersoftware/go-lib-micro/config"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/mendersoftware/deviceconnect/model"
+	"github.com/mendersoftware/deviceconnect/store"
+	"github.com/mendersoftware/go-lib-micro/identity"
+	mstore "github.com/mendersoftware/go-lib-micro/store"
 )
 
 func TestPing(t *testing.T) {
@@ -31,7 +35,7 @@ func TestPing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
 	defer cancel()
 
-	ds := NewDataStoreWithClient(db.Client(), config.Config)
+	ds := NewDataStoreWithClient(db.Client())
 	err := ds.Ping(ctx)
 	assert.NoError(t, err)
 }
@@ -43,7 +47,8 @@ func TestProvisionTenant(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
 	defer cancel()
 
-	ds := NewDataStoreWithClient(db.Client(), config.Config)
+	ds := DataStoreMongo{client: db.Client()}
+	defer ds.DropDatabase()
 	err := ds.ProvisionTenant(ctx, "1234")
 	assert.NoError(t, err)
 }
@@ -60,7 +65,8 @@ func TestProvisionAndDeleteDevice(t *testing.T) {
 		deviceID = "abcd"
 	)
 
-	ds := NewDataStoreWithClient(db.Client(), config.Config)
+	ds := DataStoreMongo{client: db.Client()}
+	defer ds.DropDatabase()
 	err := ds.ProvisionDevice(ctx, tenantID, deviceID)
 	assert.NoError(t, err)
 
@@ -88,7 +94,8 @@ func TestUpsertDeviceStatus(t *testing.T) {
 		deviceID = "abcd"
 	)
 
-	ds := NewDataStoreWithClient(db.Client(), config.Config)
+	ds := DataStoreMongo{client: db.Client()}
+	defer ds.DropDatabase()
 	err := ds.ProvisionDevice(ctx, tenantID, deviceID)
 	assert.NoError(t, err)
 
@@ -119,32 +126,275 @@ func TestUpsertDeviceStatus(t *testing.T) {
 	assert.Equal(t, model.DeviceStatusDisconnected, device.Status)
 }
 
-func TestUpsertSession(t *testing.T) {
+type brokenReader struct{}
+
+func (r brokenReader) Read(b []byte) (int, error) {
+	return 0, errors.New("broken reader")
+}
+
+func TestAllocateSession(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping TestPing in short mode.")
+		t.Skip("skipping TestAllocateSession in short mode.")
 	}
-	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
-	defer cancel()
+	testCases := []struct {
+		Name string
 
-	const (
-		tenantID = "1234"
-		userID   = "abcd"
-		deviceID = "efgh"
-	)
+		CTX     context.Context
+		Session *model.Session
 
-	ds := NewDataStoreWithClient(db.Client(), config.Config)
-	session, err := ds.UpsertSession(ctx, tenantID, userID, deviceID)
-	assert.NoError(t, err)
-	assert.Equal(t, userID, session.UserID)
-	assert.Equal(t, deviceID, session.DeviceID)
-	assert.Equal(t, model.SessionStatusDisconnected, session.Status)
-	time.Sleep(time.Minute * 10)
+		Erre error
+	}{{
+		Name: "ok",
 
-	//err = ds.UpdateSessionStatus(ctx, tenantID, session.ID, model.DeviceStatusConnected)
-	//assert.NoError(t, err)
+		CTX: context.Background(),
+		Session: &model.Session{
+			ID:       "0ff7cda3-a398-43b0-9776-6622cb6aa110",
+			UserID:   "9f56b9c3-d510-4107-9686-8a1c4969e02d",
+			DeviceID: "818c6ec3-051e-42ce-be79-7f75bc2b2da9",
+			TenantID: "123456789012345678901234",
+			StartTS:  time.Now(),
+		},
+	}, {
+		Name: "error, invalid session object",
 
-	//session, err = ds.GetSession(ctx, tenantID, session.ID)
-	//assert.NoError(t, err)
-	//assert.NotNil(t, session)
-	//assert.Equal(t, model.SessiontatusConnected, session.Status)
+		CTX: context.Background(),
+		Session: &model.Session{
+			ID:       "0ff7cda3-a398-43b0-9776-6622cb6aa111",
+			UserID:   "9f56b9c3-d510-4107-9686-8a1c4969e02d",
+			DeviceID: "818c6ec3-051e-42ce-be79-7f75bc2b2da9",
+			TenantID: "123456789012345678901234",
+		},
+		Erre: errors.New("store: cannot allocate invalid Session: " +
+			"start_ts: cannot be blank."),
+	}, {
+		Name: "error, context canceled",
+
+		CTX: func() context.Context {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			return ctx
+		}(),
+		Session: &model.Session{
+			ID:       "0ff7cda3-a398-43b0-9776-6622cb6aa112",
+			UserID:   "9f56b9c3-d510-4107-9686-8a1c4969e02d",
+			DeviceID: "818c6ec3-051e-42ce-be79-7f75bc2b2da9",
+			TenantID: "123456789012345678901234",
+			StartTS:  time.Now(),
+		},
+
+		Erre: errors.New(context.Canceled.Error() + `$`),
+	}}
+
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.Name, func(t *testing.T) {
+			ds := DataStoreMongo{client: db.Client()}
+			defer ds.DropDatabase()
+
+			err := ds.AllocateSession(tc.CTX, tc.Session)
+			if tc.Erre != nil {
+				if assert.Error(t, err) {
+					assert.Regexp(t, tc.Erre.Error(), err.Error())
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestDeleteSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping TestDeleteSession in short mode.")
+	}
+	testCases := []struct {
+		Name string
+
+		CTX       context.Context
+		SessionID string
+
+		Session *model.Session
+
+		Erre error
+	}{{
+		Name: "ok",
+
+		CTX: identity.WithContext(
+			context.Background(),
+			&identity.Identity{
+				Tenant: "000000000000000000000000",
+			},
+		),
+		SessionID: "00000000-0000-0000-0000-000000000000",
+		Session: &model.Session{
+			ID:       "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			DeviceID: "00000000-0000-0000-0000-000000000002",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now().UTC().Round(time.Second),
+		},
+	}, {
+		Name: "ok, no tenant",
+
+		CTX:       context.Background(),
+		SessionID: "00000000-0000-0000-0000-000000000000",
+		Session: &model.Session{
+			ID:       "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			DeviceID: "00000000-0000-0000-0000-000000000002",
+			StartTS:  time.Now().UTC().Round(time.Second),
+		},
+	}, {
+		Name: "error, context canceled",
+
+		CTX: func() context.Context {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			return ctx
+		}(),
+		SessionID: "00000000-0000-0000-0000-000000000000",
+		Session: &model.Session{
+			ID:       "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			DeviceID: "00000000-0000-0000-0000-000000000002",
+			StartTS:  time.Now().UTC().Round(time.Second),
+		},
+		Erre: errors.New(context.Canceled.Error() + "$"),
+	}, {
+		Name: "error, session not found",
+
+		CTX:       context.Background(),
+		SessionID: "00000000-0000-0000-0000-000012345678",
+		Session: &model.Session{
+			ID:       "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			DeviceID: "00000000-0000-0000-0000-000000000002",
+			StartTS:  time.Now().UTC().Round(time.Second),
+		},
+		Erre: errors.New("^" + store.ErrSessionNotFound.Error() + "$"),
+	}}
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.Name, func(t *testing.T) {
+			ds := DataStoreMongo{client: db.Client()}
+			defer ds.DropDatabase()
+
+			database := db.Client().Database(mstore.DbNameForTenant(
+				tc.Session.TenantID, DbName,
+			))
+			collSess := database.Collection(SessionsCollectionName)
+			_, err := collSess.InsertOne(nil, tc.Session)
+			if err != nil {
+				panic(errors.Wrap(err,
+					"[TEST ERR] Failed to prepare test case",
+				))
+			}
+			sess, err := ds.DeleteSession(tc.CTX, tc.SessionID)
+			if tc.Erre != nil {
+				if assert.Error(t, err) {
+					assert.Regexp(t, tc.Erre.Error(), err.Error())
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.Session, sess)
+			}
+		})
+	}
+}
+
+func TestGetSession(t *testing.T) {
+	testCases := []struct {
+		Name string
+
+		CTX       context.Context
+		SessionID string
+
+		Session *model.Session
+
+		Erre error
+	}{{
+		Name: "ok",
+
+		CTX: identity.WithContext(
+			context.Background(),
+			&identity.Identity{
+				Tenant: "000000000000000000000000",
+			},
+		),
+		SessionID: "00000000-0000-0000-0000-000000000000",
+		Session: &model.Session{
+			ID:       "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			DeviceID: "00000000-0000-0000-0000-000000000002",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now().UTC().Round(time.Second),
+		},
+	}, {
+		Name: "ok, no tenant",
+
+		CTX:       context.Background(),
+		SessionID: "00000000-0000-0000-0000-000000000000",
+		Session: &model.Session{
+			ID:       "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			DeviceID: "00000000-0000-0000-0000-000000000002",
+			StartTS:  time.Now().UTC().Round(time.Second),
+		},
+	}, {
+		Name: "error, context canceled",
+
+		CTX: func() context.Context {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			return ctx
+		}(),
+		SessionID: "00000000-0000-0000-0000-000000000000",
+		Session: &model.Session{
+			ID:       "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			DeviceID: "00000000-0000-0000-0000-000000000002",
+			StartTS:  time.Now().UTC().Round(time.Second),
+		},
+		Erre: errors.New(context.Canceled.Error() + "$"),
+	}, {
+		Name: "error, session not found",
+
+		CTX:       context.Background(),
+		SessionID: "00000000-0000-0000-0000-000012345678",
+		Session: &model.Session{
+			ID:       "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			DeviceID: "00000000-0000-0000-0000-000000000002",
+			StartTS:  time.Now().UTC().Round(time.Second),
+		},
+		Erre: errors.New("^" + store.ErrSessionNotFound.Error() + "$"),
+	}}
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.Name, func(t *testing.T) {
+			ds := &DataStoreMongo{client: db.Client()}
+			defer ds.DropDatabase()
+
+			database := db.Client().Database(mstore.DbNameForTenant(
+				tc.Session.TenantID, DbName,
+			))
+			collSess := database.Collection(SessionsCollectionName)
+			_, err := collSess.InsertOne(nil, tc.Session)
+			if err != nil {
+				panic(errors.Wrap(err,
+					"[TEST ERR] Failed to prepare test case",
+				))
+			}
+
+			sess, err := ds.GetSession(tc.CTX, tc.SessionID)
+			if tc.Erre != nil {
+				if assert.Error(t, err) {
+					assert.Regexp(t, tc.Erre.Error(), err.Error())
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.Session, sess)
+			}
+		})
+	}
 }
