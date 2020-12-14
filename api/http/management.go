@@ -16,7 +16,6 @@ package http
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -204,11 +203,11 @@ func (h ManagementController) Connect(c *gin.Context) {
 }
 
 func websocketPing(conn *websocket.Conn) bool {
-	pongWaitString := strconv.Itoa(pongWait)
+	pongWaitString := strconv.Itoa(int(pongWait.Seconds()))
 	if err := conn.WriteControl(
 		websocket.PingMessage,
 		[]byte(pongWaitString),
-		time.Now().Add(writeWait*time.Second),
+		time.Now().Add(writeWait),
 	); err != nil {
 		return false
 	}
@@ -232,23 +231,33 @@ func (h ManagementController) websocketWriter(
 		// if not initiated by client.
 		conn.Close()
 	}()
-	if !websocketPing(conn) {
-		return
-	}
 
 	// handle the ping-pong connection health check
-	err = conn.SetReadDeadline(time.Now().Add(pongWait * time.Second))
+	err = conn.SetReadDeadline(time.Now().Add(pongWait))
 	if err != nil {
 		l.Error(err)
 		return err
 	}
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(pongWait * time.Second))
-	})
 
-	pingPeriod := (pongWait * time.Second * 9) / 10
+	pingPeriod := (pongWait * 9) / 10
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
+	conn.SetPongHandler(func(string) error {
+		ticker.Reset(pingPeriod)
+		return conn.SetReadDeadline(time.Now().Add(pongWait))
+	})
+	conn.SetPingHandler(func(msg string) error {
+		ticker.Reset(pingPeriod)
+		err := conn.SetReadDeadline(time.Now().Add(pongWait))
+		if err != nil {
+			return err
+		}
+		return conn.WriteControl(
+			websocket.PongMessage,
+			[]byte(msg),
+			time.Now().Add(writeWait),
+		)
+	})
 Loop:
 	for {
 		select {
@@ -301,6 +310,9 @@ func (h ManagementController) ConnectServeWS(
 	for {
 		_, data, err = conn.ReadMessage()
 		if err != nil {
+			if _, ok := err.(*websocket.CloseError); ok {
+				return nil
+			}
 			return err
 		}
 		m := &ws.ProtoMsg{}
@@ -316,8 +328,6 @@ func (h ManagementController) ConnectServeWS(
 		default:
 			// TODO: Handle protocol violation
 		}
-		b, _ := json.Marshal(m)
-		l.Infof("Forwarding message: %s", string(b))
 
 		err = h.nats.Publish(model.GetDeviceSubject(id.Tenant, sess.DeviceID), data)
 		if err != nil {

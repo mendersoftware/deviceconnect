@@ -35,12 +35,12 @@ import (
 	"github.com/mendersoftware/go-lib-micro/ws/shell"
 )
 
-const (
+var (
 	// Time allowed to read the next pong message from the peer.
-	pongWait = 60
+	pongWait = time.Minute
 
 	// Seconds allowed to write a message to the peer.
-	writeWait = 10
+	writeWait = time.Second * 10
 )
 
 // HTTP errors
@@ -203,23 +203,33 @@ func (h DeviceController) connectWSWriter(
 		// with error if not initiated by client.
 		conn.Close()
 	}()
-	if !websocketPing(conn) {
-		return
-	}
 
 	// handle the ping-pong connection health check
-	err = conn.SetReadDeadline(time.Now().Add(pongWait * time.Second))
+	err = conn.SetReadDeadline(time.Now().Add(pongWait))
 	if err != nil {
 		l.Error(err)
 		return err
 	}
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(pongWait * time.Second))
-	})
 
-	pingPeriod := (pongWait * time.Second * 9) / 10
+	pingPeriod := (pongWait * 9) / 10
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
+	conn.SetPongHandler(func(string) error {
+		ticker.Reset(pingPeriod)
+		return conn.SetReadDeadline(time.Now().Add(pongWait))
+	})
+	conn.SetPingHandler(func(msg string) error {
+		ticker.Reset(pingPeriod)
+		err := conn.SetReadDeadline(time.Now().Add(pongWait))
+		if err != nil {
+			return err
+		}
+		return conn.WriteControl(
+			websocket.PongMessage,
+			[]byte(msg),
+			time.Now().Add(writeWait),
+		)
+	})
 Loop:
 	for {
 		select {
@@ -302,8 +312,6 @@ func (h DeviceController) ConnectServeWS(
 		if err != nil {
 			return err
 		}
-		b, _ := json.Marshal(m)
-		l.Infof("Received message: %s", string(b))
 
 		sessMap[m.Header.SessionID] = struct{}{}
 		switch m.Header.Proto {
