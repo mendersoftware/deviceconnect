@@ -9,6 +9,6 @@ export PYTHONDONTWRITEBYTECODE=1
 # if we're running in a container, wait a little before starting tests
 [ $$ -eq 1 ] && sleep 10
 
-py.test -s --tb=short --verbose \
+py.test -vv -s --tb=short --verbose \
         --junitxml=$DIR/results.xml \
         $DIR/tests "$@"
