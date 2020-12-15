@@ -28,6 +28,16 @@ import (
 	mstore "github.com/mendersoftware/go-lib-micro/store"
 )
 
+type mockClock struct{}
+
+var (
+	mockTime = time.Date(2018, 01, 12, 22, 51, 48, 324000000, time.UTC)
+)
+
+func (m mockClock) Now() time.Time {
+	return mockTime
+}
+
 func TestPing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping TestPing in short mode.")
@@ -65,6 +75,13 @@ func TestProvisionAndDeleteDevice(t *testing.T) {
 		deviceID = "abcd"
 	)
 
+	previousClock := clock
+	defer func() {
+		clock = previousClock
+	}()
+
+	clock = mockClock{}
+
 	ds := DataStoreMongo{client: db.Client()}
 	defer ds.DropDatabase()
 	err := ds.ProvisionDevice(ctx, tenantID, deviceID)
@@ -73,6 +90,8 @@ func TestProvisionAndDeleteDevice(t *testing.T) {
 	device, err := ds.GetDevice(ctx, tenantID, deviceID)
 	assert.NoError(t, err)
 	assert.Equal(t, deviceID, device.ID)
+	assert.Equal(t, mockTime, device.CreatedTs)
+	assert.Equal(t, mockTime, device.UpdatedTs)
 
 	err = ds.DeleteDevice(ctx, tenantID, deviceID)
 	assert.NoError(t, err)
@@ -103,12 +122,21 @@ func TestUpsertDeviceStatus(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, model.DeviceStatusUnknown, device.Status)
 
+	previousClock := clock
+	defer func() {
+		clock = previousClock
+	}()
+
+	clock = mockClock{}
+
 	err = ds.UpsertDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusConnected)
 	assert.NoError(t, err)
 
 	device, err = ds.GetDevice(ctx, tenantID, deviceID)
 	assert.NoError(t, err)
 	assert.Equal(t, model.DeviceStatusConnected, device.Status)
+	assert.NotEqual(t, mockTime, device.CreatedTs)
+	assert.Equal(t, mockTime, device.UpdatedTs)
 
 	const anotherDeviceID = "efgh"
 	err = ds.UpsertDeviceStatus(ctx, tenantID, anotherDeviceID, model.DeviceStatusConnected)

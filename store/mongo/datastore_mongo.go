@@ -25,7 +25,10 @@ import (
 	dconfig "github.com/mendersoftware/deviceconnect/config"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
+	"github.com/mendersoftware/deviceconnect/utils"
 )
+
+var clock utils.Clock = utils.RealClock{}
 
 const (
 	// DevicesCollectionName refers to the name of the collection of stored devices
@@ -160,7 +163,7 @@ func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID, deviceI
 	dbname := mstore.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
-	now := time.Now().UTC()
+	now := clock.Now().UTC()
 
 	updateOpts := &mopts.UpdateOptions{}
 	updateOpts.SetUpsert(true)
@@ -170,6 +173,7 @@ func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID, deviceI
 			"$setOnInsert": bson.M{
 				dbFieldStatus:    model.DeviceStatusUnknown,
 				dbFieldCreatedTs: &now,
+				dbFieldUpdatedTs: &now,
 			},
 		},
 		updateOpts,
@@ -221,7 +225,7 @@ func (db *DataStoreMongo) UpsertDeviceStatus(
 	updateOpts := &mopts.UpdateOptions{}
 	updateOpts.SetUpsert(true)
 
-	now := time.Now().UTC()
+	now := clock.Now().UTC()
 
 	_, err := coll.UpdateOne(ctx,
 		bson.M{"_id": deviceID},
