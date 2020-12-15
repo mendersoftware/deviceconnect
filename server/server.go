@@ -23,12 +23,13 @@ import (
 
 	"github.com/mendersoftware/go-lib-micro/config"
 	"github.com/mendersoftware/go-lib-micro/log"
+	"github.com/nats-io/nats.go"
 	"golang.org/x/sys/unix"
 
 	api "github.com/mendersoftware/deviceconnect/api/http"
 	"github.com/mendersoftware/deviceconnect/app"
 	"github.com/mendersoftware/deviceconnect/client/inventory"
-	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
+	"github.com/mendersoftware/deviceconnect/client/workflows"
 	dconfig "github.com/mendersoftware/deviceconnect/config"
 	"github.com/mendersoftware/deviceconnect/store"
 )
@@ -40,19 +41,25 @@ func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 	log.Setup(conf.GetBool(dconfig.SettingDebugLog))
 	l := log.FromContext(ctx)
 
-	client := &clientnats.Client{}
-	if natsURI := config.Config.GetString(dconfig.SettingNatsURI); natsURI != "" {
-		if err := client.Connect(ctx, natsURI); err != nil {
-			return err
-		}
+	natsClient, err := nats.Connect(config.Config.GetString(dconfig.SettingNatsURI))
+	if err != nil {
+		return err
 	}
 	inventory := inventory.NewClient(
 		config.Config.GetString(dconfig.SettingInventoryURI),
 		config.Config.GetInt(dconfig.SettingInventoryTimeout),
 	)
-	deviceConnectApp := app.NewDeviceConnectApp(dataStore, client, inventory)
+	wflows := workflows.NewClient(
+		config.Config.GetString(dconfig.SettingWorkflowsURL),
+	)
+	deviceConnectApp := app.New(
+		dataStore, inventory,
+		wflows, app.Config{
+			HaveAuditLogs: conf.GetBool(dconfig.SettingEnableAuditLogs),
+		},
+	)
 
-	router, err := api.NewRouter(deviceConnectApp)
+	router, err := api.NewRouter(deviceConnectApp, natsClient)
 	if err != nil {
 		l.Fatal(err)
 	}

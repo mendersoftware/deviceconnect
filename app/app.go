@@ -16,19 +16,16 @@ package app
 
 import (
 	"context"
-	"errors"
-	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
 
 	"github.com/mendersoftware/deviceconnect/client/inventory"
-	clientnats "github.com/mendersoftware/deviceconnect/client/nats"
+	"github.com/mendersoftware/deviceconnect/client/workflows"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
-	"github.com/mendersoftware/go-lib-micro/ws"
-	"github.com/nats-io/nats.go"
-	"github.com/vmihailenco/msgpack"
 )
-
-const channelSize = 100
 
 // App errors
 var (
@@ -43,45 +40,54 @@ type App interface {
 	HealthCheck(ctx context.Context) error
 	ProvisionTenant(ctx context.Context, tenant *model.Tenant) error
 	ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error
-	GetDevice(ctx context.Context, tenantID string, deviceID string) (*model.Device, error)
-	DeleteDevice(ctx context.Context, tenantID string, deviceID string) error
-	UpsertDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error
-	PrepareUserSession(ctx context.Context, tenantID string, userID string, deviceID string) (*model.Session, error)
-	UpdateUserSessionStatus(ctx context.Context, tenantID string, sessionID string, status string) error
-	PublishMessageFromDevice(ctx context.Context, tenantID string, deviceID string, message *ws.ProtoMsg) error
-	PublishMessageFromManagement(ctx context.Context, tenantID string, deviceID string, message *ws.ProtoMsg) error
-	SubscribeMessagesFromDevice(ctx context.Context, tenantID string, deviceID string) (<-chan *ws.ProtoMsg, error)
-	SubscribeMessagesFromManagement(ctx context.Context, tenantID string, deviceID string) (<-chan *ws.ProtoMsg, error)
-	RemoteTerminalAllowed(ctx context.Context, tenantID string, deviceID string, groups []string) (bool, error)
+	GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error)
+	DeleteDevice(ctx context.Context, tenantID, deviceID string) error
+	UpdateDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error
+	PrepareUserSession(ctx context.Context, sess *model.Session) error
+	FreeUserSession(ctx context.Context, sessionID string) error
+	RemoteTerminalAllowed(ctx context.Context, tenantID, deviceID string, groups []string) (bool, error)
 }
 
-// DeviceConnectApp is an app object
-type DeviceConnectApp struct {
+// app is an app object
+type app struct {
 	store     store.DataStore
-	client    clientnats.ClientInterface
 	inventory inventory.Client
+	workflows workflows.Client
+	Config
 }
 
-// NewDeviceConnectApp returns a new DeviceConnectApp
-func NewDeviceConnectApp(
-	store store.DataStore,
-	client clientnats.ClientInterface,
-	inventory inventory.Client) App {
-	return &DeviceConnectApp{store: store, client: client, inventory: inventory}
+type Config struct {
+	HaveAuditLogs bool
+}
+
+// NewApp initialize a new deviceconnect App
+func New(ds store.DataStore, inv inventory.Client, wf workflows.Client, config ...Config) App {
+	conf := Config{}
+	for _, cfgIn := range config {
+		if cfgIn.HaveAuditLogs {
+			conf.HaveAuditLogs = true
+		}
+	}
+	return &app{
+		store:     ds,
+		inventory: inv,
+		workflows: wf,
+		Config:    conf,
+	}
 }
 
 // HealthCheck performs a health check and returns an error if it fails
-func (a *DeviceConnectApp) HealthCheck(ctx context.Context) error {
+func (a *app) HealthCheck(ctx context.Context) error {
 	return a.store.Ping(ctx)
 }
 
 // ProvisionTenant provisions a new tenant
-func (a *DeviceConnectApp) ProvisionTenant(ctx context.Context, tenant *model.Tenant) error {
+func (a *app) ProvisionTenant(ctx context.Context, tenant *model.Tenant) error {
 	return a.store.ProvisionTenant(ctx, tenant.TenantID)
 }
 
-// ProvisionDevice provisions a new device
-func (a *DeviceConnectApp) ProvisionDevice(
+// ProvisionDevice provisions a new tenant
+func (a *app) ProvisionDevice(
 	ctx context.Context,
 	tenantID string,
 	device *model.Device,
@@ -90,7 +96,7 @@ func (a *DeviceConnectApp) ProvisionDevice(
 }
 
 // GetDevice returns a device
-func (a *DeviceConnectApp) GetDevice(
+func (a *app) GetDevice(
 	ctx context.Context,
 	tenantID string,
 	deviceID string,
@@ -104,13 +110,13 @@ func (a *DeviceConnectApp) GetDevice(
 	return device, nil
 }
 
-// DeleteDevice decommissions a device
-func (a *DeviceConnectApp) DeleteDevice(ctx context.Context, tenantID, deviceID string) error {
+// DeleteDevice provisions a new tenant
+func (a *app) DeleteDevice(ctx context.Context, tenantID, deviceID string) error {
 	return a.store.DeleteDevice(ctx, tenantID, deviceID)
 }
 
-// UpsertDeviceStatus upserts the connection status of a device
-func (a *DeviceConnectApp) UpsertDeviceStatus(
+// UpdateDeviceStatus provisions a new tenant
+func (a *app) UpdateDeviceStatus(
 	ctx context.Context,
 	tenantID, deviceID, status string,
 ) error {
@@ -118,110 +124,99 @@ func (a *DeviceConnectApp) UpsertDeviceStatus(
 }
 
 // PrepareUserSession prepares a new user session
-func (a *DeviceConnectApp) PrepareUserSession(
+func (a *app) PrepareUserSession(
 	ctx context.Context,
-	tenantID, userID, deviceID string,
-) (*model.Session, error) {
-	device, err := a.store.GetDevice(ctx, tenantID, deviceID)
+	sess *model.Session,
+) error {
+	if sess == nil {
+		return errors.New("nil Session")
+	}
+	if sess.ID == "" {
+		sessID, err := uuid.NewRandom()
+		if err != nil {
+			return errors.Wrap(err, "failed to generate session ID")
+		}
+		sess.ID = sessID.String()
+	}
+	if err := sess.Validate(); err != nil {
+		return errors.Wrap(err, "app: cannot create invalid Session")
+	}
+
+	device, err := a.store.GetDevice(ctx, sess.TenantID, sess.DeviceID)
 	if err != nil {
-		return nil, err
+		return err
 	} else if device == nil {
-		return nil, ErrDeviceNotFound
+		return ErrDeviceNotFound
 	} else if device.Status != model.DeviceStatusConnected {
-		return nil, ErrDeviceNotConnected
+		return ErrDeviceNotConnected
 	}
 
-	session, err := a.store.UpsertSession(ctx, tenantID, userID, device.ID)
+	err = a.store.AllocateSession(ctx, sess)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return session, nil
+
+	if a.HaveAuditLogs {
+		err = a.workflows.SubmitAuditLog(ctx, workflows.AuditLog{
+			Action: workflows.ActionCreate,
+			Actor: workflows.Actor{
+				ID:   sess.UserID,
+				Type: workflows.ActorUser,
+			},
+			Object: workflows.Object{
+				ID:   sess.ID,
+				Type: workflows.ObjectTerminal,
+				Terminal: &workflows.Terminal{
+					DeviceID: sess.DeviceID,
+				},
+			},
+			Change:  "User requested a new terminal session",
+			EventTS: time.Now(),
+		})
+		if err != nil {
+			err = errors.Wrap(err,
+				"failed to submit audit log for creating terminal session",
+			)
+			_, e := a.store.DeleteSession(ctx, sess.ID)
+			if e != nil {
+				err = errors.Errorf(
+					"%s: failed to clean up session state: %s",
+					err.Error(), e.Error(),
+				)
+			}
+			return err
+		}
+	}
+
+	return nil
 }
 
-// UpdateUserSessionStatus updates a user session
-func (a *DeviceConnectApp) UpdateUserSessionStatus(
+// FreeUserSession releases the session
+func (a *app) FreeUserSession(
 	ctx context.Context,
-	tenantID string,
 	sessionID string,
-	status string,
 ) error {
-	return a.store.UpdateSessionStatus(ctx, tenantID, sessionID, status)
-}
-
-// PublishMessageFromDevice publishes a message from the device to the message bus
-func (a *DeviceConnectApp) PublishMessageFromDevice(
-	ctx context.Context,
-	tenantID string,
-	deviceID string,
-	message *ws.ProtoMsg,
-) error {
-	subject := getMessageSubject(tenantID, deviceID, "device")
-	return a.publishMessage(ctx, subject, message)
-}
-
-// PublishMessageFromManagement publishes a message from the management channel to the message bus
-func (a *DeviceConnectApp) PublishMessageFromManagement(
-	ctx context.Context,
-	tenantID string,
-	deviceID string,
-	message *ws.ProtoMsg,
-) error {
-	subject := getMessageSubject(tenantID, deviceID, "management")
-	return a.publishMessage(ctx, subject, message)
-}
-
-func (a *DeviceConnectApp) publishMessage(
-	ctx context.Context,
-	subject string,
-	message *ws.ProtoMsg,
-) error {
-	data, err := msgpack.Marshal(message)
-	if err == nil {
-		err = a.client.Publish(subject, data)
+	sess, err := a.store.DeleteSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if a.HaveAuditLogs {
+		err = a.workflows.SubmitAuditLog(ctx, workflows.AuditLog{
+			Action: workflows.ActionDelete,
+			Actor: workflows.Actor{
+				ID:   sess.UserID,
+				Type: workflows.ActorUser,
+			},
+			Object: workflows.Object{
+				ID:   sess.ID,
+				Type: workflows.ObjectTerminal,
+				Terminal: &workflows.Terminal{
+					DeviceID: sess.ID,
+				},
+			},
+		})
 	}
 	return err
-}
-
-// SubscribeMessagesFromDevice subscribes to messagese from the device on the message bus
-func (a *DeviceConnectApp) SubscribeMessagesFromDevice(
-	ctx context.Context,
-	tenantID string,
-	deviceID string,
-) (<-chan *ws.ProtoMsg, error) {
-	subject := getMessageSubject(tenantID, deviceID, "device")
-	return a.subscribeMessages(ctx, subject)
-}
-
-// SubscribeMessagesFromManagement  subscribes to messagese from the
-// management channel on the message bus
-func (a *DeviceConnectApp) SubscribeMessagesFromManagement(
-	ctx context.Context,
-	tenantID string,
-	deviceID string,
-) (<-chan *ws.ProtoMsg, error) {
-	subject := getMessageSubject(tenantID, deviceID, "management")
-	return a.subscribeMessages(ctx, subject)
-}
-
-func (a *DeviceConnectApp) subscribeMessages(
-	ctx context.Context,
-	subject string,
-) (<-chan *ws.ProtoMsg, error) {
-	out := make(chan *ws.ProtoMsg, channelSize)
-	if err := a.client.Subscribe(subject, func(msg *nats.Msg) {
-		message := &ws.ProtoMsg{}
-		if err := msgpack.Unmarshal(msg.Data, message); err == nil {
-			out <- message
-		}
-	}); err != nil {
-		return nil, err
-	}
-
-	return out, nil
-}
-
-func getMessageSubject(tenantID, deviceID, channel string) string {
-	return fmt.Sprintf("%s/devices/%s/%s", tenantID, deviceID, channel)
 }
 
 func buildRBACFilter(deviceID string, groups []string) model.SearchParams {
@@ -241,7 +236,7 @@ func buildRBACFilter(deviceID string, groups []string) model.SearchParams {
 	return searchParams
 }
 
-func (a *DeviceConnectApp) RemoteTerminalAllowed(
+func (a *app) RemoteTerminalAllowed(
 	ctx context.Context,
 	tenantID string,
 	deviceID string,

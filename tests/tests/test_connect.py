@@ -12,6 +12,7 @@ import management_api
 from common import Device, management_api_with_params, management_api_connect
 
 
+@pytest.mark.usefixtures("timeout")
 class _TestConnect:
     def test_connect(self, clean_mongo, tenant_id=None):
         """
@@ -79,21 +80,25 @@ class _TestConnect:
                         {
                             "hdr": {
                                 "proto": 1,
-                                "typ": "shell",
-                                "sid": "session-id",
+                                "typ": "start",
                                 "props": {"status": "ok"},
                             },
-                            "body": None,
                         }
                     )
                 )
                 msg = dev_conn.recv()
-                assert msgpack.loads(msg) == {
+                rsp = msgpack.loads(msg)
+                assert "hdr" in rsp, "Message does not contain header"
+                assert (
+                    "sid" in rsp["hdr"],
+                    "Forwarded message should contain session ID",
+                )
+                assert rsp == {
                     "hdr": {
                         "proto": 1,
-                        "typ": "shell",
-                        "sid": "session-id",
+                        "typ": "start",
                         "props": {"status": "ok"},
+                        "sid": rsp["hdr"]["sid"],
                     },
                 }
                 dev_conn.send(
@@ -102,8 +107,8 @@ class _TestConnect:
                             "hdr": {
                                 "proto": 1,
                                 "typ": "shell",
-                                "sid": "session-id",
                                 "props": {"status": "ok"},
+                                "sid": rsp["hdr"]["sid"],
                             },
                             "body": b"sh-5.0$ ",
                         }
@@ -114,8 +119,8 @@ class _TestConnect:
                     "hdr": {
                         "proto": 1,
                         "typ": "shell",
-                        "sid": "session-id",
                         "props": {"status": "ok"},
+                        "sid": rsp["hdr"]["sid"],
                     },
                     "body": b"sh-5.0$ ",
                 }

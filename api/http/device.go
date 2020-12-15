@@ -15,12 +15,14 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/nats-io/nats.go"
 	"github.com/pkg/errors"
 	"github.com/vmihailenco/msgpack/v5"
 
@@ -30,14 +32,15 @@ import (
 	"github.com/mendersoftware/go-lib-micro/log"
 	"github.com/mendersoftware/go-lib-micro/rest.utils"
 	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/shell"
 )
 
-const (
+var (
 	// Time allowed to read the next pong message from the peer.
-	pongWait = 60
+	pongWait = time.Minute
 
 	// Seconds allowed to write a message to the peer.
-	writeWait = 10
+	writeWait = time.Second * 10
 )
 
 // HTTP errors
@@ -49,12 +52,19 @@ var (
 
 // DeviceController container for end-points
 type DeviceController struct {
-	app app.App
+	app  app.App
+	nats *nats.Conn
 }
 
 // NewDeviceController returns a new DeviceController
-func NewDeviceController(app app.App) *DeviceController {
-	return &DeviceController{app: app}
+func NewDeviceController(
+	app app.App,
+	natsClient *nats.Conn,
+) *DeviceController {
+	return &DeviceController{
+		app:  app,
+		nats: natsClient,
+	}
 }
 
 // Provision responds to POST /tenants/:tenantId/devices
@@ -122,6 +132,21 @@ func (h DeviceController) Connect(c *gin.Context) {
 		return
 	}
 
+	msgChan := make(chan *nats.Msg, channelSize)
+	sub, err := h.nats.ChanSubscribe(
+		model.GetDeviceSubject(idata.Tenant, idata.Subject),
+		msgChan,
+	)
+	if err != nil {
+		l.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to allocate internal device channel",
+		})
+		return
+	}
+	//nolint:errcheck
+	defer sub.Unsubscribe()
+
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
@@ -135,8 +160,11 @@ func (h DeviceController) Connect(c *gin.Context) {
 		},
 	}
 
+	errChan := make(chan error)
+	defer close(errChan)
+
 	// upgrade get request to websocket protocol
-	webSock, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		err = errors.Wrap(err,
 			"failed to upgrade the request to "+
@@ -145,96 +173,165 @@ func (h DeviceController) Connect(c *gin.Context) {
 		l.Error(err)
 		return
 	}
-	defer webSock.Close()
+	// websocketWriter is responsible for closing the websocket
+	//nolint:errcheck
+	go h.connectWSWriter(ctx, conn, msgChan, errChan)
+	err = h.ConnectServeWS(ctx, conn)
+	if err != nil {
+		select {
+		case errChan <- err:
+
+		case <-time.After(time.Second):
+			l.Warn("Failed to propagate error to client")
+		}
+	}
+}
+
+// websocketWriter is the go-routine responsible for the writing end of the
+// websocket. The routine forwards messages posted on the NATS session subject
+// and periodically pings the connection. If the connection times out or a
+// protocol violation occurs, the routine closes the connection.
+func (h DeviceController) connectWSWriter(
+	ctx context.Context,
+	conn *websocket.Conn,
+	msgChan <-chan *nats.Msg,
+	errChan <-chan error,
+) (err error) {
+	l := log.FromContext(ctx)
+	defer func() {
+		// TODO Check err and errChan and send close control packet
+		// with error if not initiated by client.
+		conn.Close()
+	}()
 
 	// handle the ping-pong connection health check
-	err = webSock.SetReadDeadline(time.Now().Add(pongWait * time.Second))
+	err = conn.SetReadDeadline(time.Now().Add(pongWait))
 	if err != nil {
 		l.Error(err)
-		return
+		return err
 	}
-	webSock.SetPongHandler(func(string) error {
-		return webSock.SetReadDeadline(time.Now().Add(pongWait * time.Second))
+
+	pingPeriod := (pongWait * 9) / 10
+	ticker := time.NewTicker(pingPeriod)
+	defer ticker.Stop()
+	conn.SetPongHandler(func(string) error {
+		ticker.Reset(pingPeriod)
+		return conn.SetReadDeadline(time.Now().Add(pongWait))
 	})
+	conn.SetPingHandler(func(msg string) error {
+		ticker.Reset(pingPeriod)
+		err := conn.SetReadDeadline(time.Now().Add(pongWait))
+		if err != nil {
+			return err
+		}
+		return conn.WriteControl(
+			websocket.PongMessage,
+			[]byte(msg),
+			time.Now().Add(writeWait),
+		)
+	})
+Loop:
+	for {
+		select {
+		case msg := <-msgChan:
+			err = conn.WriteMessage(websocket.BinaryMessage, msg.Data)
+			if err != nil {
+				l.Error(err)
+				break Loop
+			}
+		case <-ctx.Done():
+			break Loop
+		case <-ticker.C:
+			if !websocketPing(conn) {
+				break Loop
+			}
+		case err := <-errChan:
+			return err
+		}
+		ticker.Reset(pingPeriod)
+	}
+	return err
+}
+
+func (h DeviceController) ConnectServeWS(
+	ctx context.Context,
+	conn *websocket.Conn,
+) (err error) {
+	l := log.FromContext(ctx)
+	id := identity.FromContext(ctx)
+	sessMap := make(map[string]struct{})
 
 	// update the device status on websocket opening
-	err = h.app.UpsertDeviceStatus(
-		ctx, idata.Tenant,
-		idata.Subject, model.DeviceStatusConnected,
+	err = h.app.UpdateDeviceStatus(
+		ctx, id.Tenant,
+		id.Subject, model.DeviceStatusConnected,
 	)
 	if err != nil {
 		l.Error(err)
 		return
 	}
 	defer func() {
+		for sess := range sessMap {
+			// TODO: notify the session NATS topic about the session
+			//       being released.
+			msg := ws.ProtoMsg{
+				Header: ws.ProtoHdr{
+					Proto:     ws.ProtoTypeShell,
+					MsgType:   shell.MessageTypeStopShell,
+					SessionID: sess,
+					Properties: map[string]interface{}{
+						"status": shell.ErrorMessage,
+					},
+				},
+				Body: []byte("device disconnected"),
+			}
+			data, _ := msgpack.Marshal(msg)
+			err = h.nats.Publish(
+				model.GetSessionSubject(id.Tenant, sess),
+				data,
+			)
+		}
 		// update the device status on websocket closing
-		err = h.app.UpsertDeviceStatus(
-			ctx, idata.Tenant,
-			idata.Subject, model.DeviceStatusDisconnected,
+		err = h.app.UpdateDeviceStatus(
+			ctx, id.Tenant,
+			id.Subject, model.DeviceStatusDisconnected,
 		)
 		if err != nil {
 			l.Error(err)
 		}
 	}()
 
-	// go-routine to read from the webservice
-	done := make(chan struct{})
-	go func() {
-		var (
-			data []byte
-			err  error
-		)
-		for err == nil {
-			_, data, err = webSock.ReadMessage()
-			if err != nil {
-				l.Error(err)
-				break
-			}
-			m := &ws.ProtoMsg{}
-			err = msgpack.Unmarshal(data, m)
-			if err != nil {
-				l.Error(err)
-				break
-			}
-			err = h.app.PublishMessageFromDevice(ctx, idata.Tenant, idata.Subject, m)
-		}
-		close(done)
-	}()
-
-	// subscribe to messages from the device
-	messages, err := h.app.SubscribeMessagesFromManagement(ctx, idata.Tenant, idata.Subject)
-	if err != nil {
-		return
-	}
-
-	// periodic ping
-	websocketPing(webSock)
-	pingPeriod := (pongWait * time.Second * 9) / 10
-	ticker := time.NewTicker(pingPeriod)
-	defer ticker.Stop()
+	var data []byte
 	for {
-		stop := false
-		select {
-		case message := <-messages:
-			data, err := msgpack.Marshal(message)
-			if err != nil {
-				l.Fatal(err)
-			}
-			err = webSock.WriteMessage(websocket.BinaryMessage, data)
-			if err != nil {
-				l.Fatal(err)
-			}
-		case <-done:
-			stop = true
-			break
-		case <-ticker.C:
-			if !websocketPing(webSock) {
-				stop = false
-				break
-			}
+		_, data, err = conn.ReadMessage()
+		if err != nil {
+			return err
 		}
-		if stop {
-			break
+		m := &ws.ProtoMsg{}
+		err = msgpack.Unmarshal(data, m)
+		if err != nil {
+			return err
+		}
+
+		sessMap[m.Header.SessionID] = struct{}{}
+		switch m.Header.Proto {
+		case ws.ProtoTypeShell:
+			if m.Header.SessionID == "" {
+				return errors.New("api: message missing required session ID")
+			}
+			if m.Header.MsgType == shell.MessageTypeStopShell {
+				delete(sessMap, m.Header.SessionID)
+			}
+		default:
+			// TODO: Handle protocol violation
+		}
+
+		err = h.nats.Publish(
+			model.GetSessionSubject(id.Tenant, m.Header.SessionID),
+			data,
+		)
+		if err != nil {
+			return err
 		}
 	}
 }

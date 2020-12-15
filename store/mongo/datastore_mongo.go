@@ -11,19 +11,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mendersoftware/go-lib-micro/config"
-	"github.com/mendersoftware/go-lib-micro/mongo/migrate"
-	"github.com/mendersoftware/go-lib-micro/store"
-
 	"github.com/pkg/errors"
-	uuid "github.com/satori/go.uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	mopts "go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 
+	"github.com/mendersoftware/go-lib-micro/config"
+	"github.com/mendersoftware/go-lib-micro/identity"
+	"github.com/mendersoftware/go-lib-micro/mongo/migrate"
+	mstore "github.com/mendersoftware/go-lib-micro/store"
+
 	dconfig "github.com/mendersoftware/deviceconnect/config"
 	"github.com/mendersoftware/deviceconnect/model"
+	"github.com/mendersoftware/deviceconnect/store"
 )
 
 const (
@@ -35,7 +36,7 @@ const (
 )
 
 // SetupDataStore returns the mongo data store and optionally runs migrations
-func SetupDataStore(automigrate bool) (*DataStoreMongo, error) {
+func SetupDataStore(automigrate bool) (store.DataStore, error) {
 	ctx := context.Background()
 	dbClient, err := NewClient(ctx, config.Config)
 	if err != nil {
@@ -45,14 +46,14 @@ func SetupDataStore(automigrate bool) (*DataStoreMongo, error) {
 	if err != nil {
 		return nil, err
 	}
-	dataStore := NewDataStoreWithClient(dbClient, config.Config)
+	dataStore := NewDataStoreWithClient(dbClient)
 	return dataStore, nil
 }
 
 func doMigrations(ctx context.Context, client *mongo.Client,
 	automigrate bool) error {
 	db := config.Config.GetString(dconfig.SettingDbName)
-	dbs, err := migrate.GetTenantDbs(ctx, client, store.IsTenantDb(db))
+	dbs, err := migrate.GetTenantDbs(ctx, client, mstore.IsTenantDb(db))
 	if err != nil {
 		return errors.Wrap(err, "failed go retrieve tenant DBs")
 	}
@@ -129,17 +130,12 @@ type DataStoreMongo struct {
 	// client holds the reference to the client used to communicate with the
 	// mongodb server.
 	client *mongo.Client
-	// dbName contains the name of the auditlogs database.
-	dbName string
 }
 
 // NewDataStoreWithClient initializes a DataStore object
-func NewDataStoreWithClient(client *mongo.Client, c config.Reader) *DataStoreMongo {
-	dbName := c.GetString(dconfig.SettingDbName)
-
+func NewDataStoreWithClient(client *mongo.Client) store.DataStore {
 	return &DataStoreMongo{
 		client: client,
-		dbName: dbName,
 	}
 }
 
@@ -151,13 +147,13 @@ func (db *DataStoreMongo) Ping(ctx context.Context) error {
 
 // ProvisionTenant provisions a new tenant
 func (db *DataStoreMongo) ProvisionTenant(ctx context.Context, tenantID string) error {
-	dbname := store.DbNameForTenant(tenantID, DbName)
+	dbname := mstore.DbNameForTenant(tenantID, DbName)
 	return Migrate(ctx, dbname, DbVersion, db.client, true)
 }
 
 // ProvisionDevice provisions a new device
 func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID, deviceID string) error {
-	dbname := store.DbNameForTenant(tenantID, DbName)
+	dbname := mstore.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
 	updateOpts := &mopts.UpdateOptions{}
@@ -175,7 +171,7 @@ func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID, deviceI
 
 // DeleteDevice deletes a device
 func (db *DataStoreMongo) DeleteDevice(ctx context.Context, tenantID, deviceID string) error {
-	dbname := store.DbNameForTenant(tenantID, DbName)
+	dbname := mstore.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
 	_, err := coll.DeleteOne(ctx, bson.M{"_id": deviceID})
@@ -188,7 +184,7 @@ func (db *DataStoreMongo) GetDevice(
 	tenantID string,
 	deviceID string,
 ) (*model.Device, error) {
-	dbname := store.DbNameForTenant(tenantID, DbName)
+	dbname := mstore.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
 	cur := coll.FindOne(ctx, bson.M{"_id": deviceID})
@@ -211,7 +207,7 @@ func (db *DataStoreMongo) UpsertDeviceStatus(
 	deviceID string,
 	status string,
 ) error {
-	dbname := store.DbNameForTenant(tenantID, DbName)
+	dbname := mstore.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
 	updateOpts := &mopts.UpdateOptions{}
@@ -228,84 +224,71 @@ func (db *DataStoreMongo) UpsertDeviceStatus(
 	return err
 }
 
-// UpsertSession upserts a user session connecting to a device
-func (db *DataStoreMongo) UpsertSession(
-	ctx context.Context,
-	tenantID string,
-	userID string,
-	deviceID string,
-) (*model.Session, error) {
-	dbname := store.DbNameForTenant(tenantID, DbName)
-	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
+// AllocateSession allocates a new session.
+func (db *DataStoreMongo) AllocateSession(ctx context.Context, sess *model.Session) error {
 
-	findOneAndUpdateOpts := &mopts.FindOneAndUpdateOptions{}
-	findOneAndUpdateOpts.SetUpsert(true)
-	findOneAndUpdateOpts.SetReturnDocument(mopts.After)
-	res := coll.FindOneAndUpdate(ctx,
-		bson.M{
-			"user_id":   userID,
-			"device_id": deviceID,
-		},
-		bson.M{
-			"$setOnInsert": bson.M{
-				"_id":       uuid.NewV4().String(),
-				"user_id":   userID,
-				"device_id": deviceID,
-			},
-			"$set": bson.M{
-				"status": model.SessionStatusDisconnected,
-			},
-		},
-		findOneAndUpdateOpts,
-	)
-
-	session := &model.Session{}
-	if err := res.Decode(session); err != nil {
-		return nil, err
+	if err := sess.Validate(); err != nil {
+		return errors.Wrap(err, "store: cannot allocate invalid Session")
 	}
 
-	return session, nil
+	dbname := mstore.DbNameForTenant(sess.TenantID, DbName)
+	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
+
+	_, err := coll.InsertOne(ctx, sess)
+	if err != nil {
+		return errors.Wrap(err, "store: failed to allocate session")
+	}
+
+	return nil
 }
 
 // UpdateSessionStatus updates a session status
-func (db *DataStoreMongo) UpdateSessionStatus(
-	ctx context.Context,
-	tenantID string,
-	sessionID string,
-	status string,
-) error {
-	dbname := store.DbNameForTenant(tenantID, DbName)
-	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
+func (db *DataStoreMongo) DeleteSession(
+	ctx context.Context, sessionID string,
+) (*model.Session, error) {
+	dbname := mstore.DbFromContext(ctx, DbName)
+	collSess := db.client.Database(dbname).
+		Collection(SessionsCollectionName)
 
-	updateOpts := &mopts.UpdateOptions{}
-	_, err := coll.UpdateOne(ctx,
-		bson.M{"_id": sessionID},
-		bson.M{
-			"$set": bson.M{"status": status},
-		},
-		updateOpts,
-	)
-
-	return err
+	sess := new(model.Session)
+	err := collSess.FindOneAndDelete(
+		ctx, bson.D{{Key: "_id", Value: sessionID}},
+	).Decode(sess)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, store.ErrSessionNotFound
+		} else {
+			return nil, err
+		}
+	}
+	if idty := identity.FromContext(ctx); idty != nil {
+		sess.TenantID = idty.Tenant
+	}
+	return sess, nil
 }
 
 // GetSession returns a device
 func (db *DataStoreMongo) GetSession(
 	ctx context.Context,
-	tenantID string,
 	sessionID string,
 ) (*model.Session, error) {
-	dbname := store.DbNameForTenant(tenantID, DbName)
-	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
-
-	cur := coll.FindOne(ctx, bson.M{"_id": sessionID})
+	collSess := db.client.
+		Database(mstore.DbFromContext(ctx, DbName)).
+		Collection(SessionsCollectionName)
 
 	session := &model.Session{}
-	if err := cur.Decode(session); err != nil {
+	err := collSess.
+		FindOne(ctx, bson.M{"_id": sessionID}).
+		Decode(session)
+	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return nil, nil
+			return nil, store.ErrSessionNotFound
 		}
 		return nil, err
+	}
+	idty := identity.FromContext(ctx)
+	if idty != nil {
+		session.TenantID = idty.Tenant
 	}
 
 	return session, nil
@@ -322,6 +305,6 @@ func (db *DataStoreMongo) Close() error {
 //nolint:unused
 func (db *DataStoreMongo) DropDatabase() error {
 	ctx := context.Background()
-	err := db.client.Database(db.dbName).Drop(ctx)
+	err := db.client.Database(DbName).Drop(ctx)
 	return err
 }
