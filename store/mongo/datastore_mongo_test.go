@@ -101,7 +101,7 @@ func TestUpsertDeviceStatus(t *testing.T) {
 
 	device, err := ds.GetDevice(ctx, tenantID, deviceID)
 	assert.NoError(t, err)
-	assert.Equal(t, model.DeviceStatusDisconnected, device.Status)
+	assert.Equal(t, model.DeviceStatusUnknown, device.Status)
 
 	err = ds.UpsertDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusConnected)
 	assert.NoError(t, err)

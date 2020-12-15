@@ -33,6 +33,10 @@ const (
 
 	// SessionsCollectionName refers to the name of the collection of sessions
 	SessionsCollectionName = "sessions"
+
+	dbFieldStatus    = "status"
+	dbFieldCreatedTs = "created_ts"
+	dbFieldUpdatedTs = "updated_ts"
 )
 
 // SetupDataStore returns the mongo data store and optionally runs migrations
@@ -156,16 +160,20 @@ func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID, deviceI
 	dbname := mstore.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
+	now := time.Now().UTC()
+
 	updateOpts := &mopts.UpdateOptions{}
 	updateOpts.SetUpsert(true)
 	_, err := coll.UpdateOne(ctx,
 		bson.M{"_id": deviceID},
 		bson.M{
-			"$setOnInsert": bson.M{"status": model.DeviceStatusDisconnected},
+			"$setOnInsert": bson.M{
+				dbFieldStatus:    model.DeviceStatusUnknown,
+				dbFieldCreatedTs: &now,
+			},
 		},
 		updateOpts,
 	)
-
 	return err
 }
 
@@ -213,10 +221,18 @@ func (db *DataStoreMongo) UpsertDeviceStatus(
 	updateOpts := &mopts.UpdateOptions{}
 	updateOpts.SetUpsert(true)
 
+	now := time.Now().UTC()
+
 	_, err := coll.UpdateOne(ctx,
 		bson.M{"_id": deviceID},
 		bson.M{
-			"$set": bson.M{"status": status},
+			"$set": bson.M{
+				dbFieldStatus:    status,
+				dbFieldUpdatedTs: &now,
+			},
+			"$setOnInsert": bson.M{
+				dbFieldCreatedTs: &now,
+			},
 		},
 		updateOpts,
 	)
@@ -242,7 +258,7 @@ func (db *DataStoreMongo) AllocateSession(ctx context.Context, sess *model.Sessi
 	return nil
 }
 
-// UpdateSessionStatus updates a session status
+// DeleteSession deletes a session
 func (db *DataStoreMongo) DeleteSession(
 	ctx context.Context, sessionID string,
 ) (*model.Session, error) {
