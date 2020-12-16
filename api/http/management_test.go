@@ -33,6 +33,7 @@ import (
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/shell"
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/nats-io/nats-server/v2/server"
@@ -308,12 +309,12 @@ func TestManagementConnect(t *testing.T) {
 					receivedMsg <- data
 				}
 			}()
-			r := make(chan *nats.Msg, 2)
+			natsChan := make(chan *nats.Msg, 2)
 			sub, _ := natsClient.ChanSubscribe(
 				model.GetDeviceSubject(
 					tc.Identity.Tenant,
 					tc.DeviceID,
-				), r,
+				), natsChan,
 			)
 			defer sub.Unsubscribe()
 			msg := ws.ProtoMsg{
@@ -326,7 +327,7 @@ func TestManagementConnect(t *testing.T) {
 			err = conn.WriteMessage(websocket.BinaryMessage, b)
 			assert.NoError(t, err)
 			select {
-			case natsMsg := <-r:
+			case natsMsg := <-natsChan:
 				var rMsg ws.ProtoMsg
 				err = msgpack.Unmarshal(natsMsg.Data, &rMsg)
 				if assert.NoError(t, err) {
@@ -377,6 +378,27 @@ func TestManagementConnect(t *testing.T) {
 
 			// close the websocket
 			conn.Close()
+
+			select {
+			case msg := <-natsChan:
+				var stopMsg ws.ProtoMsg
+				err := msgpack.Unmarshal(msg.Data, &stopMsg)
+				if assert.NoError(t, err) {
+					assert.Equal(t,
+						ws.ProtoTypeShell,
+						stopMsg.Header.Proto,
+					)
+					assert.Equal(t,
+						shell.MessageTypeStopShell,
+						stopMsg.Header.MsgType,
+					)
+				}
+
+			case <-time.After(time.Second * 5):
+				assert.Fail(t,
+					"timeout waiting for stop message on nats channel",
+				)
+			}
 
 			// wait 100ms to let the websocket fully shutdown on the server
 			time.Sleep(100 * time.Millisecond)
