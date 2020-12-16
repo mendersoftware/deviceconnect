@@ -45,6 +45,10 @@ var (
 
 const channelSize = 25 // TODO make configurable
 
+const (
+	PropertyUserID = "user_id"
+)
+
 // ManagementController container for end-points
 type ManagementController struct {
 	app  app.App
@@ -324,6 +328,10 @@ func (h ManagementController) ConnectServeWS(
 		switch m.Header.Proto {
 		case ws.ProtoTypeShell:
 			m.Header.SessionID = sess.ID
+			if m.Header.Properties == nil {
+				m.Header.Properties = make(map[string]interface{})
+			}
+			m.Header.Properties[PropertyUserID] = sess.UserID
 			data, _ = msgpack.Marshal(m)
 		default:
 			// TODO: Handle protocol violation

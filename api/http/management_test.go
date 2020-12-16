@@ -331,6 +331,9 @@ func TestManagementConnect(t *testing.T) {
 				err = msgpack.Unmarshal(natsMsg.Data, &rMsg)
 				if assert.NoError(t, err) {
 					msg.Header.SessionID = tc.SessionID
+					msg.Header.Properties = map[string]interface{}{
+						"user_id": tc.Identity.Subject,
+					}
 					assert.Equal(t, msg, rMsg)
 				}
 			case <-time.After(time.Second * 5):
