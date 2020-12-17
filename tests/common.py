@@ -115,6 +115,7 @@ def management_api_with_params(user_id, plan=None, tenant_id=None):
 
 def management_api_connect(
     device_id: str,
+    user_id: str = None,
     tenant_id: str = None,
     plan: str = None,
     api_conf: management_api.Configuration = None,
@@ -122,7 +123,7 @@ def management_api_connect(
 ):
     if api_conf is None:
         api_conf = management_api.Configuration.get_default_copy()
-    jwt = make_user_token(tenant_id=tenant_id, plan=plan)
+    jwt = make_user_token(user_id=user_id, tenant_id=tenant_id, plan=plan)
     url = (
         re.sub(r"^http(s?://.+$)", r"ws\1", api_conf.host).rstrip("/")
         + f"/devices/{device_id}/connect"

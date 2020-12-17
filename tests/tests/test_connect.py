@@ -21,9 +21,8 @@ class _TestConnect:
         """
 
         dev = Device(tenant_id=tenant_id)
-        api_mgmt = management_api_with_params(
-            user_id=str(uuid.uuid4()), tenant_id=tenant_id
-        )
+        user_id = str(uuid.uuid4())
+        api_mgmt = management_api_with_params(user_id=user_id, tenant_id=tenant_id)
         try:
             api_mgmt.connect(
                 "00000000-0000-0000-0000-000000000000",
@@ -74,7 +73,9 @@ class _TestConnect:
             else:
                 raise Exception("Expected status code 101")
 
-            with management_api_connect(dev.id, tenant_id=tenant_id) as user_conn:
+            with management_api_connect(
+                dev.id, user_id=user_id, tenant_id=tenant_id
+            ) as user_conn:
                 user_conn.send(
                     msgpack.dumps(
                         {
@@ -90,14 +91,16 @@ class _TestConnect:
                 rsp = msgpack.loads(msg)
                 assert "hdr" in rsp, "Message does not contain header"
                 assert (
-                    "sid" in rsp["hdr"],
-                    "Forwarded message should contain session ID",
-                )
+                    "sid" in rsp["hdr"]
+                ), "Forwarded message should contain session ID"
                 assert rsp == {
                     "hdr": {
                         "proto": 1,
                         "typ": "start",
-                        "props": {"status": "ok"},
+                        "props": {
+                            "status": "ok",
+                            "user_id": user_id,
+                        },
                         "sid": rsp["hdr"]["sid"],
                     },
                 }
