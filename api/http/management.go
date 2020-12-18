@@ -34,6 +34,7 @@ import (
 	"github.com/mendersoftware/go-lib-micro/log"
 	"github.com/mendersoftware/go-lib-micro/rest.utils"
 	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/shell"
 )
 
 // HTTP errors
@@ -286,15 +287,17 @@ Loop:
 }
 
 // ConnectServeWS starts a websocket connection with the device
+// Currently this handler only properly handles a single terminal session.
 func (h ManagementController) ConnectServeWS(
 	ctx context.Context,
 	conn *websocket.Conn,
 	sess *model.Session,
 	deviceChan chan *nats.Msg,
 ) (err error) {
+	var sessionClosed bool
 	l := log.FromContext(ctx)
 	id := identity.FromContext(ctx)
-	errChan := make(chan error)
+	errChan := make(chan error, 1)
 	defer func() {
 		if err != nil {
 			select {
@@ -302,6 +305,32 @@ func (h ManagementController) ConnectServeWS(
 
 			case <-time.After(time.Second):
 				l.Warn("Failed to propagate error to client")
+			}
+		}
+		if !sessionClosed {
+			msg := ws.ProtoMsg{
+				Header: ws.ProtoHdr{
+					Proto:     ws.ProtoTypeShell,
+					MsgType:   shell.MessageTypeStopShell,
+					SessionID: sess.ID,
+					Properties: map[string]interface{}{
+						"status":       shell.ErrorMessage,
+						PropertyUserID: sess.UserID,
+					},
+				},
+				Body: []byte("user disconnected"),
+			}
+			data, _ := msgpack.Marshal(msg)
+			errPublish := h.nats.Publish(model.GetDeviceSubject(
+				id.Tenant, sess.DeviceID),
+				data,
+			)
+			if errPublish != nil {
+				l.Warnf(
+					"failed to propagate stop session "+
+						"message to device: %s",
+					errPublish.Error(),
+				)
 			}
 		}
 		close(errChan)
@@ -333,6 +362,10 @@ func (h ManagementController) ConnectServeWS(
 			}
 			m.Header.Properties[PropertyUserID] = sess.UserID
 			data, _ = msgpack.Marshal(m)
+
+			if m.Header.MsgType == shell.MessageTypeStopShell {
+				sessionClosed = true
+			}
 		default:
 			// TODO: Handle protocol violation
 		}
