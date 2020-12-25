@@ -12,6 +12,7 @@ import management_api
 from common import Device, management_api_with_params, management_api_connect
 
 
+@pytest.mark.usefixtures("timeout")
 class _TestConnect:
     def test_connect(self, clean_mongo, tenant_id=None):
         """
@@ -20,9 +21,8 @@ class _TestConnect:
         """
 
         dev = Device(tenant_id=tenant_id)
-        api_mgmt = management_api_with_params(
-            user_id=str(uuid.uuid4()), tenant_id=tenant_id
-        )
+        user_id = str(uuid.uuid4())
+        api_mgmt = management_api_with_params(user_id=user_id, tenant_id=tenant_id)
         try:
             api_mgmt.connect(
                 "00000000-0000-0000-0000-000000000000",
@@ -73,13 +73,60 @@ class _TestConnect:
             else:
                 raise Exception("Expected status code 101")
 
-            with management_api_connect(dev.id, tenant_id=tenant_id) as user_conn:
-                user_conn.send(msgpack.dumps({"type": "shell", "data": None,}))
+            with management_api_connect(
+                dev.id, user_id=user_id, tenant_id=tenant_id
+            ) as user_conn:
+                user_conn.send(
+                    msgpack.dumps(
+                        {
+                            "hdr": {
+                                "proto": 1,
+                                "typ": "start",
+                                "props": {"status": "ok"},
+                            },
+                        }
+                    )
+                )
                 msg = dev_conn.recv()
-                assert msgpack.loads(msg) == {"type": "shell", "data": None, "session_id": "", "status_code": 0}
-                dev_conn.send(msgpack.dumps({"type": "shell", "data": b"sh-5.0$ "}))
+                rsp = msgpack.loads(msg)
+                assert "hdr" in rsp, "Message does not contain header"
+                assert (
+                    "sid" in rsp["hdr"]
+                ), "Forwarded message should contain session ID"
+                assert rsp == {
+                    "hdr": {
+                        "proto": 1,
+                        "typ": "start",
+                        "props": {
+                            "status": "ok",
+                            "user_id": user_id,
+                        },
+                        "sid": rsp["hdr"]["sid"],
+                    },
+                }
+                dev_conn.send(
+                    msgpack.dumps(
+                        {
+                            "hdr": {
+                                "proto": 1,
+                                "typ": "shell",
+                                "props": {"status": "ok"},
+                                "sid": rsp["hdr"]["sid"],
+                            },
+                            "body": b"sh-5.0$ ",
+                        }
+                    )
+                )
                 msg = user_conn.recv()
-                assert msgpack.loads(msg) == {"type": "shell", "data": b"sh-5.0$ ", "session_id": "", "status_code": 0}
+                assert msgpack.loads(msg) == {
+                    "hdr": {
+                        "proto": 1,
+                        "typ": "shell",
+                        "props": {"status": "ok"},
+                        "sid": rsp["hdr"]["sid"],
+                    },
+                    "body": b"sh-5.0$ ",
+                }
 
         try:
             api_mgmt.connect(

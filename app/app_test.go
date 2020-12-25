@@ -17,15 +17,17 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
+	"time"
 
-	"github.com/nats-io/nats.go"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/vmihailenco/msgpack/v5"
 
 	inv_mocks "github.com/mendersoftware/deviceconnect/client/inventory/mocks"
-	nats_mocks "github.com/mendersoftware/deviceconnect/client/nats/mocks"
+	"github.com/mendersoftware/deviceconnect/client/workflows"
+	wf_mocks "github.com/mendersoftware/deviceconnect/client/workflows/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 	store_mocks "github.com/mendersoftware/deviceconnect/store/mocks"
 )
@@ -40,7 +42,7 @@ func TestHealthCheck(t *testing.T) {
 		}),
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil, nil)
+	app := New(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.HealthCheck(ctx)
@@ -61,7 +63,7 @@ func TestProvisionTenant(t *testing.T) {
 		tenantID,
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil, nil)
+	app := New(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.ProvisionTenant(ctx, &model.Tenant{TenantID: tenantID})
@@ -84,7 +86,7 @@ func TestProvisionDevice(t *testing.T) {
 		deviceID,
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil, nil)
+	app := New(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.ProvisionDevice(ctx, tenantID, &model.Device{ID: deviceID})
@@ -107,7 +109,7 @@ func TestDeleteDevice(t *testing.T) {
 		deviceID,
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil, nil)
+	app := New(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.DeleteDevice(ctx, tenantID, deviceID)
@@ -149,7 +151,7 @@ func TestGetDevice(t *testing.T) {
 		deviceID,
 	).Return(device, nil)
 
-	app := NewDeviceConnectApp(store, nil, nil)
+	app := New(store, nil, nil)
 
 	ctx := context.Background()
 	_, res := app.GetDevice(ctx, tenantID, "error")
@@ -171,7 +173,7 @@ func TestUpdateDeviceStatus(t *testing.T) {
 	const deviceID = "abcd"
 
 	store := &store_mocks.DataStore{}
-	store.On("UpdateDeviceStatus",
+	store.On("UpsertDeviceStatus",
 		mock.MatchedBy(func(ctx context.Context) bool {
 			return true
 		}),
@@ -180,7 +182,7 @@ func TestUpdateDeviceStatus(t *testing.T) {
 		mock.AnythingOfType("string"),
 	).Return(err)
 
-	app := NewDeviceConnectApp(store, nil, nil)
+	app := New(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.UpdateDeviceStatus(ctx, tenantID, deviceID, "anything")
@@ -189,259 +191,376 @@ func TestUpdateDeviceStatus(t *testing.T) {
 	store.AssertExpectations(t)
 }
 
+type brokenReader struct{}
+
+func (r brokenReader) Read(b []byte) (int, error) {
+	return 0, errors.New("broken reader")
+}
+
 func TestPrepareUserSession(t *testing.T) {
 	testCases := []struct {
-		name             string
-		tenantID         string
-		userID           string
-		deviceID         string
-		device           *model.Device
-		deviceErr        error
-		upsertSessionErr error
-		session          *model.Session
-		err              error
-	}{
-		{
-			name:      "device error",
-			tenantID:  "1",
-			userID:    "2",
-			deviceID:  "3",
-			deviceErr: errors.New("error"),
-			err:       errors.New("error"),
-		},
-		{
-			name:     "device not found",
-			tenantID: "1",
-			userID:   "2",
-			deviceID: "3",
-			err:      ErrDeviceNotFound,
-		},
-		{
-			name:     "device not connected",
-			tenantID: "1",
-			userID:   "2",
-			deviceID: "3",
-			device: &model.Device{
-				ID:     "3",
-				Status: model.DeviceStatusDisconnected,
-			},
-			err: ErrDeviceNotConnected,
-		},
-		{
-			name:     "upsert fails",
-			tenantID: "1",
-			userID:   "2",
-			deviceID: "3",
-			device: &model.Device{
-				ID:     "3",
-				Status: model.DeviceStatusConnected,
-			},
-			upsertSessionErr: errors.New("upsert error"),
-			err:              errors.New("upsert error"),
-		},
-		{
-			name:     "upsert fails",
-			tenantID: "1",
-			userID:   "2",
-			deviceID: "3",
-			device: &model.Device{
-				ID:     "3",
-				Status: model.DeviceStatusConnected,
-			},
-			session: &model.Session{
-				ID:       "id",
-				UserID:   "2",
-				DeviceID: "3",
-				Status:   model.SessionStatusDisconnected,
-			},
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			store := &store_mocks.DataStore{}
-			store.On("GetDevice",
-				mock.MatchedBy(func(ctx context.Context) bool {
-					return true
-				}),
-				tc.tenantID,
-				tc.deviceID,
-			).Return(tc.device, tc.deviceErr)
+		Name string
 
-			if tc.deviceErr == nil && tc.device != nil && tc.device.Status == model.DeviceStatusConnected {
-				store.On("UpsertSession",
-					mock.MatchedBy(func(ctx context.Context) bool {
-						return true
-					}),
-					tc.tenantID,
-					tc.userID,
-					tc.deviceID,
-				).Return(tc.session, tc.upsertSessionErr)
+		CTX     context.Context
+		Session *model.Session
+
+		Rand          io.Reader
+		BadParameters bool
+
+		StoreGetDevice    *model.Device
+		StoreGetDeviceErr error
+
+		StoreAllocSessErr error
+
+		HaveAuditLogs         bool
+		WorkflowsError        error
+		StoreDeleteSessionErr error
+
+		Erre error
+	}{{
+		Name: "ok",
+
+		CTX: context.Background(),
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+		StoreGetDevice: &model.Device{
+			ID:     "00000000-0000-0000-0000-000000000000",
+			Status: model.DeviceStatusConnected,
+		},
+		StoreGetDeviceErr: nil,
+		StoreAllocSessErr: nil,
+
+		WorkflowsError: nil,
+	}, {
+		Name: "ok, with auditlogs",
+
+		CTX: context.Background(),
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+		StoreGetDevice: &model.Device{
+			ID:     "00000000-0000-0000-0000-000000000000",
+			Status: model.DeviceStatusConnected,
+		},
+		StoreGetDeviceErr: nil,
+		StoreAllocSessErr: nil,
+
+		HaveAuditLogs:  true,
+		WorkflowsError: nil,
+	}, {
+		Name: "error, nil session",
+
+		CTX:           context.Background(),
+		BadParameters: true,
+
+		Erre: errors.New("nil Session"),
+	}, {
+		Name: "error, RNG malfunction",
+
+		CTX: context.Background(),
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+		BadParameters: true,
+
+		Rand: brokenReader{},
+
+		Erre: errors.New("^failed to generate session ID: broken reader$"),
+	}, {
+		Name: "error, RNG malfunction",
+
+		CTX: context.Background(),
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			TenantID: "000000000000000000000000",
+		},
+		BadParameters: true,
+
+		Erre: errors.New("^app: cannot create invalid Session: " +
+			"start_ts: cannot be blank.$"),
+	}, {
+		Name: "error, GetDevice internal error",
+
+		CTX: context.Background(),
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+
+		StoreGetDeviceErr: errors.New("store: internal error"),
+
+		Erre: errors.New("^store: internal error$"),
+	}, {
+		Name: "error, GetDevice not found",
+
+		CTX: context.Background(),
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+
+		Erre: ErrDeviceNotFound,
+	}, {
+		Name: "error, GetDevice disconnected",
+
+		CTX: context.Background(),
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+		StoreGetDevice: &model.Device{
+			ID:     "00000000-0000-0000-0000-000000000000",
+			Status: model.DeviceStatusDisconnected,
+		},
+		Erre: errors.New("device not connected"),
+	}, {
+		Name: "error, AllocateSession internal error",
+
+		CTX: context.Background(),
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+		StoreGetDevice: &model.Device{
+			ID:     "00000000-0000-0000-0000-000000000000",
+			Status: model.DeviceStatusConnected,
+		},
+		StoreAllocSessErr: errors.New("store: internal error"),
+		Erre:              errors.New("store: internal error"),
+	}, {
+		Name: "error, SubmitAuditLog http error",
+
+		CTX:           context.Background(),
+		HaveAuditLogs: true,
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+		StoreGetDevice: &model.Device{
+			ID:     "00000000-0000-0000-0000-000000000000",
+			Status: model.DeviceStatusConnected,
+		},
+		WorkflowsError: errors.New("http error"),
+		Erre: errors.New(
+			"failed to submit audit log for creating terminal " +
+				"session: http error",
+		),
+	}, {
+		Name: "error, SubmitAuditLog http error and cleanup error",
+
+		CTX:           context.Background(),
+		HaveAuditLogs: true,
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+		StoreGetDevice: &model.Device{
+			ID:     "00000000-0000-0000-0000-000000000000",
+			Status: model.DeviceStatusConnected,
+		},
+		WorkflowsError:        errors.New("http error"),
+		StoreDeleteSessionErr: errors.New("store: internal error"),
+		Erre: errors.New(
+			"failed to submit audit log for creating terminal " +
+				"session: http error: failed to clean up " +
+				"session state: store: internal error",
+		),
+	}}
+
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.Name, func(t *testing.T) {
+			ds := new(store_mocks.DataStore)
+			defer ds.AssertExpectations(t)
+			wf := new(wf_mocks.Client)
+			defer wf.AssertExpectations(t)
+			inv := new(inv_mocks.Client)
+			defer inv.AssertExpectations(t)
+			uuid.SetRand(tc.Rand)
+			defer uuid.SetRand(nil)
+			app := New(
+				ds, inv,
+				wf, Config{HaveAuditLogs: tc.HaveAuditLogs},
+			)
+			if tc.BadParameters {
+				goto execTest
 			}
+			ds.On("GetDevice",
+				tc.CTX,
+				tc.Session.TenantID,
+				tc.Session.DeviceID).
+				Return(tc.StoreGetDevice, tc.StoreGetDeviceErr)
+			if tc.StoreGetDeviceErr != nil ||
+				(tc.StoreGetDeviceErr == nil &&
+					tc.StoreGetDevice == nil) ||
+				tc.StoreGetDevice.Status !=
+					model.DeviceStatusConnected {
+				goto execTest
+			}
+			ds.On("AllocateSession", tc.CTX, tc.Session).
+				Return(tc.StoreAllocSessErr)
+			if tc.StoreAllocSessErr != nil {
+				goto execTest
+			}
+			if !tc.HaveAuditLogs {
+				goto execTest
+			}
+			wf.On("SubmitAuditLog",
+				tc.CTX,
+				mock.AnythingOfType("workflows.AuditLog")).
+				Return(tc.WorkflowsError)
+			if tc.WorkflowsError == nil {
+				goto execTest
+			}
+			ds.On("DeleteSession",
+				tc.CTX,
+				mock.AnythingOfType("string")).
+				Return(tc.Session, tc.StoreDeleteSessionErr)
 
-			app := NewDeviceConnectApp(store, nil, nil)
-
-			ctx := context.Background()
-			session, err := app.PrepareUserSession(ctx, tc.tenantID, tc.userID, tc.deviceID)
-			assert.Equal(t, tc.session, session)
-			assert.Equal(t, tc.err, err)
-
-			store.AssertExpectations(t)
+		execTest:
+			err := app.PrepareUserSession(tc.CTX, tc.Session)
+			if tc.Erre != nil {
+				if assert.Error(t, err) {
+					assert.Regexp(t,
+						tc.Erre.Error(),
+						err.Error(),
+					)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
 		})
 	}
 }
 
-func TestUpdateUserSessionStatus(t *testing.T) {
-	err := errors.New("error")
-	const tenantID = "1234"
-	const deviceID = "abcd"
+func TestFreeUserSession(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		Name string
 
-	store := &store_mocks.DataStore{}
-	store.On("UpdateSessionStatus",
-		mock.MatchedBy(func(ctx context.Context) bool {
+		SessionID string
+
+		StoreDeleteSession    *model.Session
+		StoreDeleteSessionErr error
+
+		HaveAuditLogs bool
+		WorkflowsErr  error
+
+		Erre error
+	}{{
+		Name: "ok",
+
+		SessionID: "00000000-0000-0000-0000-000000000000",
+
+		StoreDeleteSession: &model.Session{
+			ID:       "00000000-0000-0000-0000-000000000000",
+			DeviceID: "00000000-0000-0000-0000-000000000001",
+			UserID:   "00000000-0000-0000-0000-000000000002",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now().Add(-time.Hour),
+		},
+	}, {
+		Name: "ok, with audit logs",
+
+		SessionID: "00000000-0000-0000-0000-000000000000",
+
+		StoreDeleteSession: &model.Session{
+			ID:       "00000000-0000-0000-0000-000000000000",
+			DeviceID: "00000000-0000-0000-0000-000000000001",
+			UserID:   "00000000-0000-0000-0000-000000000002",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now().Add(-time.Hour),
+		},
+		HaveAuditLogs: true,
+	}, {
+		Name: "error, store.DeleteSession internal error",
+
+		SessionID: "00000000-0000-0000-0000-000000000000",
+
+		HaveAuditLogs:         true,
+		StoreDeleteSessionErr: errors.New("store: internal error"),
+
+		Erre: errors.New("store: internal error$"),
+	}, {
+		Name: "error, SubmitAuditLogs http error",
+
+		SessionID: "00000000-0000-0000-0000-000000000000",
+
+		StoreDeleteSession: &model.Session{
+			ID:       "00000000-0000-0000-0000-000000000000",
+			DeviceID: "00000000-0000-0000-0000-000000000001",
+			UserID:   "00000000-0000-0000-0000-000000000002",
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now().Add(-time.Hour),
+		},
+		HaveAuditLogs: true,
+		WorkflowsErr:  errors.New("http error"),
+
+		Erre: errors.New("http error$"),
+	}}
+
+	workflowsMatcher := func(sess *model.Session) func(workflows.AuditLog) bool {
+		return func(wf workflows.AuditLog) bool {
 			return true
-		}),
-		tenantID,
-		deviceID,
-		mock.AnythingOfType("string"),
-	).Return(err)
-
-	app := NewDeviceConnectApp(store, nil, nil)
-
-	ctx := context.Background()
-	res := app.UpdateUserSessionStatus(ctx, tenantID, deviceID, "anything")
-	assert.Equal(t, err, res)
-
-	store.AssertExpectations(t)
-}
-
-func TestPublishMessageFromDevice(t *testing.T) {
-	const tenantID = "abcd"
-	const deviceID = "1234567890"
-
-	subject := getMessageSubject(tenantID, deviceID, "device")
-
-	message := &model.Message{
-		Type: model.TypeShell,
-		Data: []byte("data"),
+		}
 	}
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.Name, func(t *testing.T) {
+			t.Parallel()
+			ds := new(store_mocks.DataStore)
+			wf := new(wf_mocks.Client)
+			defer ds.AssertExpectations(t)
+			defer wf.AssertExpectations(t)
+			app := New(ds, nil, wf, Config{HaveAuditLogs: tc.HaveAuditLogs})
+			ctx := context.Background()
 
-	client := &nats_mocks.ClientInterface{}
-	client.On("Publish",
-		subject,
-		mock.MatchedBy(func(data []byte) bool {
-			decodedMessage := &model.Message{}
-			err := msgpack.Unmarshal(data, decodedMessage)
-			assert.NoError(t, err)
-			assert.Equal(t, message, decodedMessage)
+			ds.On("DeleteSession", ctx, tc.SessionID).
+				Return(tc.StoreDeleteSession, tc.StoreDeleteSessionErr)
+			if tc.StoreDeleteSessionErr != nil || !tc.HaveAuditLogs {
+				goto execTest
+			}
+			wf.On("SubmitAuditLog", ctx,
+				mock.MatchedBy(workflowsMatcher(tc.StoreDeleteSession))).
+				Return(tc.WorkflowsErr)
 
-			return true
-		}),
-	).Return(nil)
-
-	app := NewDeviceConnectApp(nil, client, nil)
-
-	ctx := context.Background()
-	err := app.PublishMessageFromDevice(ctx, tenantID, deviceID, message)
-	assert.NoError(t, err)
-}
-
-func TestPublishMessageFromManagement(t *testing.T) {
-	const tenantID = "abcd"
-	const deviceID = "1234567890"
-
-	subject := getMessageSubject(tenantID, deviceID, "management")
-
-	message := &model.Message{
-		Type: model.TypeShell,
-		Data: []byte("data"),
+		execTest:
+			err := app.FreeUserSession(ctx, tc.SessionID)
+			if tc.Erre != nil {
+				if assert.Error(t, err) {
+					assert.Regexp(t,
+						tc.Erre.Error(),
+						err.Error(),
+					)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
 	}
-
-	client := &nats_mocks.ClientInterface{}
-	client.On("Publish",
-		subject,
-		mock.MatchedBy(func(data []byte) bool {
-			decodedMessage := &model.Message{}
-			err := msgpack.Unmarshal(data, decodedMessage)
-			assert.NoError(t, err)
-			assert.Equal(t, message, decodedMessage)
-
-			return true
-		}),
-	).Return(nil)
-
-	app := NewDeviceConnectApp(nil, client, nil)
-
-	ctx := context.Background()
-	err := app.PublishMessageFromManagement(ctx, tenantID, deviceID, message)
-	assert.NoError(t, err)
-}
-
-func TestSubscribeMessagesFromDevice(t *testing.T) {
-	const tenantID = "abcd"
-	const deviceID = "1234567890"
-
-	subject := getMessageSubject(tenantID, deviceID, "device")
-
-	message := &model.Message{
-		Type: model.TypeShell,
-		Data: []byte("data"),
-	}
-
-	client := &nats_mocks.ClientInterface{}
-	client.On("Subscribe",
-		subject,
-		mock.MatchedBy(func(callback func(msg *nats.Msg)) bool {
-			data, err := msgpack.Marshal(message)
-			assert.NoError(t, err)
-			callback(&nats.Msg{Data: data})
-
-			return true
-		}),
-	).Return(nil)
-
-	app := NewDeviceConnectApp(nil, client, nil)
-
-	ctx := context.Background()
-	out, err := app.SubscribeMessagesFromDevice(ctx, tenantID, deviceID)
-	assert.NoError(t, err)
-	assert.NotNil(t, out)
-
-	msg := <-out
-	assert.Equal(t, message, msg)
-}
-
-func TestSubscribeMessagesFromManagement(t *testing.T) {
-	const tenantID = "abcd"
-	const deviceID = "1234567890"
-
-	subject := getMessageSubject(tenantID, deviceID, "management")
-
-	message := &model.Message{
-		Type: model.TypeShell,
-		Data: []byte("data"),
-	}
-
-	client := &nats_mocks.ClientInterface{}
-	client.On("Subscribe",
-		subject,
-		mock.MatchedBy(func(callback func(msg *nats.Msg)) bool {
-			data, err := msgpack.Marshal(message)
-			assert.NoError(t, err)
-			callback(&nats.Msg{Data: data})
-
-			return true
-		}),
-	).Return(nil)
-
-	app := NewDeviceConnectApp(nil, client, nil)
-
-	ctx := context.Background()
-	out, err := app.SubscribeMessagesFromManagement(ctx, tenantID, deviceID)
-	assert.NoError(t, err)
-	assert.NotNil(t, out)
-
-	msg := <-out
-	assert.Equal(t, message, msg)
 }
 
 func TestRemoteTerminalAllowed(t *testing.T) {
@@ -509,7 +628,7 @@ func TestRemoteTerminalAllowed(t *testing.T) {
 				},
 			).Return([]model.InvDevice{}, tc.inventorySearchResCount, tc.inventorySearchErr)
 
-			app := NewDeviceConnectApp(nil, nil, inv)
+			app := New(nil, inv, nil)
 
 			ctx := context.Background()
 			allowed, err := app.RemoteTerminalAllowed(ctx, tc.tenantID, tc.deviceID, tc.groups)

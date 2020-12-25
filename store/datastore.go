@@ -16,19 +16,27 @@ package store
 
 import (
 	"context"
+	"errors"
 
 	"github.com/mendersoftware/deviceconnect/model"
 )
 
 // DataStore interface for DataStore services
+//nolint:lll - skip line length check for interface declaration.
+//go:generate ../utils/mockgen.sh
 type DataStore interface {
 	Ping(ctx context.Context) error
 	ProvisionTenant(ctx context.Context, tenantID string) error
 	ProvisionDevice(ctx context.Context, tenantID string, deviceID string) error
 	DeleteDevice(ctx context.Context, tenantID, deviceID string) error
 	GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error)
-	UpdateDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error
-	UpsertSession(ctx context.Context, tenantID, userID, devID string) (*model.Session, error)
-	GetSession(ctx context.Context, tenantID, sessionID string) (*model.Session, error)
-	UpdateSessionStatus(ctx context.Context, tenantID, sessionID, status string) error
+	UpsertDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error
+	AllocateSession(ctx context.Context, sess *model.Session) error
+	GetSession(ctx context.Context, sessionID string) (*model.Session, error)
+	DeleteSession(ctx context.Context, sessionID string) (*model.Session, error)
+	Close() error
 }
+
+var (
+	ErrSessionNotFound = errors.New("store: session not found")
+)

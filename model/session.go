@@ -14,16 +14,64 @@
 
 package model
 
+import (
+	"strings"
+	"time"
+
+	validation "github.com/go-ozzo/ozzo-validation/v4"
+)
+
 // Values for the session status attribute
 const (
 	SessionStatusDisconnected = "disconnected"
 	SessiontatusConnected     = "connected"
 )
 
+func GetSessionSubject(tenantID, sessionID string) string {
+	if tenantID == "" {
+		return strings.Join([]string{
+			"session", sessionID,
+		}, ".")
+	}
+	return strings.Join([]string{
+		"session",
+		tenantID,
+		sessionID,
+	}, ".")
+}
+
+func GetDeviceSubject(tenantID, deviceID string) string {
+	if tenantID == "" {
+		return strings.Join([]string{
+			"device",
+			deviceID,
+		}, ".")
+	}
+	return strings.Join([]string{
+		"device",
+		tenantID,
+		deviceID,
+	}, ".")
+}
+
 // Session represents a session from a user to a device and its attributes
 type Session struct {
-	ID       string `json:"id" bson:"_id"`
-	UserID   string `json:"user_id" bson:"user_id"`
-	DeviceID string `json:"device_id" bson:"device_id"`
-	Status   string `json:"status" bson:"status"`
+	ID       string    `json:"id" bson:"_id"`
+	UserID   string    `json:"user_id" bson:"user_id"`
+	DeviceID string    `json:"device_id" bson:"device_id"`
+	StartTS  time.Time `json:"start_ts" bson:"start_ts"`
+	TenantID string    `json:"tenant_id" bson:"-"`
+}
+
+func (sess Session) Subject(tenantID string) string {
+	return GetSessionSubject(tenantID, sess.ID)
+}
+
+func (sess Session) Validate() error {
+	return validation.ValidateStruct(&sess,
+		validation.Field(&sess.ID, validation.Required),
+		validation.Field(&sess.UserID, validation.Required),
+		validation.Field(&sess.DeviceID, validation.Required),
+		validation.Field(&sess.StartTS, validation.Required),
+	)
 }

@@ -3,6 +3,7 @@ import json
 import os
 import uuid
 import pytest
+import signal
 
 import bson
 import pymongo
@@ -74,3 +75,21 @@ def tenant(tenant_id=None):
     client = internal_api.InternalAPIClient()
     client.provision_tenant(new_tenant=internal_api.NewTenant(tenant_id=tenant_id))
     yield tenant_id
+
+
+def _test_timeout(signum, frame):
+    raise TimeoutError("TestConnect did not finish in time")
+
+
+@pytest.fixture(scope="function")
+def timeout(request, timeout_sec=30):
+    """"""
+    alrm_handler = signal.getsignal(signal.SIGALRM)
+
+    def timeout(signum, frame):
+        raise TimeoutError("%s did not finish in time" % request.function.__name__)
+
+    signal.signal(signal.SIGALRM, timeout)
+    signal.alarm(timeout_sec)
+    yield
+    signal.signal(signal.SIGALRM, alrm_handler)

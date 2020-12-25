@@ -16,10 +16,14 @@ package http
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,20 +31,64 @@ import (
 	"github.com/mendersoftware/deviceconnect/app"
 	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
+	"github.com/mendersoftware/go-lib-micro/identity"
+	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/shell"
+	"github.com/vmihailenco/msgpack/v5"
+
+	"github.com/nats-io/nats-server/v2/server"
+	"github.com/nats-io/nats.go"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
-const JWTUser = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibWVuZGVyLnVzZXIiOnRydWUsIm1lbmRlci5wbGFuIjoiZW50ZXJwcmlzZSIsIm1lbmRlci50ZW5hbnQiOiJhYmNkIn0.sn10_eTex-otOTJ7WCp_7NUwiz9lBT0KiPOdZF9Jt4w"
-const JWTUserID = "1234567890"
-const JWTUserTenantID = "abcd"
+var natsPort int32 = 14420
+
+func NewNATSTestClient(t *testing.T) *nats.Conn {
+	port := atomic.AddInt32(&natsPort, 1)
+	opts := &server.Options{
+		Port: int(port),
+	}
+	srv, err := server.NewServer(opts)
+	if err != nil {
+		panic(err)
+	}
+	go srv.Start()
+	t.Cleanup(srv.Shutdown)
+
+	// Spinlock until go routine is listening
+	for i := 0; srv.Addr() == nil && i < 1000; i++ {
+		time.Sleep(time.Millisecond)
+	}
+	if srv.Addr() == nil {
+		panic("failed to setup NATS test server")
+	}
+	client, err := nats.Connect("nats://" + srv.Addr().String())
+	if err != nil {
+		panic(err)
+	}
+	return client
+}
+
+func GenerateJWT(id identity.Identity) string {
+	JWT := base64.RawURLEncoding.EncodeToString(
+		[]byte(`{"alg":"HS256","typ":"JWT"}`),
+	)
+	b, _ := json.Marshal(id)
+	JWT = JWT + "." + base64.RawURLEncoding.EncodeToString(b)
+	hash := hmac.New(sha256.New, []byte("hmac-sha256-secret"))
+	JWT = JWT + "." + base64.RawURLEncoding.EncodeToString(
+		hash.Sum([]byte(JWT)),
+	)
+	return JWT
+}
 
 func TestManagementGetDevice(t *testing.T) {
 	testCases := []struct {
-		Name          string
-		DeviceID      string
-		Authorization string
+		Name     string
+		DeviceID string
+		Identity *identity.Identity
 
 		GetDevice      *model.Device
 		GetDeviceError error
@@ -49,9 +97,13 @@ func TestManagementGetDevice(t *testing.T) {
 		Body       *model.Device
 	}{
 		{
-			Name:          "ok",
-			DeviceID:      "1234567890",
-			Authorization: "Bearer " + JWTUser,
+			Name:     "ok",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
 
 			GetDevice: &model.Device{
 				ID:     "1234567890",
@@ -71,18 +123,26 @@ func TestManagementGetDevice(t *testing.T) {
 			HTTPStatus: 401,
 		},
 		{
-			Name:          "ko, not found",
-			DeviceID:      "1234567890",
-			Authorization: "Bearer " + JWTUser,
+			Name:     "ko, not found",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
 
 			GetDeviceError: app.ErrDeviceNotFound,
 
 			HTTPStatus: 404,
 		},
 		{
-			Name:          "ko, other error",
-			DeviceID:      "1234567890",
-			Authorization: "Bearer " + JWTUser,
+			Name:     "ko, other error",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
 
 			GetDeviceError: errors.New("error"),
 
@@ -93,24 +153,23 @@ func TestManagementGetDevice(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			app := &app_mocks.App{}
-			if tc.Authorization != "" {
-				app.On("GetDevice",
-					mock.MatchedBy(func(_ context.Context) bool {
-						return true
-					}),
-					JWTUserTenantID,
-					tc.DeviceID,
-				).Return(tc.GetDevice, tc.GetDeviceError)
-			}
 
-			router, _ := NewRouter(app)
+			router, _ := NewRouter(app, nil)
 			s := httptest.NewServer(router)
 			defer s.Close()
 
 			url := strings.Replace(APIURLManagementDevice, ":deviceId", tc.DeviceID, 1)
 			req, err := http.NewRequest("GET", "http://localhost"+url, nil)
-			if tc.Authorization != "" {
-				req.Header.Set(headerAuthorization, tc.Authorization)
+			if tc.Identity != nil {
+				jwt := GenerateJWT(*tc.Identity)
+				app.On("GetDevice",
+					mock.MatchedBy(func(_ context.Context) bool {
+						return true
+					}),
+					tc.Identity.Tenant,
+					tc.DeviceID,
+				).Return(tc.GetDevice, tc.GetDeviceError)
+				req.Header.Set(headerAuthorization, "Bearer "+jwt)
 			}
 			if !assert.NoError(t, err) {
 				t.FailNow()
@@ -133,26 +192,44 @@ func TestManagementGetDevice(t *testing.T) {
 }
 
 func TestManagementConnect(t *testing.T) {
+	prevPongWait := pongWait
+	prevWriteWait := writeWait
+	defer func() {
+		pongWait = prevPongWait
+		writeWait = prevWriteWait
+	}()
+	pongWait = time.Second
+	writeWait = time.Second
 	testCases := []struct {
 		Name                       string
 		DeviceID                   string
 		SessionID                  string
-		Authorization              string
+		Identity                   identity.Identity
 		RBACHeader                 string
 		RemoteTerminalAllowedError error
 		RemoteTerminalAllowed      bool
 	}{
 		{
-			Name:          "ok",
-			DeviceID:      "1234567890",
-			SessionID:     "session_id",
-			Authorization: "Bearer " + JWTUser,
+			Name:      "ok",
+			DeviceID:  "1234567890",
+			SessionID: "session_id",
+			Identity: identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+				Plan:    "professional",
+			},
 		},
 		{
-			Name:                  "ok with RBAC",
-			DeviceID:              "1234567890",
-			SessionID:             "session_id",
-			Authorization:         "Bearer " + JWTUser,
+			Name:      "ok with RBAC",
+			DeviceID:  "1234567890",
+			SessionID: "session_id",
+			Identity: identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+				Plan:    "enterprise",
+			},
 			RBACHeader:            "foo,bar",
 			RemoteTerminalAllowed: true,
 		},
@@ -161,59 +238,34 @@ func TestManagementConnect(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			app := &app_mocks.App{}
-			app.On("SubscribeMessagesFromDevice",
-				mock.MatchedBy(func(_ context.Context) bool {
-					return true
-				}),
-				JWTUserTenantID,
-				tc.DeviceID,
-			).Return(make(<-chan *model.Message), nil)
+			defer app.AssertExpectations(t)
+			natsClient := NewNATSTestClient(t)
+			router, _ := NewRouter(app, natsClient)
+
+			headers := http.Header{}
+			headers.Set(headerAuthorization, "Bearer "+GenerateJWT(tc.Identity))
 
 			app.On("PrepareUserSession",
 				mock.MatchedBy(func(_ context.Context) bool {
 					return true
 				}),
-				JWTUserTenantID,
-				JWTUserID,
-				tc.DeviceID,
-			).Return(&model.Session{
-				ID:       tc.SessionID,
-				UserID:   JWTUserID,
-				DeviceID: tc.DeviceID,
-			}, nil)
-
-			app.On("UpdateUserSessionStatus",
+				mock.MatchedBy(func(sess *model.Session) bool {
+					sess.ID = tc.SessionID
+					return true
+				}),
+			).Return(nil)
+			app.On("FreeUserSession",
 				mock.MatchedBy(func(_ context.Context) bool {
 					return true
 				}),
-				JWTUserTenantID,
 				tc.SessionID,
-				model.DeviceStatusConnected,
 			).Return(nil)
-
-			app.On("UpdateUserSessionStatus",
-				mock.MatchedBy(func(_ context.Context) bool {
-					return true
-				}),
-				JWTUserTenantID,
-				tc.SessionID,
-				model.DeviceStatusDisconnected,
-			).Return(nil)
-
-			router, _ := NewRouter(app)
-			s := httptest.NewServer(router)
-			defer s.Close()
-
-			url := "ws" + strings.TrimPrefix(s.URL, "http")
-
-			headers := http.Header{}
-			headers.Set(headerAuthorization, "Bearer "+JWTUser)
 			if len(tc.RBACHeader) > 0 {
 				app.On("RemoteTerminalAllowed",
 					mock.MatchedBy(func(_ context.Context) bool {
 						return true
 					}),
-					JWTUserTenantID,
+					tc.Identity.Tenant,
 					tc.DeviceID,
 					[]string{"foo", "bar"},
 				).Return(tc.RemoteTerminalAllowed, tc.RemoteTerminalAllowedError)
@@ -221,32 +273,132 @@ func TestManagementConnect(t *testing.T) {
 				headers.Set(model.RBACHeaderRemoteTerminalGroups, tc.RBACHeader)
 			}
 
-			url = url + strings.Replace(APIURLManagementDeviceConnect, ":deviceId", tc.DeviceID, 1)
-			ws, _, err := websocket.DefaultDialer.Dial(url, headers)
+			s := httptest.NewServer(router)
+			defer s.Close()
+
+			url := "ws" + strings.TrimPrefix(s.URL, "http")
+			url = url + strings.Replace(
+				APIURLManagementDeviceConnect, ":deviceId",
+				tc.DeviceID, 1,
+			)
+			conn, _, err := websocket.DefaultDialer.Dial(url, headers)
 			assert.NoError(t, err)
 
-			pingReceived := false
-			ws.SetPingHandler(func(message string) error {
-				pingReceived = true
-				_ = ws.SetReadDeadline(time.Now().Add(time.Duration(pongWait) * time.Second))
-				return ws.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(writeWait))
+			pingReceived := make(chan struct{}, 1)
+			conn.SetPingHandler(func(message string) error {
+				pingReceived <- struct{}{}
+				return conn.WriteControl(
+					websocket.PongMessage,
+					[]byte{},
+					time.Now().Add(writeWait),
+				)
+			})
+			pongReceived := make(chan struct{}, 1)
+			conn.SetPongHandler(func(message string) error {
+				pongReceived <- struct{}{}
+				return nil
 			})
 
+			receivedMsg := make(chan []byte, 1)
 			go func() {
 				for {
-					_, _, err := ws.ReadMessage()
+					_, data, err := conn.ReadMessage()
 					if err != nil {
 						break
 					}
+					receivedMsg <- data
 				}
 			}()
+			natsChan := make(chan *nats.Msg, 2)
+			sub, _ := natsClient.ChanSubscribe(
+				model.GetDeviceSubject(
+					tc.Identity.Tenant,
+					tc.DeviceID,
+				), natsChan,
+			)
+			defer sub.Unsubscribe()
+			msg := ws.ProtoMsg{
+				Header: ws.ProtoHdr{
+					Proto:   ws.ProtoTypeShell,
+					MsgType: "hello",
+				},
+			}
+			b, _ := msgpack.Marshal(msg)
+			err = conn.WriteMessage(websocket.BinaryMessage, b)
+			assert.NoError(t, err)
+			select {
+			case natsMsg := <-natsChan:
+				var rMsg ws.ProtoMsg
+				err = msgpack.Unmarshal(natsMsg.Data, &rMsg)
+				if assert.NoError(t, err) {
+					msg.Header.SessionID = tc.SessionID
+					msg.Header.Properties = map[string]interface{}{
+						"user_id": tc.Identity.Subject,
+					}
+					assert.Equal(t, msg, rMsg)
+				}
+			case <-time.After(time.Second * 5):
+				assert.Fail(t,
+					"api did not forward message to message bus",
+				)
+			}
+			err = conn.WriteControl(
+				websocket.PingMessage,
+				[]byte("1"),
+				time.Now().Add(time.Second),
+			)
+			assert.NoError(t, err)
 
-			// wait 1s to let the first ping flow in
-			time.Sleep(1 * time.Second)
-			assert.True(t, pingReceived)
+			msg.Header.SessionID = tc.SessionID
+			b, _ = msgpack.Marshal(msg)
+			err = natsClient.Publish(
+				model.GetSessionSubject(tc.Identity.Tenant, tc.SessionID),
+				b,
+			)
+			assert.NoError(t, err)
+			select {
+			case p := <-receivedMsg:
+				assert.Equal(t, b, p)
+			case <-time.After(time.Second * 5):
+				assert.Fail(t, "timed out waiting for message from device")
+			}
+
+			// check that ping and pong works as expected
+			select {
+			case <-pingReceived:
+			case <-time.After(pongWait):
+				assert.Fail(t, "did not receive ping within pongWait")
+			}
+
+			select {
+			case <-pongReceived:
+			case <-time.After(pongWait):
+				assert.Fail(t, "did not receive pong within pongWait")
+			}
 
 			// close the websocket
-			ws.Close()
+			conn.Close()
+
+			select {
+			case msg := <-natsChan:
+				var stopMsg ws.ProtoMsg
+				err := msgpack.Unmarshal(msg.Data, &stopMsg)
+				if assert.NoError(t, err) {
+					assert.Equal(t,
+						ws.ProtoTypeShell,
+						stopMsg.Header.Proto,
+					)
+					assert.Equal(t,
+						shell.MessageTypeStopShell,
+						stopMsg.Header.MsgType,
+					)
+				}
+
+			case <-time.After(time.Second * 5):
+				assert.Fail(t,
+					"timeout waiting for stop message on nats channel",
+				)
+			}
 
 			// wait 100ms to let the websocket fully shutdown on the server
 			time.Sleep(100 * time.Millisecond)
@@ -263,6 +415,7 @@ func TestManagementConnectFailures(t *testing.T) {
 		SessionID                  string
 		PrepareUserSessionErr      error
 		Authorization              string
+		Identity                   identity.Identity
 		RBACHeader                 string
 		RemoteTerminalAllowedError error
 		RemoteTerminalAllowed      bool
@@ -270,24 +423,51 @@ func TestManagementConnectFailures(t *testing.T) {
 		HTTPError                  error
 	}{
 		{
-			Name:          "ko, unable to upgrade",
-			SessionID:     "1",
-			Authorization: "Bearer " + JWTUser,
-			HTTPStatus:    http.StatusBadRequest,
+			Name:      "ko, unable to upgrade",
+			SessionID: "1",
+			Identity: identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Authorization: "Bearer " + GenerateJWT(identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			}),
+			HTTPStatus: http.StatusBadRequest,
 		},
 		{
 			Name:                  "ko, session preparation failure",
 			SessionID:             "1",
 			PrepareUserSessionErr: errors.New("Error"),
-			Authorization:         "Bearer " + JWTUser,
-			HTTPStatus:            http.StatusBadRequest,
+			Identity: identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Authorization: "Bearer " + GenerateJWT(identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			}),
+			HTTPStatus: http.StatusInternalServerError,
 		},
 		{
 			Name:                  "ko, device not found",
 			SessionID:             "1",
 			PrepareUserSessionErr: app.ErrDeviceNotFound,
-			Authorization:         "Bearer " + JWTUser,
-			HTTPStatus:            http.StatusNotFound,
+			Identity: identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Authorization: "Bearer " + GenerateJWT(identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			}),
+			HTTPStatus: http.StatusNotFound,
 		},
 		{
 			Name:       "ko, missing authorization header",
@@ -295,23 +475,46 @@ func TestManagementConnectFailures(t *testing.T) {
 			HTTPError:  errors.New("Authorization not present in header"),
 		},
 		{
-			Name:          "ko, malformed authorization header",
+			Name: "ko, malformed authorization header",
+			Identity: identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
 			Authorization: "malformed",
 			HTTPStatus:    http.StatusUnauthorized,
 			HTTPError:     errors.New("malformed Authorization header"),
 		},
 		{
-			Name:                  "ko, RBAC - not allowed",
-			SessionID:             "1",
-			Authorization:         "Bearer " + JWTUser,
+			Name: "ko, RBAC - not allowed",
+			Identity: identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			SessionID: "1",
+			Authorization: "Bearer " + GenerateJWT(identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			}),
 			RBACHeader:            "foo,bar",
 			RemoteTerminalAllowed: false,
 			HTTPStatus:            http.StatusForbidden,
 		},
 		{
-			Name:                       "ko, RBAC - error",
-			SessionID:                  "1",
-			Authorization:              "Bearer " + JWTUser,
+			Name:      "ko, RBAC - error",
+			SessionID: "1",
+			Identity: identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Authorization: "Bearer " + GenerateJWT(identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			}),
 			RBACHeader:                 "foo,bar",
 			RemoteTerminalAllowed:      false,
 			RemoteTerminalAllowedError: errors.New("foo"),
@@ -328,13 +531,23 @@ func TestManagementConnectFailures(t *testing.T) {
 					mock.MatchedBy(func(_ context.Context) bool {
 						return true
 					}),
-					JWTUserTenantID,
-					JWTUserID,
-					tc.DeviceID,
-				).Return(&model.Session{ID: tc.SessionID}, tc.PrepareUserSessionErr)
+					mock.MatchedBy(func(sess *model.Session) bool {
+						sess.ID = tc.SessionID
+						return true
+					}),
+				).Return(tc.PrepareUserSessionErr)
+				if tc.PrepareUserSessionErr == nil {
+					app.On("FreeUserSession",
+						mock.MatchedBy(func(_ context.Context) bool {
+							return true
+						}),
+						tc.SessionID,
+					).Return(nil)
+				}
 			}
 
-			router, _ := NewRouter(app)
+			natsClient := NewNATSTestClient(t)
+			router, _ := NewRouter(app, natsClient)
 			url := strings.Replace(APIURLManagementDeviceConnect, ":deviceId", tc.DeviceID, 1)
 			req, err := http.NewRequest("GET", "http://localhost"+url, nil)
 			if !assert.NoError(t, err) {
@@ -350,7 +563,7 @@ func TestManagementConnectFailures(t *testing.T) {
 					mock.MatchedBy(func(_ context.Context) bool {
 						return true
 					}),
-					JWTUserTenantID,
+					tc.Identity.Tenant,
 					tc.DeviceID,
 					[]string{"foo", "bar"},
 				).Return(tc.RemoteTerminalAllowed, tc.RemoteTerminalAllowedError)

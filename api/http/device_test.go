@@ -27,42 +27,50 @@ import (
 	"github.com/gorilla/websocket"
 	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
+	"github.com/mendersoftware/go-lib-micro/identity"
+	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/nats-io/nats.go"
+	"github.com/vmihailenco/msgpack/v5"
+
+	// "github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
-const JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibWVuZGVyLmRldmljZSI6dHJ1ZSwibWVuZGVyLnBsYW4iOiJlbnRlcnByaXNlIiwibWVuZGVyLnRlbmFudCI6ImFiY2QifQ.Q4bIDhEx53FLFUMipjJUNgEmEf48yjcaFxlh8XxZFVw"
-const JWTDeviceID = "1234567890"
-const JWTTenantID = "abcd"
-
 func TestDeviceConnect(t *testing.T) {
+	// temporarily speed things up a bit
+	prevPongWait := pongWait
+	prevWriteWait := writeWait
+	defer func() {
+		pongWait = prevPongWait
+		writeWait = prevWriteWait
+	}()
+	pongWait = time.Second
+	writeWait = time.Second
+
 	testCases := []struct {
-		Name          string
-		Authorization string
+		Name     string
+		Identity identity.Identity
 	}{
 		{
-			Name:          "ok",
-			Authorization: "Bearer " + JWT,
+			Name: "ok",
+			Identity: identity.Identity{
+				Subject:  "00000000-0000-0000-0000-000000000000",
+				Tenant:   "000000000000000000000000",
+				IsDevice: true,
+			},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			app := &app_mocks.App{}
-			app.On("SubscribeMessagesFromManagement",
-				mock.MatchedBy(func(_ context.Context) bool {
-					return true
-				}),
-				JWTUserTenantID,
-				JWTDeviceID,
-			).Return(make(<-chan *model.Message), nil)
-
 			app.On("UpdateDeviceStatus",
 				mock.MatchedBy(func(_ context.Context) bool {
 					return true
 				}),
-				JWTTenantID,
-				JWTDeviceID,
+				tc.Identity.Tenant,
+				tc.Identity.Subject,
 				model.DeviceStatusConnected,
 			).Return(nil)
 
@@ -70,45 +78,117 @@ func TestDeviceConnect(t *testing.T) {
 				mock.MatchedBy(func(_ context.Context) bool {
 					return true
 				}),
-				JWTTenantID,
-				JWTDeviceID,
+				tc.Identity.Tenant,
+				tc.Identity.Subject,
 				model.DeviceStatusDisconnected,
 			).Return(nil)
 
-			router, _ := NewRouter(app)
+			natsClient := NewNATSTestClient(t)
+			router, _ := NewRouter(app, natsClient)
 			s := httptest.NewServer(router)
 			defer s.Close()
 
 			url := "ws" + strings.TrimPrefix(s.URL, "http")
 
 			headers := http.Header{}
-			headers.Set(headerAuthorization, "Bearer "+JWT)
+			headers.Set(
+				headerAuthorization,
+				"Bearer "+GenerateJWT(tc.Identity),
+			)
 
-			ws, _, err := websocket.DefaultDialer.Dial(url+APIURLDevicesConnect, headers)
+			conn, _, err := websocket.DefaultDialer.Dial(url+APIURLDevicesConnect, headers)
 			assert.NoError(t, err)
 
-			pingReceived := false
-			ws.SetPingHandler(func(message string) error {
-				pingReceived = true
-				_ = ws.SetReadDeadline(time.Now().Add(time.Duration(pongWait) * time.Second))
-				return ws.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(writeWait))
+			pingReceived := make(chan struct{}, 10)
+			conn.SetPingHandler(func(message string) error {
+				pingReceived <- struct{}{}
+				return conn.WriteControl(
+					websocket.PongMessage,
+					[]byte{},
+					time.Now().Add(writeWait),
+				)
+			})
+			pongReceived := make(chan struct{}, 1)
+			conn.SetPongHandler(func(message string) error {
+				pongReceived <- struct{}{}
+				return nil
 			})
 
+			dataReceived := make(chan []byte, 2)
 			go func() {
 				for {
-					_, _, err := ws.ReadMessage()
+					_, data, err := conn.ReadMessage()
 					if err != nil {
 						break
 					}
+					dataReceived <- data
 				}
 			}()
 
-			// wait 1s to let the first ping flow in
-			time.Sleep(1 * time.Second)
-			assert.True(t, pingReceived)
+			// test receiving a message "from management"
+			msg := ws.ProtoMsg{
+				Header: ws.ProtoHdr{
+					Proto:     ws.ProtoTypeShell,
+					MsgType:   "cmd",
+					SessionID: "foobar",
+				},
+			}
+			b, _ := msgpack.Marshal(msg)
+			natsClient.Publish(model.GetDeviceSubject(
+				tc.Identity.Tenant,
+				tc.Identity.Subject),
+				b,
+			)
+			select {
+			case rMsg := <-dataReceived:
+				assert.Equal(t, b, rMsg)
+
+			case <-time.After(time.Second):
+				assert.Fail(t,
+					"timeout waiting for message from management",
+				)
+			}
+
+			// test responding to message from management
+			rChan := make(chan *nats.Msg, 1)
+			_, err = natsClient.ChanSubscribe(
+				model.GetSessionSubject(tc.Identity.Tenant, "foobar"),
+				rChan,
+			)
+			assert.NoError(t, err)
+			err = conn.WriteMessage(websocket.BinaryMessage, b)
+			assert.NoError(t, err)
+
+			select {
+			case <-time.After(time.Second):
+				assert.Fail(t,
+					"timeout waiting for message to propagate",
+				)
+			case rMsg := <-rChan:
+				assert.Equal(t, b, rMsg.Data)
+			}
+
+			// check that ping and pong works as expected
+			err = conn.WriteControl(
+				websocket.PingMessage,
+				[]byte("1"),
+				time.Now().Add(time.Second),
+			)
+			assert.NoError(t, err)
+			select {
+			case <-pongReceived:
+			case <-time.After(pongWait * 2):
+				assert.Fail(t, "did not receive pong within pongWait")
+			}
+
+			select {
+			case <-pingReceived:
+			case <-time.After(pongWait * 2):
+				assert.Fail(t, "did not receive ping within pongWait")
+			}
 
 			// close the websocket
-			ws.Close()
+			conn.Close()
 
 			// wait 100ms to let the websocket fully shutdown on the server
 			time.Sleep(100 * time.Millisecond)
@@ -119,16 +199,37 @@ func TestDeviceConnect(t *testing.T) {
 }
 
 func TestDeviceConnectFailures(t *testing.T) {
+	JWT := GenerateJWT(identity.Identity{
+		Subject:  "00000000-0000-0000-0000-000000000000",
+		Tenant:   "000000000000000000000000",
+		IsDevice: true,
+	})
 	testCases := []struct {
 		Name          string
 		Authorization string
+		WithNATS      bool
 		HTTPStatus    int
 		HTTPError     error
 	}{
 		{
 			Name:          "ko, unable to upgrade",
 			Authorization: "Bearer " + JWT,
+			WithNATS:      true,
 			HTTPStatus:    http.StatusBadRequest,
+		},
+		{
+			Name:          "error, unable to subscribe",
+			Authorization: "Bearer " + JWT,
+			HTTPStatus:    http.StatusInternalServerError,
+		},
+		{
+			Name: "error, user auth",
+			Authorization: "Bearer " + GenerateJWT(identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			}),
+			HTTPStatus: http.StatusBadRequest,
 		},
 		{
 			Name:       "ko, missing authorization header",
@@ -142,11 +243,14 @@ func TestDeviceConnectFailures(t *testing.T) {
 			HTTPError:     errors.New("malformed Authorization header"),
 		},
 	}
-
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
+			var natsClient *nats.Conn
+			if tc.WithNATS {
+				natsClient = NewNATSTestClient(t)
+			}
 
-			router, _ := NewRouter(nil)
+			router, _ := NewRouter(nil, natsClient)
 			req, err := http.NewRequest("GET", "http://localhost"+APIURLDevicesConnect, nil)
 			if !assert.NoError(t, err) {
 				t.FailNow()
@@ -228,7 +332,7 @@ func TestProvisionDevice(t *testing.T) {
 				).Return(tc.ProvisionDeviceErr)
 			}
 
-			router, _ := NewRouter(deviceConnectApp)
+			router, _ := NewRouter(deviceConnectApp, nil)
 
 			url := strings.Replace(APIURLInternalDevices, ":tenantId", tc.TenantID, 1)
 			req, err := http.NewRequest("POST", url, strings.NewReader(tc.Device))
@@ -287,7 +391,7 @@ func TestDeleteDevice(t *testing.T) {
 				).Return(tc.ProvisionDeviceErr)
 			}
 
-			router, _ := NewRouter(deviceConnectApp)
+			router, _ := NewRouter(deviceConnectApp, nil)
 
 			url := strings.Replace(APIURLInternalDevicesID, ":tenantId", tc.TenantID, 1)
 			url = strings.Replace(url, ":deviceId", tc.DeviceID, 1)
