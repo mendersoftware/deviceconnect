@@ -207,15 +207,17 @@ func (h ManagementController) Connect(c *gin.Context) {
 	h.ConnectServeWS(ctx, conn, session, deviceChan)
 }
 
-func websocketPing(conn *websocket.Conn) bool {
+func websocketPing(conn *websocket.Conn, l *log.Logger) bool {
 	pongWaitString := strconv.Itoa(int(pongWait.Seconds()))
 	if err := conn.WriteControl(
 		websocket.PingMessage,
 		[]byte(pongWaitString),
 		time.Now().Add(writeWait),
 	); err != nil {
+		l.Infof("websocketPing rc false: err=%v", err)
 		return false
 	}
+	l.Infof("websocketPing rc true")
 	return true
 }
 
@@ -275,7 +277,7 @@ Loop:
 		case <-ctx.Done():
 			break Loop
 		case <-ticker.C:
-			if !websocketPing(conn) {
+			if !websocketPing(conn, l) {
 				break Loop
 			}
 		case err := <-errChan:
@@ -366,6 +368,13 @@ func (h ManagementController) ConnectServeWS(
 			if m.Header.MsgType == shell.MessageTypeStopShell {
 				sessionClosed = true
 			}
+		case ws.ProtoTypeFileTransfer:
+			m.Header.SessionID = sess.ID
+			if m.Header.Properties == nil {
+				m.Header.Properties = make(map[string]interface{})
+			}
+			m.Header.Properties[PropertyUserID] = sess.UserID
+			data, _ = msgpack.Marshal(m)
 		default:
 			// TODO: Handle protocol violation
 		}

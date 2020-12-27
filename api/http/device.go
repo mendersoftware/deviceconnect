@@ -201,6 +201,7 @@ func (h DeviceController) connectWSWriter(
 	defer func() {
 		// TODO Check err and errChan and send close control packet
 		// with error if not initiated by client.
+		l.Infof("this connection is closing.")
 		conn.Close()
 	}()
 
@@ -216,6 +217,7 @@ func (h DeviceController) connectWSWriter(
 	defer ticker.Stop()
 	conn.SetPongHandler(func(string) error {
 		ticker.Reset(pingPeriod)
+		l.Infof("about to SetReadDeadline to now+%d", pongWait)
 		return conn.SetReadDeadline(time.Now().Add(pongWait))
 	})
 	conn.SetPingHandler(func(msg string) error {
@@ -237,19 +239,24 @@ Loop:
 			err = conn.WriteMessage(websocket.BinaryMessage, msg.Data)
 			if err != nil {
 				l.Error(err)
+				l.Infof("breaking loop on err from WriteMessage !=nil")
 				break Loop
 			}
 		case <-ctx.Done():
+			l.Infof("breaking loop on Done")
 			break Loop
 		case <-ticker.C:
-			if !websocketPing(conn) {
+			if !websocketPing(conn, l) {
+				l.Infof("breaking loop on websocketPing==false")
 				break Loop
 			}
 		case err := <-errChan:
+			l.Infof("got something on errChan connectWSWriter returning: %v", err)
 			return err
 		}
 		ticker.Reset(pingPeriod)
 	}
+	l.Errorf("connectWSWriter returning: %v", err)
 	return err
 }
 
