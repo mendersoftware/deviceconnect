@@ -6,7 +6,7 @@ require (
 	github.com/gin-contrib/cors v1.3.1
 	github.com/gin-gonic/gin v1.6.3
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
-	github.com/google/uuid v1.1.2
+	github.com/google/uuid v1.1.3
 	github.com/gorilla/websocket v1.4.2
 	github.com/mendersoftware/go-lib-micro v0.0.0-20201207093813-11fb2798a44d
 	github.com/nats-io/nats-server/v2 v2.1.9
