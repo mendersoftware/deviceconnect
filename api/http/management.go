@@ -281,7 +281,6 @@ Loop:
 		case err := <-errChan:
 			return err
 		}
-		ticker.Reset(pingPeriod)
 	}
 	return err
 }
