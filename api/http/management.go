@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -353,20 +353,16 @@ func (h ManagementController) ConnectServeWS(
 			return err
 		}
 
-		switch m.Header.Proto {
-		case ws.ProtoTypeShell:
-			m.Header.SessionID = sess.ID
-			if m.Header.Properties == nil {
-				m.Header.Properties = make(map[string]interface{})
-			}
-			m.Header.Properties[PropertyUserID] = sess.UserID
-			data, _ = msgpack.Marshal(m)
+		m.Header.SessionID = sess.ID
+		if m.Header.Properties == nil {
+			m.Header.Properties = make(map[string]interface{})
+		}
+		m.Header.Properties[PropertyUserID] = sess.UserID
+		data, _ = msgpack.Marshal(m)
 
-			if m.Header.MsgType == shell.MessageTypeStopShell {
-				sessionClosed = true
-			}
-		default:
-			// TODO: Handle protocol violation
+		if m.Header.Proto == ws.ProtoTypeShell &&
+			m.Header.MsgType == shell.MessageTypeStopShell {
+			sessionClosed = true
 		}
 
 		err = h.nats.Publish(model.GetDeviceSubject(id.Tenant, sess.DeviceID), data)
