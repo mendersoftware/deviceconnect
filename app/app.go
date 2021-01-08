@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -158,19 +158,19 @@ func (a *app) PrepareUserSession(
 
 	if a.HaveAuditLogs {
 		err = a.workflows.SubmitAuditLog(ctx, workflows.AuditLog{
-			Action: workflows.ActionCreate,
+			Action: workflows.ActionTerminalOpen,
 			Actor: workflows.Actor{
 				ID:   sess.UserID,
 				Type: workflows.ActorUser,
 			},
 			Object: workflows.Object{
-				ID:   sess.ID,
-				Type: workflows.ObjectTerminal,
-				Terminal: &workflows.Terminal{
-					DeviceID: sess.DeviceID,
-				},
+				ID:   sess.DeviceID,
+				Type: workflows.ObjectDevice,
 			},
-			Change:  "User requested a new terminal session",
+			Change: "User requested a new terminal session",
+			MetaData: map[string][]string{
+				"session_id": {sess.ID},
+			},
 			EventTS: time.Now(),
 		})
 		if err != nil {
@@ -202,17 +202,17 @@ func (a *app) FreeUserSession(
 	}
 	if a.HaveAuditLogs {
 		err = a.workflows.SubmitAuditLog(ctx, workflows.AuditLog{
-			Action: workflows.ActionDelete,
+			Action: workflows.ActionTerminalClose,
 			Actor: workflows.Actor{
 				ID:   sess.UserID,
 				Type: workflows.ActorUser,
 			},
 			Object: workflows.Object{
-				ID:   sess.ID,
-				Type: workflows.ObjectTerminal,
-				Terminal: &workflows.Terminal{
-					DeviceID: sess.ID,
-				},
+				ID:   sess.DeviceID,
+				Type: workflows.ObjectDevice,
+			},
+			MetaData: map[string][]string{
+				"session_id": {sess.ID},
 			},
 		})
 	}
