@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -390,6 +390,10 @@ func TestPrepareUserSession(t *testing.T) {
 		),
 	}}
 
+	validateAuditLog := mock.MatchedBy(func(log workflows.AuditLog) bool {
+		return assert.NoError(t, log.Validate())
+	})
+
 	for i := range testCases {
 		tc := testCases[i]
 		t.Run(tc.Name, func(t *testing.T) {
@@ -430,7 +434,7 @@ func TestPrepareUserSession(t *testing.T) {
 			}
 			wf.On("SubmitAuditLog",
 				tc.CTX,
-				mock.AnythingOfType("workflows.AuditLog")).
+				validateAuditLog).
 				Return(tc.WorkflowsError)
 			if tc.WorkflowsError == nil {
 				goto execTest

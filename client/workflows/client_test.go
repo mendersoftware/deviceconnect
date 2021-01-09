@@ -1,6 +1,16 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
-//    All Rights Reserved
+//    Licensed under the Apache License, Version 2.0 (the "License");
+//    you may not use this file except in compliance with the License.
+//    You may obtain a copy of the License at
+//
+//        http://www.apache.org/licenses/LICENSE-2.0
+//
+//    Unless required by applicable law or agreed to in writing, software
+//    distributed under the License is distributed on an "AS IS" BASIS,
+//    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//    See the License for the specific language governing permissions and
+//    limitations under the License.
 package workflows
 
 import (
@@ -172,17 +182,14 @@ func TestSubmitAuditLog(t *testing.T) {
 			),
 			"testing"),
 		AuditLog: AuditLog{
-			Action: ActionCreate,
+			Action: ActionTerminalOpen,
 			Actor: Actor{
 				ID:   "4cd02655-d45e-464f-9790-e730286ff888",
 				Type: ActorUser,
 			},
 			Object: Object{
 				ID:   "4cd02655-d45e-464f-9790-e730286ff889",
-				Type: ObjectTerminal,
-				Terminal: &Terminal{
-					DeviceID: "aca488eb-9d65-4cd7-88c4-34093f3df3da",
-				},
+				Type: ObjectDevice,
 			},
 			EventTS: time.Unix(1234567890, 0),
 		},
@@ -207,17 +214,14 @@ func TestSubmitAuditLog(t *testing.T) {
 		CTX: context.Background(),
 
 		AuditLog: AuditLog{
-			Action: ActionCreate,
+			Action: ActionTerminalClose,
 			Actor: Actor{
 				ID:   "4cd02655-d45e-464f-9790-e730286ff888",
 				Type: ActorUser,
 			},
 			Object: Object{
 				ID:   "4cd02655-d45e-464f-9790-e730286ff889",
-				Type: ObjectTerminal,
-				Terminal: &Terminal{
-					DeviceID: "aca488eb-9d65-4cd7-88c4-34093f3df3da",
-				},
+				Type: ObjectDevice,
 			},
 		},
 
@@ -234,17 +238,14 @@ func TestSubmitAuditLog(t *testing.T) {
 			),
 			"testing"),
 		AuditLog: AuditLog{
-			Action: ActionCreate,
+			Action: ActionTerminalClose,
 			Actor: Actor{
 				ID:   "4cd02655-d45e-464f-9790-e730286ff888",
 				Type: ActorUser,
 			},
 			Object: Object{
 				ID:   "4cd02655-d45e-464f-9790-e730286ff889",
-				Type: ObjectTerminal,
-				Terminal: &Terminal{
-					DeviceID: "aca488eb-9d65-4cd7-88c4-34093f3df3da",
-				},
+				Type: ObjectDevice,
 			},
 			EventTS: time.Unix(1234567890, 0),
 		},
@@ -268,17 +269,14 @@ func TestSubmitAuditLog(t *testing.T) {
 			return ctx
 		}(),
 		AuditLog: AuditLog{
-			Action: ActionCreate,
+			Action: ActionTerminalClose,
 			Actor: Actor{
 				ID:   "4cd02655-d45e-464f-9790-e730286ff888",
 				Type: ActorUser,
 			},
 			Object: Object{
 				ID:   "4cd02655-d45e-464f-9790-e730286ff889",
-				Type: ObjectTerminal,
-				Terminal: &Terminal{
-					DeviceID: "aca488eb-9d65-4cd7-88c4-34093f3df3da",
-				},
+				Type: ObjectDevice,
 			},
 			EventTS: time.Unix(1234567890, 0),
 		},
@@ -301,17 +299,14 @@ func TestSubmitAuditLog(t *testing.T) {
 			), "testing",
 		),
 		AuditLog: AuditLog{
-			Action: ActionUpdate,
+			Action: ActionTerminalClose,
 			Actor: Actor{
 				ID:   "4cd02655-d45e-464f-9790-e730286ff888",
-				Type: ActorDevice,
+				Type: ActorUser,
 			},
 			Object: Object{
 				ID:   "4cd02655-d45e-464f-9790-e730286ff889",
-				Type: ObjectTerminal,
-				Terminal: &Terminal{
-					DeviceID: "aca488eb-9d65-4cd7-88c4-34093f3df3da",
-				},
+				Type: ObjectDevice,
 			},
 			EventTS: time.Unix(1234567890, 0),
 		},
@@ -331,17 +326,14 @@ func TestSubmitAuditLog(t *testing.T) {
 			), "testing",
 		),
 		AuditLog: AuditLog{
-			Action: ActionCreate,
+			Action: ActionTerminalClose,
 			Actor: Actor{
 				ID:   "4cd02655-d45e-464f-9790-e730286ff888",
 				Type: ActorUser,
 			},
 			Object: Object{
 				ID:   "4cd02655-d45e-464f-9790-e730286ff889",
-				Type: ObjectTerminal,
-				Terminal: &Terminal{
-					DeviceID: "aca488eb-9d65-4cd7-88c4-34093f3df3da",
-				},
+				Type: ObjectDevice,
 			},
 			EventTS: time.Unix(1234567890, 0),
 		},
