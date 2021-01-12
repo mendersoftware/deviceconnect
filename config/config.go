@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -73,7 +73,7 @@ const (
 	// SettingWorkflowsURL sets the base URL for the workflows orchestrator.
 	SettingWorkflowsURL = "workflows_url"
 	// SettingWorkflowsURLDefault sets the default workflows URL.
-	SettingWorkflowsURLDefault = "http://mender-workflows:8080"
+	SettingWorkflowsURLDefault = "http://mender-workflows-server:8080"
 
 	// SettingEnableAuditLogs enables/disables audit logging.
 	SettingEnableAuditLogs = "enable_audit"
