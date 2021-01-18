@@ -12,7 +12,7 @@ require (
 	github.com/nats-io/nats-server/v2 v2.1.9
 	github.com/nats-io/nats.go v1.10.0
 	github.com/pkg/errors v0.9.1
-	github.com/stretchr/testify v1.6.1
+	github.com/stretchr/testify v1.7.0
 	github.com/urfave/cli v1.22.5
 	github.com/vmihailenco/msgpack/v5 v5.1.0
 	go.mongodb.org/mongo-driver v1.4.4
