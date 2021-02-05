@@ -52,10 +52,10 @@ mongo_dbname: deviceconnect
 # mongo_password: secret
 
 ## workflows service URL
-## Defaults to: "http://mender-workflows:8080"
+## Defaults to: "http://mender-workflows-server:8080"
 ## Overwrite with environment variable DEVICECONNECT_WORKFLOWS_URL
 #
-# workflows_url: http://mender-workflows:8080
+# workflows_url: http://mender-workflows-server:8080
 
 ## enable/disable audit logging
 ## Defaults to: false
