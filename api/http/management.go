@@ -293,10 +293,11 @@ func (h ManagementController) ConnectServeWS(
 	sess *model.Session,
 	deviceChan chan *nats.Msg,
 ) (err error) {
-	var sessionClosed bool
 	l := log.FromContext(ctx)
 	id := identity.FromContext(ctx)
 	errChan := make(chan error, 1)
+	remoteTerminalRunning := false
+
 	defer func() {
 		if err != nil {
 			select {
@@ -306,7 +307,7 @@ func (h ManagementController) ConnectServeWS(
 				l.Warn("Failed to propagate error to client")
 			}
 		}
-		if !sessionClosed {
+		if remoteTerminalRunning {
 			msg := ws.ProtoMsg{
 				Header: ws.ProtoHdr{
 					Proto:     ws.ProtoTypeShell,
@@ -334,6 +335,7 @@ func (h ManagementController) ConnectServeWS(
 		}
 		close(errChan)
 	}()
+
 	// websocketWriter is responsible for closing the websocket
 	//nolint:errcheck
 	go h.websocketWriter(ctx, conn, sess, deviceChan, errChan)
@@ -360,9 +362,14 @@ func (h ManagementController) ConnectServeWS(
 		m.Header.Properties[PropertyUserID] = sess.UserID
 		data, _ = msgpack.Marshal(m)
 
-		if m.Header.Proto == ws.ProtoTypeShell &&
-			m.Header.MsgType == shell.MessageTypeStopShell {
-			sessionClosed = true
+		switch m.Header.Proto {
+		case ws.ProtoTypeShell:
+			switch m.Header.MsgType {
+			case shell.MessageTypeSpawnShell:
+				remoteTerminalRunning = true
+			case shell.MessageTypeStopShell:
+				remoteTerminalRunning = false
+			}
 		}
 
 		err = h.nats.Publish(model.GetDeviceSubject(id.Tenant, sess.DeviceID), data)

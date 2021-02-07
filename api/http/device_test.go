@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -29,10 +29,10 @@ import (
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/shell"
 	"github.com/nats-io/nats.go"
 	"github.com/vmihailenco/msgpack/v5"
 
-	// "github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -185,6 +185,94 @@ func TestDeviceConnect(t *testing.T) {
 			case <-pingReceived:
 			case <-time.After(pongWait * 2):
 				assert.Fail(t, "did not receive ping within pongWait")
+			}
+
+			// start a new terminal
+			msg = ws.ProtoMsg{
+				Header: ws.ProtoHdr{
+					Proto:     ws.ProtoTypeShell,
+					MsgType:   shell.MessageTypeSpawnShell,
+					SessionID: "foobar",
+				},
+			}
+			b, _ = msgpack.Marshal(msg)
+			err = conn.WriteMessage(websocket.BinaryMessage, b)
+			assert.NoError(t, err)
+
+			select {
+			case <-time.After(time.Second):
+				assert.Fail(t,
+					"timeout waiting for message to propagate",
+				)
+			case rMsg := <-rChan:
+				assert.Equal(t, b, rMsg.Data)
+			}
+
+			// stop the terminal
+			msg = ws.ProtoMsg{
+				Header: ws.ProtoHdr{
+					Proto:     ws.ProtoTypeShell,
+					MsgType:   shell.MessageTypeStopShell,
+					SessionID: "foobar",
+				},
+			}
+			b, _ = msgpack.Marshal(msg)
+			err = conn.WriteMessage(websocket.BinaryMessage, b)
+			assert.NoError(t, err)
+
+			select {
+			case <-time.After(time.Second):
+				assert.Fail(t,
+					"timeout waiting for message to propagate",
+				)
+			case rMsg := <-rChan:
+				assert.Equal(t, b, rMsg.Data)
+			}
+
+			// start again a new terminal
+			msg = ws.ProtoMsg{
+				Header: ws.ProtoHdr{
+					Proto:     ws.ProtoTypeShell,
+					MsgType:   shell.MessageTypeSpawnShell,
+					SessionID: "foobar",
+				},
+			}
+			b, _ = msgpack.Marshal(msg)
+			err = conn.WriteMessage(websocket.BinaryMessage, b)
+			assert.NoError(t, err)
+
+			select {
+			case <-time.After(time.Second):
+				assert.Fail(t,
+					"timeout waiting for message to propagate",
+				)
+			case rMsg := <-rChan:
+				assert.Equal(t, b, rMsg.Data)
+			}
+
+			// send wrong message (session ID empty), this shuts down the connection
+			msg = ws.ProtoMsg{
+				Header: ws.ProtoHdr{
+					Proto:     ws.ProtoTypeShell,
+					MsgType:   shell.MessageTypeSpawnShell,
+					SessionID: "",
+				},
+			}
+			b, _ = msgpack.Marshal(msg)
+			err = conn.WriteMessage(websocket.BinaryMessage, b)
+			assert.NoError(t, err)
+
+			// we receive the stop message
+			select {
+			case <-time.After(time.Second):
+				assert.Fail(t,
+					"timeout waiting for message to propagate",
+				)
+			case rMsg := <-rChan:
+				msg := &ws.ProtoMsg{}
+				_ = msgpack.Unmarshal(rMsg.Data, msg)
+				assert.Equal(t, ws.ProtoTypeShell, msg.Header.Proto)
+				assert.Equal(t, shell.MessageTypeStopShell, msg.Header.MsgType)
 			}
 
 			// close the websocket
