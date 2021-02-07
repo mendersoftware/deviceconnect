@@ -28,6 +28,7 @@ import (
 	"github.com/mendersoftware/go-lib-micro/log"
 	"github.com/mendersoftware/go-lib-micro/rest.utils"
 	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/menderclient"
 	"github.com/mendersoftware/go-lib-micro/ws/shell"
 	natsio "github.com/nats-io/nats.go"
 	"github.com/pkg/errors"
@@ -381,11 +382,11 @@ func (h ManagementController) ConnectServeWS(
 }
 
 func (h ManagementController) CheckUpdate(c *gin.Context) {
-	h.sendMenderCommand(c, "check-update")
+	h.sendMenderCommand(c, menderclient.MessageTypeMenderClientCheckUpdate)
 }
 
 func (h ManagementController) SendInventory(c *gin.Context) {
-	h.sendMenderCommand(c, "send-inventory")
+	h.sendMenderCommand(c, menderclient.MessageTypeMenderClientSendInventory)
 }
 
 func (h ManagementController) sendMenderCommand(c *gin.Context, msgType string) {
@@ -421,7 +422,7 @@ func (h ManagementController) sendMenderCommand(c *gin.Context, msgType string) 
 
 	msg := &ws.ProtoMsg{
 		Header: ws.ProtoHdr{
-			Proto:   5, // ws.ProtoTypeMenderClient
+			Proto:   ws.ProtoTypeMenderClient,
 			MsgType: msgType,
 			Properties: map[string]interface{}{
 				PropertyUserID: idata.Subject,

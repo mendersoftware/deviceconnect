@@ -20,6 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/menderclient"
 	"github.com/pkg/errors"
 	"github.com/vmihailenco/msgpack/v5"
 
@@ -74,11 +75,11 @@ func (h InternalController) Provision(c *gin.Context) {
 }
 
 func (h InternalController) CheckUpdate(c *gin.Context) {
-	h.sendMenderCommand(c, "check-update")
+	h.sendMenderCommand(c, menderclient.MessageTypeMenderClientCheckUpdate)
 }
 
 func (h InternalController) SendInventory(c *gin.Context) {
-	h.sendMenderCommand(c, "send-inventory")
+	h.sendMenderCommand(c, menderclient.MessageTypeMenderClientSendInventory)
 }
 
 func (h InternalController) sendMenderCommand(c *gin.Context, msgType string) {
@@ -107,7 +108,7 @@ func (h InternalController) sendMenderCommand(c *gin.Context, msgType string) {
 
 	msg := &ws.ProtoMsg{
 		Header: ws.ProtoHdr{
-			Proto:   5, // ws.ProtoTypeMenderClient
+			Proto:   ws.ProtoTypeMenderClient,
 			MsgType: msgType,
 		},
 	}
