@@ -41,7 +41,12 @@ const (
 	APIURLInternalHealth    = APIURLInternal + "/health"
 	APIURLInternalTenants   = APIURLInternal + "/tenants"
 	APIURLInternalDevices   = APIURLInternal + "/tenants/:tenantId/devices"
-	APIURLInternalDevicesID = APIURLInternal + "/tenants/:tenantId/devices/:deviceId"
+	APIURLInternalDevicesID = APIURLInternal +
+		"/tenants/:tenantId/devices/:deviceId"
+	APIURLInternalDevicesIDCheckUpdate = APIURLInternal +
+		"/tenants/:tenantId/devices/:deviceId/check-update"
+	APIURLInternalDevicesIDSendInventory = APIURLInternal +
+		"/tenants/:tenantId/devices/:deviceId/send-inventory"
 
 	APIURLManagementDevice              = APIURLManagement + "/devices/:deviceId"
 	APIURLManagementDeviceConnect       = APIURLManagement + "/devices/:deviceId/connect"
@@ -97,8 +102,10 @@ func NewRouter(
 	router.GET(APIURLInternalAlive, status.Alive)
 	router.GET(APIURLInternalHealth, status.Health)
 
-	tenants := NewTenantsController(app)
-	router.POST(APIURLInternalTenants, tenants.Provision)
+	internal := NewInternalController(app, natsClient)
+	router.POST(APIURLInternalTenants, internal.Provision)
+	router.POST(APIURLInternalDevicesIDCheckUpdate, internal.CheckUpdate)
+	router.POST(APIURLInternalDevicesIDSendInventory, internal.SendInventory)
 
 	device := NewDeviceController(app, natsClient)
 	router.GET(APIURLDevicesConnect, device.Connect)
