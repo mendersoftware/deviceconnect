@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -20,12 +20,13 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/nats-io/nats.go"
 
-	"github.com/mendersoftware/deviceconnect/app"
 	"github.com/mendersoftware/go-lib-micro/accesslog"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/requestid"
+
+	"github.com/mendersoftware/deviceconnect/app"
+	"github.com/mendersoftware/deviceconnect/client/nats"
 )
 
 // API URL used by the HTTP router
@@ -42,14 +43,16 @@ const (
 	APIURLInternalDevices   = APIURLInternal + "/tenants/:tenantId/devices"
 	APIURLInternalDevicesID = APIURLInternal + "/tenants/:tenantId/devices/:deviceId"
 
-	APIURLManagementDevice        = APIURLManagement + "/devices/:deviceId"
-	APIURLManagementDeviceConnect = APIURLManagement + "/devices/:deviceId/connect"
+	APIURLManagementDevice              = APIURLManagement + "/devices/:deviceId"
+	APIURLManagementDeviceConnect       = APIURLManagement + "/devices/:deviceId/connect"
+	APIURLManagementDeviceCheckUpdate   = APIURLManagement + "/devices/:deviceId/check-update"
+	APIURLManagementDeviceSendInventory = APIURLManagement + "/devices/:deviceId/send-inventory"
 )
 
 // NewRouter returns the gin router
 func NewRouter(
 	app app.App,
-	natsClient *nats.Conn,
+	natsClient nats.Client,
 ) (*gin.Engine, error) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DisableConsoleColor()
@@ -105,6 +108,8 @@ func NewRouter(
 	management := NewManagementController(app, natsClient)
 	router.GET(APIURLManagementDevice, management.GetDevice)
 	router.GET(APIURLManagementDeviceConnect, management.Connect)
+	router.POST(APIURLManagementDeviceCheckUpdate, management.CheckUpdate)
+	router.POST(APIURLManagementDeviceSendInventory, management.SendInventory)
 
 	return router, nil
 }
