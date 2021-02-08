@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import (
 
 const (
 	// DbVersion is the current schema version
-	DbVersion = "0.0.0"
+	DbVersion = "1.0.0"
 
 	// DbName is the database name
 	DbName = "deviceconnect"
@@ -52,7 +52,12 @@ func Migrate(ctx context.Context,
 		Automigrate: automigrate,
 	}
 
-	migrations := []migrate.Migration{}
+	migrations := []migrate.Migration{
+		&migration_1_0_0{
+			client: client,
+			db:     db,
+		},
+	}
 
 	err = m.Apply(ctx, *ver, migrations)
 	if err != nil {

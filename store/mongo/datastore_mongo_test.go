@@ -45,7 +45,7 @@ func TestPing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
 	defer cancel()
 
-	ds := NewDataStoreWithClient(db.Client())
+	ds := NewDataStoreWithClient(db.Client(), time.Minute)
 	err := ds.Ping(ctx)
 	assert.NoError(t, err)
 }
