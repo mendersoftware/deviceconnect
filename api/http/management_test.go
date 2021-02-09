@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -374,6 +374,117 @@ func TestManagementConnect(t *testing.T) {
 			case <-pongReceived:
 			case <-time.After(pongWait):
 				assert.Fail(t, "did not receive pong within pongWait")
+			}
+
+			// start the remote terminal
+			msg = ws.ProtoMsg{
+				Header: ws.ProtoHdr{
+					Proto:     ws.ProtoTypeShell,
+					MsgType:   shell.MessageTypeSpawnShell,
+					SessionID: "foobar",
+				},
+			}
+			b, _ = msgpack.Marshal(msg)
+			natsClient.Publish(model.GetDeviceSubject(
+				tc.Identity.Tenant,
+				tc.Identity.Subject),
+				b,
+			)
+			_ = conn.WriteMessage(websocket.BinaryMessage, b)
+
+			select {
+			case msg := <-natsChan:
+				var stopMsg ws.ProtoMsg
+				err := msgpack.Unmarshal(msg.Data, &stopMsg)
+				if assert.NoError(t, err) {
+					assert.Equal(t,
+						ws.ProtoTypeShell,
+						stopMsg.Header.Proto,
+					)
+					assert.Equal(t,
+						shell.MessageTypeSpawnShell,
+						stopMsg.Header.MsgType,
+					)
+				}
+
+			case <-time.After(time.Second * 5):
+				assert.Fail(t,
+					"timeout waiting for stop message on nats channel",
+				)
+			}
+
+			// stop the remote terminal
+			msg = ws.ProtoMsg{
+				Header: ws.ProtoHdr{
+					Proto:     ws.ProtoTypeShell,
+					MsgType:   shell.MessageTypeStopShell,
+					SessionID: "foobar",
+				},
+			}
+			b, _ = msgpack.Marshal(msg)
+			natsClient.Publish(model.GetDeviceSubject(
+				tc.Identity.Tenant,
+				tc.Identity.Subject),
+				b,
+			)
+			_ = conn.WriteMessage(websocket.BinaryMessage, b)
+
+			select {
+			case msg := <-natsChan:
+				var stopMsg ws.ProtoMsg
+				err := msgpack.Unmarshal(msg.Data, &stopMsg)
+				if assert.NoError(t, err) {
+					assert.Equal(t,
+						ws.ProtoTypeShell,
+						stopMsg.Header.Proto,
+					)
+					assert.Equal(t,
+						shell.MessageTypeStopShell,
+						stopMsg.Header.MsgType,
+					)
+				}
+
+			case <-time.After(time.Second * 5):
+				assert.Fail(t,
+					"timeout waiting for stop message on nats channel",
+				)
+			}
+
+			// start the remote terminal again
+			msg = ws.ProtoMsg{
+				Header: ws.ProtoHdr{
+					Proto:     ws.ProtoTypeShell,
+					MsgType:   shell.MessageTypeSpawnShell,
+					SessionID: "foobar",
+				},
+			}
+			b, _ = msgpack.Marshal(msg)
+			natsClient.Publish(model.GetDeviceSubject(
+				tc.Identity.Tenant,
+				tc.Identity.Subject),
+				b,
+			)
+			_ = conn.WriteMessage(websocket.BinaryMessage, b)
+
+			select {
+			case msg := <-natsChan:
+				var stopMsg ws.ProtoMsg
+				err := msgpack.Unmarshal(msg.Data, &stopMsg)
+				if assert.NoError(t, err) {
+					assert.Equal(t,
+						ws.ProtoTypeShell,
+						stopMsg.Header.Proto,
+					)
+					assert.Equal(t,
+						shell.MessageTypeSpawnShell,
+						stopMsg.Header.MsgType,
+					)
+				}
+
+			case <-time.After(time.Second * 5):
+				assert.Fail(t,
+					"timeout waiting for stop message on nats channel",
+				)
 			}
 
 			// close the websocket
