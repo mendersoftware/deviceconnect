@@ -261,6 +261,12 @@ func TestManagementConnect(t *testing.T) {
 				}),
 				tc.SessionID,
 			).Return(nil)
+			app.On("GetRecorder",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				}),
+				tc.SessionID,
+			).Return(nil)
 			if len(tc.RBACHeader) > 0 {
 				app.On("RemoteTerminalAllowed",
 					mock.MatchedBy(func(_ context.Context) bool {
