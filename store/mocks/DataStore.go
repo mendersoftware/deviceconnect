@@ -198,7 +198,7 @@ func (_m *DataStore) ProvisionTenant(ctx context.Context, tenantID string) error
 }
 
 // SetSessionRecording provides a mock function with given fields: ctx, sessionID, sessionBytes
-func (_m *DataStore) SetSessionRecording(ctx context.Context, sessionID string, sessionBytes []byte) error {
+func (_m *DataStore) InsertSessionRecording(ctx context.Context, sessionID string, sessionBytes []byte) error {
 	ret := _m.Called(ctx, sessionID, sessionBytes)
 
 	var r0 error

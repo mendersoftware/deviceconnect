@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/ioutil"
 	"testing"
 	"time"
 
@@ -640,6 +641,100 @@ func TestRemoteTerminalAllowed(t *testing.T) {
 			assert.Equal(t, tc.err, err)
 
 			inv.AssertExpectations(t)
+		})
+	}
+}
+
+func TestGetSessionRecording(t *testing.T) {
+	testCases := []struct {
+		Name                       string
+		DbGetSessionRecordingError error
+	}{
+		{
+			Name: "ok",
+		},
+		{
+			Name:                       "error from the store",
+			DbGetSessionRecordingError: errors.New("some error"),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			sessionId := "00000000-0000-0000-0000-000000000000"
+			writer := ioutil.Discard
+			store := &store_mocks.DataStore{}
+			store.On("GetSessionRecording",
+				mock.MatchedBy(func(ctx context.Context) bool {
+					return true
+				}),
+				sessionId,
+				writer,
+			).Return(tc.DbGetSessionRecordingError)
+			app := New(store, nil, nil)
+
+			ctx := context.Background()
+			err := app.GetSessionRecording(ctx, sessionId, writer)
+			assert.Equal(t, tc.DbGetSessionRecordingError, err)
+		})
+	}
+}
+
+func TestSaveSessionRecording(t *testing.T) {
+	testCases := []struct {
+		Name                       string
+		DbGetSessionRecordingError error
+	}{
+		{
+			Name: "ok",
+		},
+		{
+			Name:                       "error from the store",
+			DbGetSessionRecordingError: errors.New("some error"),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			sessionId := "00000000-0000-0000-0000-000000000000"
+			bytes := []byte("ls -al")
+			store := &store_mocks.DataStore{}
+			store.On("InsertSessionRecording",
+				mock.MatchedBy(func(ctx context.Context) bool {
+					return true
+				}),
+				sessionId,
+				bytes,
+			).Return(tc.DbGetSessionRecordingError)
+			app := New(store, nil, nil)
+
+			ctx := context.Background()
+			err := app.SaveSessionRecording(ctx, sessionId, bytes)
+			assert.Equal(t, tc.DbGetSessionRecordingError, err)
+		})
+	}
+}
+
+func TestGetRecorder(t *testing.T) {
+	testCases := []struct {
+		Name                       string
+		DbGetSessionRecordingError error
+	}{
+		{
+			Name: "ok",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			sessionId := "00000000-0000-0000-0000-000000000000"
+			store := &store_mocks.DataStore{}
+			app := New(store, nil, nil)
+
+			ctx := context.Background()
+			r := app.GetRecorder(ctx, sessionId)
+			assert.NotNil(t, r)
+			assert.Equal(t, store, r.store)
 		})
 	}
 }
