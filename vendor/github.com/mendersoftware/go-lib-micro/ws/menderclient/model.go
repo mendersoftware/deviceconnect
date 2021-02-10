@@ -12,21 +12,9 @@
 //    See the License for the specific language governing permissions and
 //    limitations under the License.
 
-package shell
-
-type MenderShellMessageStatus int
+package menderclient
 
 const (
-	MessageTypePingShell    = "ping"
-	MessageTypePongShell    = "pong"
-	MessageTypeResizeShell  = "resize"
-	MessageTypeShellCommand = "shell"
-	MessageTypeSpawnShell   = "new"
-	MessageTypeStopShell    = "stop"
-)
-
-const (
-	NormalMessage MenderShellMessageStatus = iota + 1
-	ErrorMessage
-	ControlMessage
+	MessageTypeMenderClientCheckUpdate   = "check-update"
+	MessageTypeMenderClientSendInventory = "send-inventory"
 )

@@ -120,6 +120,75 @@ paths:
         500:
           $ref: '#/components/responses/InternalServerError'
 
+  /devices/{id}/check-update:
+    post:
+      tags:
+        - ManagementAPI
+      operationId: Check Update
+      summary: Trigger check-update for the Mender client running on the device 
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: ID for the target device.
+      responses:
+        202:
+          description: Accepted
+        400:
+          $ref: '#/components/responses/InvalidRequestError'
+        403:
+          $ref: '#/components/responses/ForbiddenError'
+        404:
+          description: Device not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        409:
+          description: Device not connected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+  /devices/{id}/send-inventory:
+    post:
+      tags:
+        - ManagementAPI
+      operationId: Send Inventory
+      summary: Trigger send-inventory for the Mender client running on the device 
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: ID for the target device.
+      responses:
+        202:
+          description: Accepted
+        400:
+          $ref: '#/components/responses/InvalidRequestError'
+        403:
+          $ref: '#/components/responses/ForbiddenError'
+        404:
+          description: Device not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        409:
+          description: Device not connected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          $ref: '#/components/responses/InternalServerError'
 
 components:
   securitySchemes:

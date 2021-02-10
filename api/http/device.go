@@ -22,17 +22,18 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/nats-io/nats.go"
-	"github.com/pkg/errors"
-	"github.com/vmihailenco/msgpack/v5"
-
-	"github.com/mendersoftware/deviceconnect/app"
-	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
 	"github.com/mendersoftware/go-lib-micro/rest.utils"
 	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/mendersoftware/go-lib-micro/ws/shell"
+	natsio "github.com/nats-io/nats.go"
+	"github.com/pkg/errors"
+	"github.com/vmihailenco/msgpack/v5"
+
+	"github.com/mendersoftware/deviceconnect/app"
+	"github.com/mendersoftware/deviceconnect/client/nats"
+	"github.com/mendersoftware/deviceconnect/model"
 )
 
 var (
@@ -53,13 +54,13 @@ var (
 // DeviceController container for end-points
 type DeviceController struct {
 	app  app.App
-	nats *nats.Conn
+	nats nats.Client
 }
 
 // NewDeviceController returns a new DeviceController
 func NewDeviceController(
 	app app.App,
-	natsClient *nats.Conn,
+	natsClient nats.Client,
 ) *DeviceController {
 	return &DeviceController{
 		app:  app,
@@ -132,7 +133,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 		return
 	}
 
-	msgChan := make(chan *nats.Msg, channelSize)
+	msgChan := make(chan *natsio.Msg, channelSize)
 	sub, err := h.nats.ChanSubscribe(
 		model.GetDeviceSubject(idata.Tenant, idata.Subject),
 		msgChan,
@@ -194,7 +195,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 func (h DeviceController) connectWSWriter(
 	ctx context.Context,
 	conn *websocket.Conn,
-	msgChan <-chan *nats.Msg,
+	msgChan <-chan *natsio.Msg,
 	errChan <-chan error,
 ) (err error) {
 	l := log.FromContext(ctx)

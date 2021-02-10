@@ -28,19 +28,20 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/mendersoftware/deviceconnect/app"
-	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
-	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/mendersoftware/go-lib-micro/ws/shell"
-	"github.com/vmihailenco/msgpack/v5"
-
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/vmihailenco/msgpack/v5"
+
+	"github.com/mendersoftware/deviceconnect/app"
+	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
+	nats_mocks "github.com/mendersoftware/deviceconnect/client/nats/mocks"
+	"github.com/mendersoftware/deviceconnect/model"
 )
 
 var natsPort int32 = 14420
@@ -693,6 +694,288 @@ func TestManagementConnectFailures(t *testing.T) {
 				value := response["error"]
 				assert.Equal(t, tc.HTTPError.Error(), value)
 			}
+		})
+	}
+}
+
+func TestManagementCheckUpdate(t *testing.T) {
+	testCases := []struct {
+		Name     string
+		DeviceID string
+		Identity *identity.Identity
+
+		GetDevice      *model.Device
+		GetDeviceError error
+
+		PublishErr error
+
+		HTTPStatus int
+	}{
+		{
+			Name:     "ok",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusAccepted,
+		},
+		{
+			Name:     "ko, missing auth",
+			DeviceID: "1234567890",
+
+			HTTPStatus: 401,
+		},
+		{
+			Name:     "ko, not found",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDeviceError: app.ErrDeviceNotFound,
+
+			HTTPStatus: 404,
+		},
+		{
+			Name:     "ko, other error",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDeviceError: errors.New("error"),
+
+			HTTPStatus: 400,
+		},
+		{
+			Name:     "ko, device not connected",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusDisconnected,
+			},
+
+			HTTPStatus: http.StatusConflict,
+		},
+		{
+			Name:     "ko, publish error",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			PublishErr: errors.New("error"),
+
+			HTTPStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			app := &app_mocks.App{}
+			defer app.AssertExpectations(t)
+
+			natsClient := &nats_mocks.Client{}
+			defer natsClient.AssertExpectations(t)
+
+			router, _ := NewRouter(app, natsClient)
+			s := httptest.NewServer(router)
+			defer s.Close()
+
+			url := strings.Replace(APIURLManagementDeviceCheckUpdate, ":deviceId", tc.DeviceID, 1)
+			req, err := http.NewRequest("POST", "http://localhost"+url, nil)
+			if tc.Identity != nil {
+				jwt := GenerateJWT(*tc.Identity)
+				app.On("GetDevice",
+					mock.MatchedBy(func(_ context.Context) bool {
+						return true
+					}),
+					tc.Identity.Tenant,
+					tc.DeviceID,
+				).Return(tc.GetDevice, tc.GetDeviceError)
+				req.Header.Set(headerAuthorization, "Bearer "+jwt)
+
+				if tc.GetDeviceError == nil && tc.GetDevice != nil &&
+					tc.GetDevice.Status == model.DeviceStatusConnected {
+					natsClient.On("Publish",
+						mock.AnythingOfType("string"),
+						mock.AnythingOfType("[]uint8"),
+					).Return(tc.PublishErr)
+				}
+			}
+			if !assert.NoError(t, err) {
+				t.FailNow()
+			}
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			assert.Equal(t, tc.HTTPStatus, w.Code)
+		})
+	}
+}
+
+func TestManagementSendInventory(t *testing.T) {
+	testCases := []struct {
+		Name     string
+		DeviceID string
+		Identity *identity.Identity
+
+		GetDevice      *model.Device
+		GetDeviceError error
+
+		PublishErr error
+
+		HTTPStatus int
+	}{
+		{
+			Name:     "ok",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusAccepted,
+		},
+		{
+			Name:     "ko, missing auth",
+			DeviceID: "1234567890",
+
+			HTTPStatus: 401,
+		},
+		{
+			Name:     "ko, not found",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDeviceError: app.ErrDeviceNotFound,
+
+			HTTPStatus: 404,
+		},
+		{
+			Name:     "ko, other error",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDeviceError: errors.New("error"),
+
+			HTTPStatus: 400,
+		},
+		{
+			Name:     "ko, device not connected",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusDisconnected,
+			},
+
+			HTTPStatus: http.StatusConflict,
+		},
+		{
+			Name:     "ko, publish error",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			PublishErr: errors.New("error"),
+
+			HTTPStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			app := &app_mocks.App{}
+			defer app.AssertExpectations(t)
+
+			natsClient := &nats_mocks.Client{}
+			defer natsClient.AssertExpectations(t)
+
+			router, _ := NewRouter(app, natsClient)
+			s := httptest.NewServer(router)
+			defer s.Close()
+
+			url := strings.Replace(APIURLManagementDeviceSendInventory, ":deviceId", tc.DeviceID, 1)
+			req, err := http.NewRequest("POST", "http://localhost"+url, nil)
+			if tc.Identity != nil {
+				jwt := GenerateJWT(*tc.Identity)
+				app.On("GetDevice",
+					mock.MatchedBy(func(_ context.Context) bool {
+						return true
+					}),
+					tc.Identity.Tenant,
+					tc.DeviceID,
+				).Return(tc.GetDevice, tc.GetDeviceError)
+				req.Header.Set(headerAuthorization, "Bearer "+jwt)
+
+				if tc.GetDeviceError == nil && tc.GetDevice != nil &&
+					tc.GetDevice.Status == model.DeviceStatusConnected {
+					natsClient.On("Publish",
+						mock.AnythingOfType("string"),
+						mock.AnythingOfType("[]uint8"),
+					).Return(tc.PublishErr)
+				}
+			}
+			if !assert.NoError(t, err) {
+				t.FailNow()
+			}
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			assert.Equal(t, tc.HTTPStatus, w.Code)
 		})
 	}
 }

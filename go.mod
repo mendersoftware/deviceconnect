@@ -6,13 +6,13 @@ require (
 	github.com/gin-contrib/cors v1.3.1
 	github.com/gin-gonic/gin v1.6.3
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
-	github.com/google/uuid v1.1.2
+	github.com/google/uuid v1.2.0
 	github.com/gorilla/websocket v1.4.2
-	github.com/mendersoftware/go-lib-micro v0.0.0-20201207093813-11fb2798a44d
+	github.com/mendersoftware/go-lib-micro v0.0.0-20210207170943-53fa5e327916
 	github.com/nats-io/nats-server/v2 v2.1.9
 	github.com/nats-io/nats.go v1.10.0
 	github.com/pkg/errors v0.9.1
-	github.com/stretchr/testify v1.6.1
+	github.com/stretchr/testify v1.7.0
 	github.com/urfave/cli v1.22.5
 	github.com/vmihailenco/msgpack/v5 v5.1.0
 	go.mongodb.org/mongo-driver v1.4.6

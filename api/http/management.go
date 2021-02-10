@@ -24,17 +24,19 @@ import (
 	"github.com/gin-gonic/gin"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/gorilla/websocket"
-	"github.com/nats-io/nats.go"
-	"github.com/pkg/errors"
-	"github.com/vmihailenco/msgpack/v5"
-
-	"github.com/mendersoftware/deviceconnect/app"
-	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
 	"github.com/mendersoftware/go-lib-micro/rest.utils"
 	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/menderclient"
 	"github.com/mendersoftware/go-lib-micro/ws/shell"
+	natsio "github.com/nats-io/nats.go"
+	"github.com/pkg/errors"
+	"github.com/vmihailenco/msgpack/v5"
+
+	"github.com/mendersoftware/deviceconnect/app"
+	"github.com/mendersoftware/deviceconnect/client/nats"
+	"github.com/mendersoftware/deviceconnect/model"
 )
 
 // HTTP errors
@@ -53,13 +55,13 @@ const (
 // ManagementController container for end-points
 type ManagementController struct {
 	app  app.App
-	nats *nats.Conn
+	nats nats.Client
 }
 
 // NewManagementController returns a new ManagementController
 func NewManagementController(
 	app app.App,
-	nc *nats.Conn,
+	nc nats.Client,
 ) *ManagementController {
 	return &ManagementController{
 		app:  app,
@@ -167,7 +169,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 		}
 	}()
 
-	deviceChan := make(chan *nats.Msg, channelSize)
+	deviceChan := make(chan *natsio.Msg, channelSize)
 	sub, err := h.nats.ChanSubscribe(session.Subject(tenantID), deviceChan)
 	if err != nil {
 		l.Error(err)
@@ -227,7 +229,7 @@ func (h ManagementController) websocketWriter(
 	ctx context.Context,
 	conn *websocket.Conn,
 	session *model.Session,
-	deviceChan <-chan *nats.Msg,
+	deviceChan <-chan *natsio.Msg,
 	errChan <-chan error,
 ) (err error) {
 	l := log.FromContext(ctx)
@@ -291,7 +293,7 @@ func (h ManagementController) ConnectServeWS(
 	ctx context.Context,
 	conn *websocket.Conn,
 	sess *model.Session,
-	deviceChan chan *nats.Msg,
+	deviceChan chan *natsio.Msg,
 ) (err error) {
 	l := log.FromContext(ctx)
 	id := identity.FromContext(ctx)
@@ -377,4 +379,64 @@ func (h ManagementController) ConnectServeWS(
 			return err
 		}
 	}
+}
+
+func (h ManagementController) CheckUpdate(c *gin.Context) {
+	h.sendMenderCommand(c, menderclient.MessageTypeMenderClientCheckUpdate)
+}
+
+func (h ManagementController) SendInventory(c *gin.Context) {
+	h.sendMenderCommand(c, menderclient.MessageTypeMenderClientSendInventory)
+}
+
+func (h ManagementController) sendMenderCommand(c *gin.Context, msgType string) {
+	ctx := c.Request.Context()
+
+	idata := identity.FromContext(ctx)
+	if idata == nil || !idata.IsUser {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": ErrMissingUserAuthentication.Error(),
+		})
+		return
+	}
+	tenantID := idata.Tenant
+	deviceID := c.Param("deviceId")
+
+	device, err := h.app.GetDevice(ctx, tenantID, deviceID)
+	if err == app.ErrDeviceNotFound {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": err.Error(),
+		})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	} else if device.Status != model.DeviceStatusConnected {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "device not connected",
+		})
+		return
+	}
+
+	msg := &ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:   ws.ProtoTypeMenderClient,
+			MsgType: msgType,
+			Properties: map[string]interface{}{
+				PropertyUserID: idata.Subject,
+			},
+		},
+	}
+	data, _ := msgpack.Marshal(msg)
+
+	err = h.nats.Publish(model.GetDeviceSubject(idata.Tenant, device.ID), data)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+	}
+
+	c.JSON(http.StatusAccepted, nil)
 }
