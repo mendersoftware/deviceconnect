@@ -34,7 +34,7 @@ services:
         mender:
           aliases:
             - mmock
-            - mender-workflows
+            - mender-workflows-server
 
     mender-mongo:
       image: "mongo:4.4"

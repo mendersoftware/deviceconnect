@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -74,4 +74,9 @@ func (sess Session) Validate() error {
 		validation.Field(&sess.DeviceID, validation.Required),
 		validation.Field(&sess.StartTS, validation.Required),
 	)
+}
+
+// ActiveSession stores the data about an active session in memory
+type ActiveSession struct {
+	RemoteTerminal bool
 }

@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -22,17 +22,18 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/nats-io/nats.go"
-	"github.com/pkg/errors"
-	"github.com/vmihailenco/msgpack/v5"
-
-	"github.com/mendersoftware/deviceconnect/app"
-	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
 	"github.com/mendersoftware/go-lib-micro/rest.utils"
 	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/mendersoftware/go-lib-micro/ws/shell"
+	natsio "github.com/nats-io/nats.go"
+	"github.com/pkg/errors"
+	"github.com/vmihailenco/msgpack/v5"
+
+	"github.com/mendersoftware/deviceconnect/app"
+	"github.com/mendersoftware/deviceconnect/client/nats"
+	"github.com/mendersoftware/deviceconnect/model"
 )
 
 var (
@@ -53,13 +54,13 @@ var (
 // DeviceController container for end-points
 type DeviceController struct {
 	app  app.App
-	nats *nats.Conn
+	nats nats.Client
 }
 
 // NewDeviceController returns a new DeviceController
 func NewDeviceController(
 	app app.App,
-	natsClient *nats.Conn,
+	natsClient nats.Client,
 ) *DeviceController {
 	return &DeviceController{
 		app:  app,
@@ -132,7 +133,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 		return
 	}
 
-	msgChan := make(chan *nats.Msg, channelSize)
+	msgChan := make(chan *natsio.Msg, channelSize)
 	sub, err := h.nats.ChanSubscribe(
 		model.GetDeviceSubject(idata.Tenant, idata.Subject),
 		msgChan,
@@ -194,7 +195,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 func (h DeviceController) connectWSWriter(
 	ctx context.Context,
 	conn *websocket.Conn,
-	msgChan <-chan *nats.Msg,
+	msgChan <-chan *natsio.Msg,
 	errChan <-chan error,
 ) (err error) {
 	l := log.FromContext(ctx)
@@ -258,7 +259,7 @@ func (h DeviceController) ConnectServeWS(
 ) (err error) {
 	l := log.FromContext(ctx)
 	id := identity.FromContext(ctx)
-	sessMap := make(map[string]struct{})
+	sessMap := make(map[string]*model.ActiveSession)
 
 	// update the device status on websocket opening
 	err = h.app.UpdateDeviceStatus(
@@ -270,25 +271,27 @@ func (h DeviceController) ConnectServeWS(
 		return
 	}
 	defer func() {
-		for sess := range sessMap {
+		for sessionID, session := range sessMap {
 			// TODO: notify the session NATS topic about the session
 			//       being released.
-			msg := ws.ProtoMsg{
-				Header: ws.ProtoHdr{
-					Proto:     ws.ProtoTypeShell,
-					MsgType:   shell.MessageTypeStopShell,
-					SessionID: sess,
-					Properties: map[string]interface{}{
-						"status": shell.ErrorMessage,
+			if session.RemoteTerminal {
+				msg := ws.ProtoMsg{
+					Header: ws.ProtoHdr{
+						Proto:     ws.ProtoTypeShell,
+						MsgType:   shell.MessageTypeStopShell,
+						SessionID: sessionID,
+						Properties: map[string]interface{}{
+							"status": shell.ErrorMessage,
+						},
 					},
-				},
-				Body: []byte("device disconnected"),
+					Body: []byte("device disconnected"),
+				}
+				data, _ := msgpack.Marshal(msg)
+				err = h.nats.Publish(
+					model.GetSessionSubject(id.Tenant, sessionID),
+					data,
+				)
 			}
-			data, _ := msgpack.Marshal(msg)
-			err = h.nats.Publish(
-				model.GetSessionSubject(id.Tenant, sess),
-				data,
-			)
 		}
 		// update the device status on websocket closing
 		err = h.app.UpdateDeviceStatus(
@@ -312,13 +315,16 @@ func (h DeviceController) ConnectServeWS(
 			return err
 		}
 
-		sessMap[m.Header.SessionID] = struct{}{}
+		sessMap[m.Header.SessionID] = &model.ActiveSession{}
 		switch m.Header.Proto {
 		case ws.ProtoTypeShell:
 			if m.Header.SessionID == "" {
 				return errors.New("api: message missing required session ID")
-			}
-			if m.Header.MsgType == shell.MessageTypeStopShell {
+			} else if m.Header.MsgType == shell.MessageTypeSpawnShell {
+				if session, ok := sessMap[m.Header.SessionID]; ok {
+					session.RemoteTerminal = true
+				}
+			} else if m.Header.MsgType == shell.MessageTypeStopShell {
 				delete(sessMap, m.Header.SessionID)
 			}
 		default:

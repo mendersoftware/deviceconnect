@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -23,12 +23,13 @@ import (
 
 	"github.com/mendersoftware/go-lib-micro/config"
 	"github.com/mendersoftware/go-lib-micro/log"
-	"github.com/nats-io/nats.go"
+	natsio "github.com/nats-io/nats.go"
 	"golang.org/x/sys/unix"
 
 	api "github.com/mendersoftware/deviceconnect/api/http"
 	"github.com/mendersoftware/deviceconnect/app"
 	"github.com/mendersoftware/deviceconnect/client/inventory"
+	"github.com/mendersoftware/deviceconnect/client/nats"
 	"github.com/mendersoftware/deviceconnect/client/workflows"
 	dconfig "github.com/mendersoftware/deviceconnect/config"
 	"github.com/mendersoftware/deviceconnect/store"
@@ -48,9 +49,9 @@ func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 	log.Setup(conf.GetBool(dconfig.SettingDebugLog))
 	l := log.FromContext(ctx)
 
-	natsClient, err := nats.Connect(config.Config.GetString(dconfig.SettingNatsURI),
-		nats.ReconnectBufSize(reconnectBufSize),
-		nats.ReconnectWait(reconnectWaitTime),
+	natsClient, err := nats.NewClient(config.Config.GetString(dconfig.SettingNatsURI),
+		natsio.ReconnectBufSize(reconnectBufSize),
+		natsio.ReconnectWait(reconnectWaitTime),
 	)
 	if err != nil {
 		return err
