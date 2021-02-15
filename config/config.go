@@ -79,6 +79,11 @@ const (
 	SettingEnableAuditLogs = "enable_audit"
 	// SettingEnableAuditLogsDefault is disabled by default.
 	SettingEnableAuditLogsDefault = false
+
+	// SettingLogExpireSec is the config key for how long logs will be
+	// retained in the database.
+	SettingRecordingExpireSec     = "recording_expire_seconds"
+	SettingRecordingExpireDefault = 30 * 24 * 60 * 60
 )
 
 var (
@@ -95,5 +100,6 @@ var (
 		{Key: SettingInventoryTimeout, Value: SettingInventoryTimeoutDefault},
 		{Key: SettingWorkflowsURL, Value: SettingWorkflowsURLDefault},
 		{Key: SettingEnableAuditLogs, Value: SettingEnableAuditLogsDefault},
+		{Key: SettingRecordingExpireSec, Value: SettingRecordingExpireDefault},
 	}
 )

@@ -15,7 +15,10 @@
 package http
 
 import (
+	"bufio"
 	"context"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -44,6 +47,18 @@ var (
 	ErrMissingUserAuthentication = errors.New(
 		"missing or non-user identity in the authorization headers",
 	)
+
+	//The name of the field holding a number of milliseconds to sleep between
+	//the consecutive writes of session recording data. Note that it does not have
+	//anything to do with the sleep between the keystrokes send, lines printed,
+	//or screen blinks, we are only aware of the stream of bytes.
+	PlaybackSleepIntervalMsField = "sleep_ms"
+
+	//The name of the field in the query parameter to GET that holds the id of a session
+	PlaybackSessionIDField = "sessionId"
+
+	WebsocketReadBufferSize  = 1024
+	WebsocketWriteBufferSize = 1024
 )
 
 const channelSize = 25 // TODO make configurable
@@ -183,8 +198,8 @@ func (h ManagementController) Connect(c *gin.Context) {
 
 	// upgrade get request to websocket protocol
 	upgrader := websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
+		ReadBufferSize:  WebsocketReadBufferSize,
+		WriteBufferSize: WebsocketWriteBufferSize,
 		Subprotocols:    []string{"protomsg/msgpack"},
 		CheckOrigin: func(r *http.Request) bool {
 			return true
@@ -209,6 +224,82 @@ func (h ManagementController) Connect(c *gin.Context) {
 	h.ConnectServeWS(ctx, conn, session, deviceChan)
 }
 
+func (h ManagementController) Playback(c *gin.Context) {
+	ctx := c.Request.Context()
+	l := log.FromContext(ctx)
+
+	idata := identity.FromContext(ctx)
+	if !idata.IsUser {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": ErrMissingUserAuthentication.Error(),
+		})
+		return
+	}
+
+	tenantID := idata.Tenant
+	userID := idata.Subject
+	sessionID := c.Param(PlaybackSessionIDField)
+	session := &model.Session{
+		TenantID: tenantID,
+		UserID:   userID,
+		StartTS:  time.Now(),
+	}
+	sleepInterval := c.Param(PlaybackSleepIntervalMsField)
+	sleepMilliseconds := uint(app.DefaultPlaybackSleepIntervalMs)
+	if len(sleepInterval) > 1 {
+		n, err := strconv.ParseUint(sleepInterval, 10, 32)
+		if err != nil {
+			sleepMilliseconds = uint(n)
+		}
+	}
+
+	l.Infof("Playing back the session %s", sessionID)
+
+	// upgrade get request to websocket protocol
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  WebsocketReadBufferSize,
+		WriteBufferSize: WebsocketWriteBufferSize,
+		Subprotocols:    []string{"protomsg/msgpack"},
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+		Error: func(
+			w http.ResponseWriter, r *http.Request, s int, e error) {
+			rest.RenderError(c, s, e)
+		},
+	}
+
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
+		l.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal error",
+		})
+		return
+	}
+
+	deviceChan := make(chan *natsio.Msg, channelSize)
+	errChan := make(chan error, 1)
+
+	//nolint:errcheck
+	go h.websocketWriter(ctx, conn, session, deviceChan, errChan, ioutil.Discard)
+
+	err = h.app.GetSessionRecording(ctx,
+		sessionID,
+		app.NewPlayback(sessionID, deviceChan, sleepMilliseconds))
+	if err != nil {
+		err = errors.Wrap(err, "unable to get the session.")
+		l.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal error",
+		})
+		return
+	}
+	//after this point the UI has to keep the terminal window open by itself to let user
+	//see the playback -- the websocket connection to the deviceconnect is going to be closed
+}
+
 func websocketPing(conn *websocket.Conn) bool {
 	pongWaitString := strconv.Itoa(int(pongWait.Seconds()))
 	if err := conn.WriteControl(
@@ -231,6 +322,7 @@ func (h ManagementController) websocketWriter(
 	session *model.Session,
 	deviceChan <-chan *natsio.Msg,
 	errChan <-chan error,
+	recorder io.Writer,
 ) (err error) {
 	l := log.FromContext(ctx)
 	defer func() {
@@ -265,10 +357,40 @@ func (h ManagementController) websocketWriter(
 			time.Now().Add(writeWait),
 		)
 	})
+
+	recorderBuffered := bufio.NewWriterSize(recorder, app.RecorderBufferSize)
+	defer recorderBuffered.Flush()
+	recordedBytes := 0
 Loop:
 	for {
 		select {
 		case msg := <-deviceChan:
+			mr := &ws.ProtoMsg{}
+			err = msgpack.Unmarshal(msg.Data, mr)
+			if err != nil {
+				return err
+			}
+			if mr.Header.Proto == ws.ProtoTypeShell {
+				if mr.Header.MsgType == shell.MessageTypeShellCommand {
+					b, e := recorderBuffered.Write(mr.Body)
+					if e != nil {
+						l.Errorf("session logging: "+
+							"recorderBuffered.Write(len=%d)=%d,%+v",
+							len(mr.Body), b, e)
+					}
+					recordedBytes += len(mr.Body)
+					if recordedBytes >= app.MessageSizeLimit {
+						l.Infof("closing session on limit reached.")
+						//see https://tracker.mender.io/browse/MEN-4448
+						break Loop
+					}
+				} else if mr.Header.MsgType == shell.MessageTypeStopShell {
+					l.Debugf("session logging: recorderBuffered.Flush()"+
+						" at %d on stop shell", recordedBytes)
+					recorderBuffered.Flush()
+				}
+			}
+
 			err = conn.WriteMessage(websocket.BinaryMessage, msg.Data)
 			if err != nil {
 				l.Error(err)
@@ -340,7 +462,7 @@ func (h ManagementController) ConnectServeWS(
 
 	// websocketWriter is responsible for closing the websocket
 	//nolint:errcheck
-	go h.websocketWriter(ctx, conn, sess, deviceChan, errChan)
+	go h.websocketWriter(ctx, conn, sess, deviceChan, errChan, h.app.GetRecorder(ctx, sess.ID))
 
 	var data []byte
 	for {

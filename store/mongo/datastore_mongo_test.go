@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -15,12 +15,19 @@
 package mongo
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	mopts "go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
@@ -45,7 +52,7 @@ func TestPing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
 	defer cancel()
 
-	ds := NewDataStoreWithClient(db.Client())
+	ds := NewDataStoreWithClient(db.Client(), time.Minute)
 	err := ds.Ping(ctx)
 	assert.NoError(t, err)
 }
@@ -422,6 +429,184 @@ func TestGetSession(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tc.Session, sess)
+			}
+		})
+	}
+}
+
+type sessionWriterTest struct {
+	c chan []byte
+}
+
+func (s *sessionWriterTest) Write(d []byte) (int, error) {
+	s.c <- d
+	return len(d), nil
+}
+
+func TestGetSessionRecording(t *testing.T) {
+	testCases := []struct {
+		Name string
+
+		Ctx           context.Context
+		SessionID     string
+		RecordingData string
+
+		Error error
+	}{
+		{
+			Name: "ok",
+
+			Ctx: identity.WithContext(
+				context.Background(),
+				&identity.Identity{
+					Tenant: "000000000000000000000000",
+				},
+			),
+			SessionID:     "00000000-0000-0000-0000-000000000000",
+			RecordingData: "H4sIAAAAAAAA/5TNscrDMAwE4P2H/wm83NjJtSTbsdyta8eMWZNCKWlomvenONlMKOQGG8RxH5EmjxYAWweArAAimdn6iHF49cOMOuZ0Nd1oOtGL19F0t/+/7URc1uZpWrYil0kHqFBoIsCBJQLEFFONwmcSm+Q4qknDLqrJ+4I2ygVl5RplytxYdYfRMhB30DWu+tqVWxvbm73a4PD8TPflMb/7M/1EvwAAAP//AQAA//8CyiAFpQEAAA==",
+		},
+	}
+
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.Name, func(t *testing.T) {
+			ds := &DataStoreMongo{client: db.Client()}
+			defer ds.DropDatabase()
+
+			database := db.Client().Database(mstore.DbNameForTenant(
+				"000000000000000000000000", DbName,
+			))
+			collSess := database.Collection(RecordingsCollectionName)
+			d, err := base64.StdEncoding.DecodeString(tc.RecordingData)
+			assert.NoError(t, err)
+
+			_, err = collSess.InsertOne(nil, &model.Recording{
+				ID:        uuid.New(),
+				SessionID: tc.SessionID,
+				Recording: d,
+				CreatedTs: time.Now().UTC(),
+				ExpireTs:  time.Now().UTC(),
+			})
+			assert.NoError(t, err)
+
+			readRecordingChannel := make(chan []byte, 1)
+			sessionWriter := &sessionWriterTest{c: readRecordingChannel}
+			go ds.GetSessionRecording(tc.Ctx, tc.SessionID, sessionWriter)
+
+			if tc.Error != nil {
+			} else {
+				assert.NoError(t, err)
+				select {
+				case recording := <-sessionWriter.c:
+					var buffer bytes.Buffer
+
+					_, e := buffer.Write(d)
+					assert.NoError(t, e)
+					gzipReader, e := gzip.NewReader(&buffer)
+					assert.NoError(t, e)
+
+					output := make([]byte, recordingReadBufferSize)
+					n, e := gzipReader.Read(output)
+					assert.NoError(t, e)
+					gzipReader.Close()
+					assert.Equal(t, recording, output[:n])
+				case <-time.After(time.Second):
+					t.Fatal("cannot read the recording data.")
+					t.Fail()
+				}
+			}
+		})
+	}
+}
+
+func TestSetSessionRecording(t *testing.T) {
+	testCases := []struct {
+		Name string
+
+		Ctx           context.Context
+		SessionID     string
+		RecordingData []byte
+		Expiration    time.Duration
+		Expire        bool
+
+		Error error
+	}{
+		{
+			Name: "ok",
+
+			Ctx: identity.WithContext(
+				context.Background(),
+				&identity.Identity{
+					Tenant: "000000000000000000000001",
+				},
+			),
+			SessionID:     "00000000-0000-0000-0000-000000000001",
+			RecordingData: []byte("ls -al\r\n"),
+			Expiration:    time.Hour,
+		},
+		{
+			Name: "ok expired",
+
+			Ctx: identity.WithContext(
+				context.Background(),
+				&identity.Identity{
+					Tenant: "000000000000000000000002",
+				},
+			),
+			SessionID:     "00000000-0000-0000-0000-000000000002",
+			RecordingData: []byte("ls -al\r\n"),
+			Expiration:    time.Second,
+			Expire:        true,
+		},
+	}
+
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.Name, func(t *testing.T) {
+			ds := &DataStoreMongo{
+				client:          db.Client(),
+				recordingExpire: tc.Expiration,
+			}
+			defer ds.DropDatabase()
+
+			database := db.Client().Database(mstore.DbNameForTenant(
+				"000000000000000000000001", DbName,
+			))
+			collSess := database.Collection(RecordingsCollectionName)
+
+			indexModels := []mongo.IndexModel{
+				{
+					// Index for expiring old events
+					Keys: bson.D{{Key: "expire_ts", Value: 1}},
+					Options: mopts.Index().
+						SetBackground(true).
+						SetExpireAfterSeconds(0).
+						SetName(IndexNameLogsExpire),
+				},
+			}
+			idxView := collSess.Indexes()
+
+			_, err := idxView.CreateMany(tc.Ctx, indexModels)
+
+			ds.InsertSessionRecording(tc.Ctx, tc.SessionID, tc.RecordingData)
+
+			if tc.Expire {
+				time.Sleep(4 * tc.Expiration)
+			}
+
+			var r model.Recording
+			res := collSess.FindOne(nil,
+				bson.M{
+					dbFieldSessionID: tc.SessionID,
+				},
+			)
+			assert.NotNil(t, res)
+
+			err = res.Decode(&r)
+			if tc.Expire {
+				assert.EqualError(t, err, "mongo: no documents in result")
+			} else {
+				assert.Equal(t, tc.RecordingData, r.Recording)
 			}
 		})
 	}
