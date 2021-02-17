@@ -20,18 +20,10 @@ import (
 	"github.com/google/uuid"
 )
 
-const (
-	ResizeMessageTermHeightField = "terminal_height"
-	ResizeMessageTermWidthField  = "terminal_width"
-
-	DelayMessageValueField = "delay_value"
-	DelayMessageName       = "delay"
-)
-
-type Recording struct {
+type ControlData struct {
 	ID        uuid.UUID `json:"-" bson:"_id"`
 	SessionID string    `json:"session_id" bson:"session_id"`
-	Recording []byte    `json:"recording" bson:"recording"`
+	Control   []byte    `json:"control" bson:"control"`
 	CreatedTs time.Time `json:"created_ts" bson:"created_ts"`
 	ExpireTs  time.Time `json:"expire_ts" bson:"expire_ts"`
 }

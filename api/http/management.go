@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -60,6 +61,14 @@ var (
 
 	WebsocketReadBufferSize  = 1024
 	WebsocketWriteBufferSize = 1024
+
+	//The threshold between the shell commands received (keystrokes) above which the
+	//delay control message is saved
+	keyStrokeDelayRecordingThresholdNs = int64(1500 * 1000000)
+
+	//The key stroke delay is recorded in two bytes, so this is the maximal
+	//possible delay. We round down to this if the real delay is larger
+	keyStrokeMaxDelayRecording = int64(65535 * 1000000)
 )
 
 const channelSize = 25 // TODO make configurable
@@ -153,10 +162,11 @@ func (h ManagementController) Connect(c *gin.Context) {
 	}
 
 	session := &model.Session{
-		TenantID: tenantID,
-		UserID:   userID,
-		DeviceID: deviceID,
-		StartTS:  time.Now(),
+		TenantID:           tenantID,
+		UserID:             userID,
+		DeviceID:           deviceID,
+		StartTS:            time.Now(),
+		BytesRecordedMutex: &sync.Mutex{},
 	}
 
 	// Prepare the user session
@@ -241,9 +251,10 @@ func (h ManagementController) Playback(c *gin.Context) {
 	userID := idata.Subject
 	sessionID := c.Param(PlaybackSessionIDField)
 	session := &model.Session{
-		TenantID: tenantID,
-		UserID:   userID,
-		StartTS:  time.Now(),
+		TenantID:           tenantID,
+		UserID:             userID,
+		StartTS:            time.Now(),
+		BytesRecordedMutex: &sync.Mutex{},
 	}
 	sleepInterval := c.Param(PlaybackSleepIntervalMsField)
 	sleepMilliseconds := uint(app.DefaultPlaybackSleepIntervalMs)
@@ -254,7 +265,7 @@ func (h ManagementController) Playback(c *gin.Context) {
 		}
 	}
 
-	l.Infof("Playing back the session %s", sessionID)
+	l.Infof("Playing back the session session_id=%s", sessionID)
 
 	// upgrade get request to websocket protocol
 	upgrader := websocket.Upgrader{
@@ -284,7 +295,13 @@ func (h ManagementController) Playback(c *gin.Context) {
 	errChan := make(chan error, 1)
 
 	//nolint:errcheck
-	go h.websocketWriter(ctx, conn, session, deviceChan, errChan, ioutil.Discard)
+	go h.websocketWriter(ctx,
+		conn,
+		session,
+		deviceChan,
+		errChan,
+		ioutil.Discard,
+		ioutil.Discard)
 
 	go func() {
 		err = h.app.GetSessionRecording(ctx,
@@ -324,6 +341,7 @@ func (h ManagementController) websocketWriter(
 	deviceChan <-chan *natsio.Msg,
 	errChan <-chan error,
 	recorder io.Writer,
+	controlRecorder io.Writer,
 ) (err error) {
 	l := log.FromContext(ctx)
 	defer func() {
@@ -380,7 +398,11 @@ func (h ManagementController) websocketWriter(
 
 	recorderBuffered := bufio.NewWriterSize(recorder, app.RecorderBufferSize)
 	defer recorderBuffered.Flush()
+	controlRecorderBuffered := bufio.NewWriterSize(controlRecorder, app.RecorderBufferSize)
+	defer controlRecorderBuffered.Flush()
 	recordedBytes := 0
+	controlBytes := 0
+	lastKeystrokeAt := time.Now().UTC().UnixNano()
 Loop:
 	for {
 		select {
@@ -391,7 +413,36 @@ Loop:
 				return err
 			}
 			if mr.Header.Proto == ws.ProtoTypeShell {
-				if mr.Header.MsgType == shell.MessageTypeShellCommand {
+				switch mr.Header.MsgType {
+				case shell.MessageTypeShellCommand:
+					timeNowUTC := time.Now().UTC().UnixNano()
+					keystrokeDelay := timeNowUTC - lastKeystrokeAt
+					if keystrokeDelay >= keyStrokeDelayRecordingThresholdNs {
+						if keystrokeDelay > keyStrokeMaxDelayRecording {
+							keystrokeDelay = keyStrokeMaxDelayRecording
+						}
+						controlMsg := app.Control{
+							Type:   app.DelayMessage,
+							Offset: recordedBytes,
+							DelayMs: uint16(float64(keystrokeDelay) *
+								0.000001),
+							TerminalHeight: 0,
+							TerminalWidth:  0,
+						}
+						n, _ := controlRecorderBuffered.Write(
+							controlMsg.MarshalBinary())
+						l.Debugf("saving control delay message: %+v/%d",
+							controlMsg, n)
+						controlBytes += n
+						if controlBytes >= app.MessageSizeLimit {
+							l.Infof("closing session session_id=%s"+
+								"on control data limit reached.",
+								session.ID)
+							//see MEN-4448
+							break Loop
+						}
+					}
+					lastKeystrokeAt = timeNowUTC
 					b, e := recorderBuffered.Write(mr.Body)
 					if e != nil {
 						l.Errorf("session logging: "+
@@ -399,12 +450,15 @@ Loop:
 							len(mr.Body), b, e)
 					}
 					recordedBytes += len(mr.Body)
+					session.BytesRecordedMutex.Lock()
+					session.BytesRecorded = recordedBytes
+					session.BytesRecordedMutex.Unlock()
 					if recordedBytes >= app.MessageSizeLimit {
 						l.Infof("closing session on limit reached.")
 						//see https://tracker.mender.io/browse/MEN-4448
 						break Loop
 					}
-				} else if mr.Header.MsgType == shell.MessageTypeStopShell {
+				case shell.MessageTypeStopShell:
 					l.Debugf("session logging: recorderBuffered.Flush()"+
 						" at %d on stop shell", recordedBytes)
 					recorderBuffered.Flush()
@@ -481,11 +535,21 @@ func (h ManagementController) ConnectServeWS(
 		close(errChan)
 	}()
 
+	controlRecorder := h.app.GetControlRecorder(ctx, sess.ID)
+	controlRecorderBuffered := bufio.NewWriterSize(controlRecorder, app.RecorderBufferSize)
+	defer controlRecorderBuffered.Flush()
 	// websocketWriter is responsible for closing the websocket
 	//nolint:errcheck
-	go h.websocketWriter(ctx, conn, sess, deviceChan, errChan, h.app.GetRecorder(ctx, sess.ID))
+	go h.websocketWriter(ctx,
+		conn,
+		sess,
+		deviceChan,
+		errChan,
+		h.app.GetRecorder(ctx, sess.ID), controlRecorder)
 
 	var data []byte
+	controlBytes := 0
+	ignoreControlMessages := false
 	for {
 		_, data, err = conn.ReadMessage()
 		if err != nil {
@@ -506,7 +570,6 @@ func (h ManagementController) ConnectServeWS(
 		}
 		m.Header.Properties[PropertyUserID] = sess.UserID
 		data, _ = msgpack.Marshal(m)
-
 		switch m.Header.Proto {
 		case ws.ProtoTypeShell:
 			switch m.Header.MsgType {
@@ -514,6 +577,19 @@ func (h ManagementController) ConnectServeWS(
 				remoteTerminalRunning = true
 			case shell.MessageTypeStopShell:
 				remoteTerminalRunning = false
+			case shell.MessageTypeResizeShell:
+				if ignoreControlMessages {
+					continue
+				}
+				if controlBytes >= app.MessageSizeLimit {
+					l.Infof("session_id=%s control data limit reached.",
+						sess.ID)
+					//see https://tracker.mender.io/browse/MEN-4448
+					ignoreControlMessages = true
+					continue
+				}
+
+				controlBytes += sendResizeMessage(m, sess, controlRecorderBuffered)
 			}
 		}
 
@@ -522,6 +598,48 @@ func (h ManagementController) ConnectServeWS(
 			return err
 		}
 	}
+}
+
+func sendResizeMessage(m *ws.ProtoMsg,
+	sess *model.Session,
+	controlRecorderBuffered *bufio.Writer) (n int) {
+	if _, ok := m.Header.Properties[model.ResizeMessageTermHeightField]; ok {
+		return 0
+	}
+	if _, ok := m.Header.Properties[model.ResizeMessageTermWidthField]; ok {
+		return 0
+	}
+
+	var height uint16 = 0
+	switch m.Header.Properties[model.ResizeMessageTermHeightField].(type) {
+	case uint8:
+		height = uint16(m.Header.Properties[model.ResizeMessageTermHeightField].(uint8))
+	case int8:
+		height = uint16(m.Header.Properties[model.ResizeMessageTermHeightField].(int8))
+	}
+
+	var width uint16 = 0
+	switch m.Header.Properties[model.ResizeMessageTermWidthField].(type) {
+	case uint8:
+		width = uint16(m.Header.Properties[model.ResizeMessageTermWidthField].(uint8))
+	case int8:
+		width = uint16(m.Header.Properties[model.ResizeMessageTermWidthField].(int8))
+	}
+
+	sess.BytesRecordedMutex.Lock()
+	controlMsg := app.Control{
+		Type:           app.ResizeMessage,
+		Offset:         sess.BytesRecorded,
+		DelayMs:        0,
+		TerminalHeight: height,
+		TerminalWidth:  width,
+	}
+	sess.BytesRecordedMutex.Unlock()
+
+	n, _ = controlRecorderBuffered.Write(
+		controlMsg.MarshalBinary(),
+	)
+	return n
 }
 
 func (h ManagementController) CheckUpdate(c *gin.Context) {
