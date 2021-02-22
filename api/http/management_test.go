@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -256,6 +257,12 @@ func TestManagementConnect(t *testing.T) {
 				}),
 			).Return(nil)
 			app.On("FreeUserSession",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				}),
+				tc.SessionID,
+			).Return(nil)
+			app.On("GetRecorder",
 				mock.MatchedBy(func(_ context.Context) bool {
 					return true
 				}),
@@ -516,6 +523,141 @@ func TestManagementConnect(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 
 			app.AssertExpectations(t)
+		})
+	}
+}
+
+func TestManagementPlayback(t *testing.T) {
+	testCases := []struct {
+		Name            string
+		SessionID       string
+		Identity        *identity.Identity
+		SleepIntervalMs string
+		NoUpgrade       bool
+	}{
+		{
+			Name:      "ok",
+			SessionID: "session_id",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+				Plan:    "professional",
+			},
+		},
+		{
+			Name:      "ok with sleep interval",
+			SessionID: "session_id",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+				Plan:    "professional",
+			},
+			SleepIntervalMs: "200",
+		},
+		{
+			Name:      "internal error no upgrade",
+			SessionID: "session_id",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+				Plan:    "professional",
+			},
+			SleepIntervalMs: "200",
+			NoUpgrade:       true,
+		},
+		{
+			Name:      "bad request no auth",
+			SessionID: "session_id",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			app := &app_mocks.App{}
+			defer app.AssertExpectations(t)
+			natsClient := NewNATSTestClient(t)
+			router, _ := NewRouter(app, natsClient)
+
+			headers := http.Header{}
+			if tc.Identity != nil {
+				headers.Set(headerAuthorization, "Bearer "+GenerateJWT(*tc.Identity))
+			}
+
+			if tc.Identity != nil && !tc.NoUpgrade {
+				app.On("GetSessionRecording",
+					mock.MatchedBy(func(_ context.Context) bool {
+						return true
+					}),
+					tc.SessionID,
+					mock.AnythingOfType("*app.Playback"),
+				).Return(nil)
+			}
+
+			s := httptest.NewServer(router)
+			defer s.Close()
+
+			if tc.NoUpgrade {
+				url := s.URL + strings.Replace(
+					APIURLManagementPlayback, ":sessionId",
+					tc.SessionID, 1,
+				)
+				req, err := http.NewRequest(http.MethodGet, url, nil)
+				req.Header.Set(headerAuthorization, "Bearer "+GenerateJWT(*tc.Identity))
+				assert.NotNil(t, req)
+				assert.NoError(t, err)
+				tr := &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				}
+
+				client := &http.Client{
+					Transport: tr,
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				rsp, err := client.Do(req.WithContext(ctx))
+				assert.Equal(t, rsp.StatusCode, http.StatusBadRequest)
+				return
+			}
+
+			url := "ws" + strings.TrimPrefix(s.URL, "http")
+			url = url + strings.Replace(
+				APIURLManagementPlayback, ":sessionId",
+				tc.SessionID, 1,
+			)
+			if len(tc.SleepIntervalMs) > 0 {
+				url += "?" + PlaybackSleepIntervalMsField + "=" + tc.SleepIntervalMs
+			}
+			conn, _, err := websocket.DefaultDialer.Dial(url, headers)
+			if tc.Identity == nil {
+				assert.EqualError(t, err, "websocket: bad handshake")
+				return
+			} else {
+				assert.NoError(t, err)
+			}
+
+			pingReceived := make(chan struct{}, 1)
+			conn.SetPingHandler(func(message string) error {
+				pingReceived <- struct{}{}
+				return conn.WriteControl(
+					websocket.PongMessage,
+					[]byte{},
+					time.Now().Add(writeWait),
+				)
+			})
+			pongReceived := make(chan struct{}, 1)
+			conn.SetPongHandler(func(message string) error {
+				pongReceived <- struct{}{}
+				return nil
+			})
+
+			// close the websocket
+			conn.Close()
+
+			// wait 100ms to let the websocket fully shutdown on the server
+			time.Sleep(100 * time.Millisecond)
 		})
 	}
 }

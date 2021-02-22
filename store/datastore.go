@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package store
 import (
 	"context"
 	"errors"
+	"io"
 
 	"github.com/mendersoftware/deviceconnect/model"
 )
@@ -33,6 +34,8 @@ type DataStore interface {
 	UpsertDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error
 	AllocateSession(ctx context.Context, sess *model.Session) error
 	GetSession(ctx context.Context, sessionID string) (*model.Session, error)
+	GetSessionRecording(ctx context.Context, sessionID string, w io.Writer) error
+	InsertSessionRecording(ctx context.Context, sessionID string, sessionBytes []byte) error
 	DeleteSession(ctx context.Context, sessionID string) (*model.Session, error)
 	Close() error
 }

@@ -52,6 +52,7 @@ const (
 	APIURLManagementDeviceConnect       = APIURLManagement + "/devices/:deviceId/connect"
 	APIURLManagementDeviceCheckUpdate   = APIURLManagement + "/devices/:deviceId/check-update"
 	APIURLManagementDeviceSendInventory = APIURLManagement + "/devices/:deviceId/send-inventory"
+	APIURLManagementPlayback            = APIURLManagement + "/sessions/:sessionId/playback"
 )
 
 // NewRouter returns the gin router
@@ -117,6 +118,7 @@ func NewRouter(
 	router.GET(APIURLManagementDeviceConnect, management.Connect)
 	router.POST(APIURLManagementDeviceCheckUpdate, management.CheckUpdate)
 	router.POST(APIURLManagementDeviceSendInventory, management.SendInventory)
+	router.GET(APIURLManagementPlayback, management.Playback)
 
 	return router, nil
 }
