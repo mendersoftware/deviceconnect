@@ -50,8 +50,10 @@ const (
 
 	APIURLManagementDevice              = APIURLManagement + "/devices/:deviceId"
 	APIURLManagementDeviceConnect       = APIURLManagement + "/devices/:deviceId/connect"
+	APIURLManagementDeviceDownload      = APIURLManagement + "/devices/:deviceId/download"
 	APIURLManagementDeviceCheckUpdate   = APIURLManagement + "/devices/:deviceId/check-update"
 	APIURLManagementDeviceSendInventory = APIURLManagement + "/devices/:deviceId/send-inventory"
+	APIURLManagementDeviceUpload        = APIURLManagement + "/devices/:deviceId/upload"
 	APIURLManagementPlayback            = APIURLManagement + "/sessions/:sessionId/playback"
 )
 
@@ -116,8 +118,10 @@ func NewRouter(
 	management := NewManagementController(app, natsClient)
 	router.GET(APIURLManagementDevice, management.GetDevice)
 	router.GET(APIURLManagementDeviceConnect, management.Connect)
+	router.POST(APIURLManagementDeviceDownload, management.DownloadFile)
 	router.POST(APIURLManagementDeviceCheckUpdate, management.CheckUpdate)
 	router.POST(APIURLManagementDeviceSendInventory, management.SendInventory)
+	router.POST(APIURLManagementDeviceUpload, management.UploadFile)
 	router.GET(APIURLManagementPlayback, management.Playback)
 
 	return router, nil

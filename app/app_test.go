@@ -330,7 +330,7 @@ func TestPrepareUserSession(t *testing.T) {
 			ID:     "00000000-0000-0000-0000-000000000000",
 			Status: model.DeviceStatusDisconnected,
 		},
-		Erre: errors.New("device not connected"),
+		Erre: ErrDeviceNotConnected,
 	}, {
 		Name: "error, AllocateSession internal error",
 
