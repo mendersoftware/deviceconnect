@@ -16,6 +16,7 @@ package http
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -200,8 +201,23 @@ func (h DeviceController) connectWSWriter(
 ) (err error) {
 	l := log.FromContext(ctx)
 	defer func() {
-		// TODO Check err and errChan and send close control packet
-		// with error if not initiated by client.
+		if err != nil {
+			errMsg := err.Error()
+			errBody := make([]byte, len(errMsg)+2)
+			binary.BigEndian.PutUint16(errBody, websocket.CloseInternalServerErr)
+			copy(errBody[2:], errMsg)
+			errClose := conn.WriteControl(
+				websocket.CloseMessage,
+				errBody,
+				time.Now().Add(writeWait),
+			)
+			if errClose != nil {
+				err = errors.Wrapf(err,
+					"error sending websocket close frame: %s",
+					errClose.Error(),
+				)
+			}
+		}
 		conn.Close()
 	}()
 
