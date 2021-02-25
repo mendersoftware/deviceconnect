@@ -202,21 +202,27 @@ func (h DeviceController) connectWSWriter(
 	l := log.FromContext(ctx)
 	defer func() {
 		if err != nil {
-			errMsg := err.Error()
-			errBody := make([]byte, len(errMsg)+2)
-			binary.BigEndian.PutUint16(errBody, websocket.CloseInternalServerErr)
-			copy(errBody[2:], errMsg)
-			errClose := conn.WriteControl(
-				websocket.CloseMessage,
-				errBody,
-				time.Now().Add(writeWait),
-			)
-			if errClose != nil {
-				err = errors.Wrapf(err,
-					"error sending websocket close frame: %s",
-					errClose.Error(),
+			if !websocket.IsUnexpectedCloseError(err) {
+				// If the peer didn't send a close message we must.
+				errMsg := err.Error()
+				errBody := make([]byte, len(errMsg)+2)
+				binary.BigEndian.PutUint16(errBody,
+					websocket.CloseInternalServerErr,
 				)
+				copy(errBody[2:], errMsg)
+				errClose := conn.WriteControl(
+					websocket.CloseMessage,
+					errBody,
+					time.Now().Add(writeWait),
+				)
+				if errClose != nil {
+					err = errors.Wrapf(err,
+						"error sending websocket close frame: %s",
+						errClose.Error(),
+					)
+				}
 			}
+			l.Errorf("websocket closed with error: %s", err.Error())
 		}
 		conn.Close()
 	}()
@@ -260,6 +266,7 @@ Loop:
 			break Loop
 		case <-ticker.C:
 			if !websocketPing(conn) {
+				err = errors.New("connection timeout")
 				break Loop
 			}
 		case err := <-errChan:
@@ -310,12 +317,12 @@ func (h DeviceController) ConnectServeWS(
 			}
 		}
 		// update the device status on websocket closing
-		err = h.app.UpdateDeviceStatus(
+		eStatus := h.app.UpdateDeviceStatus(
 			ctx, id.Tenant,
 			id.Subject, model.DeviceStatusDisconnected,
 		)
-		if err != nil {
-			l.Error(err)
+		if eStatus != nil {
+			l.Error(eStatus)
 		}
 	}()
 

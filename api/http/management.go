@@ -286,19 +286,19 @@ func (h ManagementController) Playback(c *gin.Context) {
 	//nolint:errcheck
 	go h.websocketWriter(ctx, conn, session, deviceChan, errChan, ioutil.Discard)
 
-	err = h.app.GetSessionRecording(ctx,
-		sessionID,
-		app.NewPlayback(sessionID, deviceChan, sleepMilliseconds))
-	if err != nil {
-		err = errors.Wrap(err, "unable to get the session.")
-		l.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal error",
-		})
-		return
+	go func() {
+		err = h.app.GetSessionRecording(ctx,
+			sessionID,
+			app.NewPlayback(sessionID, deviceChan, sleepMilliseconds))
+		if err != nil {
+			err = errors.Wrap(err, "unable to get the session.")
+			errChan <- err
+			return
+		}
+	}()
+	// We need to keep reading in order to keep ping/pong handlers functioning.
+	for ; err == nil; _, _, err = conn.NextReader() {
 	}
-	//after this point the UI has to keep the terminal window open by itself to let user
-	//see the playback -- the websocket connection to the deviceconnect is going to be closed
 }
 
 func websocketPing(conn *websocket.Conn) bool {
@@ -328,21 +328,25 @@ func (h ManagementController) websocketWriter(
 	l := log.FromContext(ctx)
 	defer func() {
 		if err != nil {
-			errMsg := err.Error()
-			errBody := make([]byte, len(errMsg)+2)
-			binary.BigEndian.PutUint16(errBody, websocket.CloseInternalServerErr)
-			copy(errBody[2:], errMsg)
-			errClose := conn.WriteControl(
-				websocket.CloseMessage,
-				errBody,
-				time.Now().Add(writeWait),
-			)
-			if errClose != nil {
-				err = errors.Wrapf(err,
-					"error sending websocket close frame: %s",
-					errClose.Error(),
+			if !websocket.IsUnexpectedCloseError(errors.Cause(err)) {
+				errMsg := err.Error()
+				errBody := make([]byte, len(errMsg)+2)
+				binary.BigEndian.PutUint16(errBody,
+					websocket.CloseInternalServerErr)
+				copy(errBody[2:], errMsg)
+				errClose := conn.WriteControl(
+					websocket.CloseMessage,
+					errBody,
+					time.Now().Add(writeWait),
 				)
+				if errClose != nil {
+					err = errors.Wrapf(err,
+						"error sending websocket close frame: %s",
+						errClose.Error(),
+					)
+				}
 			}
+			l.Errorf("websocket closed with error: %s", err.Error())
 		}
 		conn.Close()
 	}()
@@ -416,6 +420,7 @@ Loop:
 			break Loop
 		case <-ticker.C:
 			if !websocketPing(conn) {
+				err = errors.New("connection timeout")
 				break Loop
 			}
 		case err := <-errChan:
