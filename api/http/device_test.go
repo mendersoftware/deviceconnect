@@ -48,242 +48,256 @@ func TestDeviceConnect(t *testing.T) {
 	pongWait = time.Second
 	writeWait = time.Second
 
-	testCases := []struct {
-		Name     string
-		Identity identity.Identity
-	}{
-		{
-			Name: "ok",
-			Identity: identity.Identity{
-				Subject:  "00000000-0000-0000-0000-000000000000",
-				Tenant:   "000000000000000000000000",
-				IsDevice: true,
-			},
+	Identity := identity.Identity{
+		Subject:  "00000000-0000-0000-0000-000000000000",
+		Tenant:   "000000000000000000000000",
+		IsDevice: true,
+	}
+	app := &app_mocks.App{}
+	app.On("UpdateDeviceStatus",
+		mock.MatchedBy(func(_ context.Context) bool {
+			return true
+		}),
+		Identity.Tenant,
+		Identity.Subject,
+		model.DeviceStatusConnected,
+	).Return(nil)
+
+	app.On("UpdateDeviceStatus",
+		mock.MatchedBy(func(_ context.Context) bool {
+			return true
+		}),
+		Identity.Tenant,
+		Identity.Subject,
+		model.DeviceStatusDisconnected,
+	).Return(nil)
+
+	natsClient := NewNATSTestClient(t)
+	router, _ := NewRouter(app, natsClient)
+	s := httptest.NewServer(router)
+	defer s.Close()
+
+	url := "ws" + strings.TrimPrefix(s.URL, "http")
+
+	headers := http.Header{}
+	headers.Set(
+		headerAuthorization,
+		"Bearer "+GenerateJWT(Identity),
+	)
+
+	conn, _, err := websocket.DefaultDialer.Dial(url+APIURLDevicesConnect, headers)
+	assert.NoError(t, err)
+
+	pingReceived := make(chan struct{}, 10)
+	conn.SetPingHandler(func(message string) error {
+		pingReceived <- struct{}{}
+		return conn.WriteControl(
+			websocket.PongMessage,
+			[]byte{},
+			time.Now().Add(writeWait),
+		)
+	})
+	pongReceived := make(chan struct{}, 1)
+	conn.SetPongHandler(func(message string) error {
+		pongReceived <- struct{}{}
+		return nil
+	})
+
+	dataReceived := make(chan []byte, 2)
+	go func() {
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
+			dataReceived <- data
+		}
+	}()
+
+	// test receiving a message "from management"
+	msg := ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:     ws.ProtoTypeShell,
+			MsgType:   "cmd",
+			SessionID: "foobar",
 		},
 	}
+	b, _ := msgpack.Marshal(msg)
+	natsClient.Publish(model.GetDeviceSubject(
+		Identity.Tenant,
+		Identity.Subject),
+		b,
+	)
+	select {
+	case rMsg := <-dataReceived:
+		assert.Equal(t, b, rMsg)
 
-	for _, tc := range testCases {
-		t.Run(tc.Name, func(t *testing.T) {
-			app := &app_mocks.App{}
-			app.On("UpdateDeviceStatus",
-				mock.MatchedBy(func(_ context.Context) bool {
-					return true
-				}),
-				tc.Identity.Tenant,
-				tc.Identity.Subject,
-				model.DeviceStatusConnected,
-			).Return(nil)
-
-			app.On("UpdateDeviceStatus",
-				mock.MatchedBy(func(_ context.Context) bool {
-					return true
-				}),
-				tc.Identity.Tenant,
-				tc.Identity.Subject,
-				model.DeviceStatusDisconnected,
-			).Return(nil)
-
-			natsClient := NewNATSTestClient(t)
-			router, _ := NewRouter(app, natsClient)
-			s := httptest.NewServer(router)
-			defer s.Close()
-
-			url := "ws" + strings.TrimPrefix(s.URL, "http")
-
-			headers := http.Header{}
-			headers.Set(
-				headerAuthorization,
-				"Bearer "+GenerateJWT(tc.Identity),
-			)
-
-			conn, _, err := websocket.DefaultDialer.Dial(url+APIURLDevicesConnect, headers)
-			assert.NoError(t, err)
-
-			pingReceived := make(chan struct{}, 10)
-			conn.SetPingHandler(func(message string) error {
-				pingReceived <- struct{}{}
-				return conn.WriteControl(
-					websocket.PongMessage,
-					[]byte{},
-					time.Now().Add(writeWait),
-				)
-			})
-			pongReceived := make(chan struct{}, 1)
-			conn.SetPongHandler(func(message string) error {
-				pongReceived <- struct{}{}
-				return nil
-			})
-
-			dataReceived := make(chan []byte, 2)
-			go func() {
-				for {
-					_, data, err := conn.ReadMessage()
-					if err != nil {
-						break
-					}
-					dataReceived <- data
-				}
-			}()
-
-			// test receiving a message "from management"
-			msg := ws.ProtoMsg{
-				Header: ws.ProtoHdr{
-					Proto:     ws.ProtoTypeShell,
-					MsgType:   "cmd",
-					SessionID: "foobar",
-				},
-			}
-			b, _ := msgpack.Marshal(msg)
-			natsClient.Publish(model.GetDeviceSubject(
-				tc.Identity.Tenant,
-				tc.Identity.Subject),
-				b,
-			)
-			select {
-			case rMsg := <-dataReceived:
-				assert.Equal(t, b, rMsg)
-
-			case <-time.After(time.Second):
-				assert.Fail(t,
-					"timeout waiting for message from management",
-				)
-			}
-
-			// test responding to message from management
-			rChan := make(chan *nats.Msg, 1)
-			_, err = natsClient.ChanSubscribe(
-				model.GetSessionSubject(tc.Identity.Tenant, "foobar"),
-				rChan,
-			)
-			assert.NoError(t, err)
-			err = conn.WriteMessage(websocket.BinaryMessage, b)
-			assert.NoError(t, err)
-
-			select {
-			case <-time.After(time.Second):
-				assert.Fail(t,
-					"timeout waiting for message to propagate",
-				)
-			case rMsg := <-rChan:
-				assert.Equal(t, b, rMsg.Data)
-			}
-
-			// check that ping and pong works as expected
-			err = conn.WriteControl(
-				websocket.PingMessage,
-				[]byte("1"),
-				time.Now().Add(time.Second),
-			)
-			assert.NoError(t, err)
-			select {
-			case <-pongReceived:
-			case <-time.After(pongWait * 2):
-				assert.Fail(t, "did not receive pong within pongWait")
-			}
-
-			select {
-			case <-pingReceived:
-			case <-time.After(pongWait * 2):
-				assert.Fail(t, "did not receive ping within pongWait")
-			}
-
-			// start a new terminal
-			msg = ws.ProtoMsg{
-				Header: ws.ProtoHdr{
-					Proto:     ws.ProtoTypeShell,
-					MsgType:   shell.MessageTypeSpawnShell,
-					SessionID: "foobar",
-				},
-			}
-			b, _ = msgpack.Marshal(msg)
-			err = conn.WriteMessage(websocket.BinaryMessage, b)
-			assert.NoError(t, err)
-
-			select {
-			case <-time.After(time.Second):
-				assert.Fail(t,
-					"timeout waiting for message to propagate",
-				)
-			case rMsg := <-rChan:
-				assert.Equal(t, b, rMsg.Data)
-			}
-
-			// stop the terminal
-			msg = ws.ProtoMsg{
-				Header: ws.ProtoHdr{
-					Proto:     ws.ProtoTypeShell,
-					MsgType:   shell.MessageTypeStopShell,
-					SessionID: "foobar",
-				},
-			}
-			b, _ = msgpack.Marshal(msg)
-			err = conn.WriteMessage(websocket.BinaryMessage, b)
-			assert.NoError(t, err)
-
-			select {
-			case <-time.After(time.Second):
-				assert.Fail(t,
-					"timeout waiting for message to propagate",
-				)
-			case rMsg := <-rChan:
-				assert.Equal(t, b, rMsg.Data)
-			}
-
-			// start again a new terminal
-			msg = ws.ProtoMsg{
-				Header: ws.ProtoHdr{
-					Proto:     ws.ProtoTypeShell,
-					MsgType:   shell.MessageTypeSpawnShell,
-					SessionID: "foobar",
-				},
-			}
-			b, _ = msgpack.Marshal(msg)
-			err = conn.WriteMessage(websocket.BinaryMessage, b)
-			assert.NoError(t, err)
-
-			select {
-			case <-time.After(time.Second):
-				assert.Fail(t,
-					"timeout waiting for message to propagate",
-				)
-			case rMsg := <-rChan:
-				assert.Equal(t, b, rMsg.Data)
-			}
-
-			// send wrong message (session ID empty), this shuts down the connection
-			msg = ws.ProtoMsg{
-				Header: ws.ProtoHdr{
-					Proto:     ws.ProtoTypeShell,
-					MsgType:   shell.MessageTypeSpawnShell,
-					SessionID: "",
-				},
-			}
-			b, _ = msgpack.Marshal(msg)
-			err = conn.WriteMessage(websocket.BinaryMessage, b)
-			assert.NoError(t, err)
-
-			// we receive the stop message
-			select {
-			case <-time.After(time.Second):
-				assert.Fail(t,
-					"timeout waiting for message to propagate",
-				)
-			case rMsg := <-rChan:
-				msg := &ws.ProtoMsg{}
-				_ = msgpack.Unmarshal(rMsg.Data, msg)
-				assert.Equal(t, ws.ProtoTypeShell, msg.Header.Proto)
-				assert.Equal(t, shell.MessageTypeStopShell, msg.Header.MsgType)
-			}
-
-			// close the websocket
-			conn.Close()
-
-			// wait 100ms to let the websocket fully shutdown on the server
-			time.Sleep(100 * time.Millisecond)
-
-			app.AssertExpectations(t)
-		})
+	case <-time.After(time.Second):
+		assert.Fail(t,
+			"timeout waiting for message from management",
+		)
 	}
+
+	// test responding to message from management
+	rChan := make(chan *nats.Msg, 1)
+	_, err = natsClient.ChanSubscribe(
+		model.GetSessionSubject(Identity.Tenant, "foobar"),
+		rChan,
+	)
+	assert.NoError(t, err)
+	err = conn.WriteMessage(websocket.BinaryMessage, b)
+	assert.NoError(t, err)
+
+	select {
+	case <-time.After(time.Second):
+		assert.Fail(t,
+			"timeout waiting for message to propagate",
+		)
+	case rMsg := <-rChan:
+		assert.Equal(t, b, rMsg.Data)
+	}
+
+	// check that ping and pong works as expected
+	err = conn.WriteControl(
+		websocket.PingMessage,
+		[]byte("1"),
+		time.Now().Add(time.Second),
+	)
+	assert.NoError(t, err)
+	select {
+	case <-pongReceived:
+	case <-time.After(pongWait * 2):
+		assert.Fail(t, "did not receive pong within pongWait")
+	}
+
+	select {
+	case <-pingReceived:
+	case <-time.After(pongWait * 2):
+		assert.Fail(t, "did not receive ping within pongWait")
+	}
+
+	// start a new terminal
+	msg = ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:     ws.ProtoTypeShell,
+			MsgType:   shell.MessageTypeSpawnShell,
+			SessionID: "foobar",
+		},
+	}
+	b, _ = msgpack.Marshal(msg)
+	err = conn.WriteMessage(websocket.BinaryMessage, b)
+	assert.NoError(t, err)
+
+	select {
+	case <-time.After(time.Second):
+		assert.Fail(t,
+			"timeout waiting for message to propagate",
+		)
+	case rMsg := <-rChan:
+		assert.Equal(t, b, rMsg.Data)
+	}
+
+	// stop the terminal
+	msg = ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:     ws.ProtoTypeShell,
+			MsgType:   shell.MessageTypeStopShell,
+			SessionID: "foobar",
+		},
+	}
+	b, _ = msgpack.Marshal(msg)
+	err = conn.WriteMessage(websocket.BinaryMessage, b)
+	assert.NoError(t, err)
+
+	select {
+	case <-time.After(time.Second):
+		assert.Fail(t,
+			"timeout waiting for message to propagate",
+		)
+	case rMsg := <-rChan:
+		assert.Equal(t, b, rMsg.Data)
+	}
+
+	// start again a new terminal
+	msg = ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:     ws.ProtoTypeShell,
+			MsgType:   shell.MessageTypeSpawnShell,
+			SessionID: "foobar",
+		},
+	}
+	b, _ = msgpack.Marshal(msg)
+	err = conn.WriteMessage(websocket.BinaryMessage, b)
+	assert.NoError(t, err)
+
+	select {
+	case <-time.After(time.Second):
+		assert.Fail(t,
+			"timeout waiting for message to propagate",
+		)
+	case rMsg := <-rChan:
+		assert.Equal(t, b, rMsg.Data)
+	}
+
+	// send wrong message (session ID empty), this shuts down the connection
+	msg = ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:     ws.ProtoTypeShell,
+			MsgType:   shell.MessageTypeSpawnShell,
+			SessionID: "",
+		},
+	}
+	b, _ = msgpack.Marshal(msg)
+	err = conn.WriteMessage(websocket.BinaryMessage, b)
+	assert.NoError(t, err)
+
+	// we receive the stop message
+	select {
+	case <-time.After(time.Second):
+		assert.Fail(t,
+			"timeout waiting for message to propagate",
+		)
+	case rMsg := <-rChan:
+		msg := &ws.ProtoMsg{}
+		_ = msgpack.Unmarshal(rMsg.Data, msg)
+		assert.Equal(t, ws.ProtoTypeShell, msg.Header.Proto)
+		assert.Equal(t, shell.MessageTypeStopShell, msg.Header.MsgType)
+	}
+
+	// close the websocket
+	conn.Close()
+
+	// Restart a connection to check error handling
+	app.On("UpdateDeviceStatus",
+		mock.MatchedBy(func(_ context.Context) bool {
+			return true
+		}),
+		Identity.Tenant,
+		Identity.Subject,
+		model.DeviceStatusConnected,
+	).Return(nil)
+
+	app.On("UpdateDeviceStatus",
+		mock.MatchedBy(func(_ context.Context) bool {
+			return true
+		}),
+		Identity.Tenant,
+		Identity.Subject,
+		model.DeviceStatusDisconnected,
+	).Return(nil)
+
+	conn, _, err = websocket.DefaultDialer.Dial(url+APIURLDevicesConnect, headers)
+	assert.NoError(t, err)
+	err = conn.WriteMessage(websocket.BinaryMessage, []byte("bogus"))
+	assert.NoError(t, err)
+	_, _, err = conn.ReadMessage()
+	assert.NotNil(t, err)
+	assert.True(t, websocket.IsCloseError(err,
+		websocket.CloseInternalServerErr), err.Error(),
+	)
+	conn.Close()
+
+	app.AssertExpectations(t)
 }
 
 func TestDeviceConnectFailures(t *testing.T) {

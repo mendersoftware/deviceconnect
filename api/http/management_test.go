@@ -519,8 +519,30 @@ func TestManagementConnect(t *testing.T) {
 				)
 			}
 
-			// wait 100ms to let the websocket fully shutdown on the server
-			time.Sleep(100 * time.Millisecond)
+			conn, _, err = websocket.DefaultDialer.Dial(url, headers)
+			app.On("PrepareUserSession",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				}),
+				mock.MatchedBy(func(sess *model.Session) bool {
+					sess.ID = tc.SessionID
+					return true
+				}),
+			).Return(nil)
+			app.On("FreeUserSession",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				}),
+				tc.SessionID,
+			).Return(nil)
+			err = conn.WriteMessage(websocket.BinaryMessage, []byte("bogus"))
+			assert.NoError(t, err)
+			_, _, err = conn.ReadMessage()
+			assert.Error(t, err)
+			assert.True(t, websocket.IsCloseError(err,
+				websocket.CloseInternalServerErr),
+			)
+			conn.Close()
 
 			app.AssertExpectations(t)
 		})
