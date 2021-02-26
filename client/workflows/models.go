@@ -17,7 +17,7 @@ package workflows
 import (
 	"time"
 
-	"github.com/go-ozzo/ozzo-validation/v4"
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/go-ozzo/ozzo-validation/v4/is"
 )
 
@@ -32,6 +32,8 @@ type Action string
 const (
 	ActionTerminalOpen  Action = "open_terminal"
 	ActionTerminalClose Action = "close_terminal"
+	ActionDownloadFile  Action = "download_file"
+	ActionUploadFile    Action = "upload_file"
 )
 
 type ActorType string

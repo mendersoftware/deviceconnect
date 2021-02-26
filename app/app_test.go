@@ -737,3 +737,147 @@ func TestGetRecorder(t *testing.T) {
 		})
 	}
 }
+
+func TestDownloadFile(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		Name string
+
+		UserID   string
+		DeviceID string
+		Path     string
+
+		HaveAuditLogs bool
+		WorkflowsErr  error
+
+		Err error
+	}{
+		{
+			Name: "ok",
+
+			UserID:   "00000000-0000-0000-0000-000000000000",
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			Path:     "/path/to/file",
+		},
+		{
+			Name: "ok, with audit logs",
+
+			UserID:        "00000000-0000-0000-0000-000000000000",
+			DeviceID:      "00000000-0000-0000-0000-000000000000",
+			Path:          "/path/to/file",
+			HaveAuditLogs: true,
+		},
+		{
+			Name: "ko, with audit logs",
+
+			UserID:        "00000000-0000-0000-0000-000000000000",
+			DeviceID:      "00000000-0000-0000-0000-000000000000",
+			Path:          "/path/to/file",
+			HaveAuditLogs: true,
+			WorkflowsErr:  errors.New("generic error"),
+
+			Err: errors.New("failed to submit audit log for file transfer: generic error"),
+		},
+	}
+
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.Name, func(t *testing.T) {
+			ds := new(store_mocks.DataStore)
+			defer ds.AssertExpectations(t)
+
+			wf := new(wf_mocks.Client)
+			defer wf.AssertExpectations(t)
+
+			app := New(ds, nil, wf, Config{HaveAuditLogs: tc.HaveAuditLogs})
+			ctx := context.Background()
+
+			if tc.HaveAuditLogs {
+				wf.On("SubmitAuditLog",
+					ctx,
+					mock.AnythingOfType("workflows.AuditLog"),
+				).Return(tc.WorkflowsErr)
+			}
+
+			err := app.DownloadFile(ctx, tc.UserID, tc.DeviceID, tc.Path)
+			if tc.Err != nil {
+				assert.EqualError(t, err, tc.Err.Error())
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestUploadFile(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		Name string
+
+		UserID   string
+		DeviceID string
+		Path     string
+
+		HaveAuditLogs bool
+		WorkflowsErr  error
+
+		Err error
+	}{
+		{
+			Name: "ok",
+
+			UserID:   "00000000-0000-0000-0000-000000000000",
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			Path:     "/path/to/file",
+		},
+		{
+			Name: "ok, with audit logs",
+
+			UserID:        "00000000-0000-0000-0000-000000000000",
+			DeviceID:      "00000000-0000-0000-0000-000000000000",
+			Path:          "/path/to/file",
+			HaveAuditLogs: true,
+		},
+		{
+			Name: "ko, with audit logs",
+
+			UserID:        "00000000-0000-0000-0000-000000000000",
+			DeviceID:      "00000000-0000-0000-0000-000000000000",
+			Path:          "/path/to/file",
+			HaveAuditLogs: true,
+			WorkflowsErr:  errors.New("generic error"),
+
+			Err: errors.New("failed to submit audit log for file transfer: generic error"),
+		},
+	}
+
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.Name, func(t *testing.T) {
+			ds := new(store_mocks.DataStore)
+			defer ds.AssertExpectations(t)
+
+			wf := new(wf_mocks.Client)
+			defer wf.AssertExpectations(t)
+
+			app := New(ds, nil, wf, Config{HaveAuditLogs: tc.HaveAuditLogs})
+			ctx := context.Background()
+
+			if tc.HaveAuditLogs {
+				wf.On("SubmitAuditLog",
+					ctx,
+					mock.AnythingOfType("workflows.AuditLog"),
+				).Return(tc.WorkflowsErr)
+			}
+
+			err := app.UploadFile(ctx, tc.UserID, tc.DeviceID, tc.Path)
+			if tc.Err != nil {
+				assert.EqualError(t, err, tc.Err.Error())
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

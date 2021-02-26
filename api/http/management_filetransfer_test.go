@@ -77,9 +77,11 @@ func TestManagementDownloadFile(t *testing.T) {
 		Body     []byte
 		Identity *identity.Identity
 
-		GetDevice      *model.Device
-		GetDeviceError error
-		DeviceFunc     func(*nats_mocks.Client)
+		GetDevice          *model.Device
+		GetDeviceError     error
+		DeviceFunc         func(*nats_mocks.Client)
+		AppDownloadFile    bool
+		AppDownloadFileErr error
 
 		HTTPStatus int
 		HTTPBody   []byte
@@ -175,6 +177,7 @@ func TestManagementDownloadFile(t *testing.T) {
 					}),
 				).Return(nil)
 			},
+			AppDownloadFile: true,
 
 			HTTPStatus: http.StatusOK,
 			HTTPBody:   []byte("12345"),
@@ -280,6 +283,7 @@ func TestManagementDownloadFile(t *testing.T) {
 					}),
 				).Return(nil)
 			},
+			AppDownloadFile: true,
 
 			HTTPStatus: http.StatusOK,
 			HTTPBody:   []byte("1234567890"),
@@ -346,6 +350,7 @@ func TestManagementDownloadFile(t *testing.T) {
 					}),
 				).Return(nil)
 			},
+			AppDownloadFile: true,
 
 			HTTPStatus: http.StatusBadRequest,
 		},
@@ -442,6 +447,7 @@ func TestManagementDownloadFile(t *testing.T) {
 					}),
 				).Return(nil)
 			},
+			AppDownloadFile: true,
 
 			HTTPStatus: http.StatusOK,
 			HTTPBody:   []byte("12345"),
@@ -490,6 +496,7 @@ func TestManagementDownloadFile(t *testing.T) {
 					}),
 				).Return(nil)
 			},
+			AppDownloadFile: true,
 
 			HTTPStatus: http.StatusRequestTimeout,
 		},
@@ -568,9 +575,29 @@ func TestManagementDownloadFile(t *testing.T) {
 					}),
 				).Return(nil)
 			},
+			AppDownloadFile: true,
 
 			HTTPStatus: http.StatusOK,
 			HTTPBody:   []byte("12345"),
+		},
+		{
+			Name:     "ko, failed to submit audit log",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			AppDownloadFile:    true,
+			AppDownloadFileErr: errors.New("generic error"),
+
+			HTTPStatus: http.StatusInternalServerError,
 		},
 		{
 			Name:     "ko, bad request, relative path",
@@ -688,6 +715,17 @@ func TestManagementDownloadFile(t *testing.T) {
 			app := &app_mocks.App{}
 			defer app.AssertExpectations(t)
 
+			if tc.AppDownloadFile {
+				app.On("DownloadFile",
+					mock.MatchedBy(func(_ context.Context) bool {
+						return true
+					}),
+					tc.Identity.Subject,
+					tc.DeviceID,
+					mock.AnythingOfType("string"),
+				).Return(tc.AppDownloadFileErr)
+			}
+
 			natsClient := &nats_mocks.Client{}
 			defer natsClient.AssertExpectations(t)
 
@@ -756,9 +794,11 @@ func TestManagementUploadFile(t *testing.T) {
 		File     []byte
 		Identity *identity.Identity
 
-		GetDevice      *model.Device
-		GetDeviceError error
-		DeviceFunc     func(*nats_mocks.Client)
+		GetDevice        *model.Device
+		GetDeviceError   error
+		DeviceFunc       func(*nats_mocks.Client)
+		AppUploadFile    bool
+		AppUploadFileErr error
 
 		HTTPStatus int
 	}{
@@ -824,6 +864,7 @@ func TestManagementUploadFile(t *testing.T) {
 					}),
 				).Return(nil)
 			},
+			AppUploadFile: true,
 
 			HTTPStatus: http.StatusCreated,
 		},
@@ -895,6 +936,7 @@ func TestManagementUploadFile(t *testing.T) {
 					}),
 				).Return(nil)
 			},
+			AppUploadFile: true,
 
 			HTTPStatus: http.StatusBadRequest,
 		},
@@ -949,8 +991,34 @@ func TestManagementUploadFile(t *testing.T) {
 					}),
 				).Return(nil)
 			},
+			AppUploadFile: true,
 
 			HTTPStatus: http.StatusRequestTimeout,
+		},
+		{
+			Name:     "ko, failed to submit audit log",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			AppUploadFile:    true,
+			AppUploadFileErr: errors.New("generic error"),
+
+			HTTPStatus: http.StatusInternalServerError,
 		},
 		{
 			Name:     "ko, bad request, missing file",
@@ -1117,6 +1185,17 @@ func TestManagementUploadFile(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			app := &app_mocks.App{}
 			defer app.AssertExpectations(t)
+
+			if tc.AppUploadFile {
+				app.On("UploadFile",
+					mock.MatchedBy(func(_ context.Context) bool {
+						return true
+					}),
+					tc.Identity.Subject,
+					tc.DeviceID,
+					mock.AnythingOfType("string"),
+				).Return(tc.AppUploadFileErr)
+			}
 
 			natsClient := &nats_mocks.Client{}
 			defer natsClient.AssertExpectations(t)

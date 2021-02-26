@@ -51,6 +51,8 @@ type App interface {
 	SaveSessionRecording(ctx context.Context, id string, sessionBytes []byte) error
 	GetRecorder(ctx context.Context, sessionID string) io.Writer
 	GetControlRecorder(ctx context.Context, sessionID string) io.Writer
+	DownloadFile(ctx context.Context, userID string, deviceID string, path string) error
+	UploadFile(ctx context.Context, userID string, deviceID string, path string) error
 }
 
 // app is an app object
@@ -271,4 +273,42 @@ func (a app) GetRecorder(ctx context.Context, sessionID string) io.Writer {
 
 func (a app) GetControlRecorder(ctx context.Context, sessionID string) io.Writer {
 	return NewControlRecorder(ctx, sessionID, a.store)
+}
+
+func (a *app) DownloadFile(ctx context.Context, userID string, deviceID string, path string) error {
+	return a.submitFileTransferAuditlog(ctx, userID, deviceID, path,
+		workflows.ActionDownloadFile, "User downloaded a file from the device")
+}
+
+func (a *app) UploadFile(ctx context.Context, userID string, deviceID string, path string) error {
+	return a.submitFileTransferAuditlog(ctx, userID, deviceID, path,
+		workflows.ActionUploadFile, "User uploaded a file to the device")
+}
+
+func (a *app) submitFileTransferAuditlog(ctx context.Context, userID string, deviceID string,
+	path string, action workflows.Action, change string) error {
+	if a.HaveAuditLogs {
+		err := a.workflows.SubmitAuditLog(ctx, workflows.AuditLog{
+			Action: action,
+			Actor: workflows.Actor{
+				ID:   userID,
+				Type: workflows.ActorUser,
+			},
+			Object: workflows.Object{
+				ID:   deviceID,
+				Type: workflows.ObjectDevice,
+			},
+			Change: change,
+			MetaData: map[string][]string{
+				"path": {path},
+			},
+			EventTS: time.Now(),
+		})
+		if err != nil {
+			return errors.Wrap(err,
+				"failed to submit audit log for file transfer",
+			)
+		}
+	}
+	return nil
 }

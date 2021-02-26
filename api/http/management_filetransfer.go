@@ -377,6 +377,14 @@ func (h ManagementController) DownloadFile(c *gin.Context) {
 		return
 	}
 
+	if err := h.app.DownloadFile(c, params.UserID, params.Device.ID,
+		*request.Path); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": errors.Wrap(err, "bad request").Error(),
+		})
+		return
+	}
+
 	h.downloadFileResponse(c, params, request)
 }
 
@@ -568,5 +576,14 @@ func (h ManagementController) UploadFile(c *gin.Context) {
 	}
 
 	defer request.File.Close()
+
+	if err := h.app.UploadFile(c, params.UserID, params.Device.ID,
+		*request.Path); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": errors.Wrap(err, "bad request").Error(),
+		})
+		return
+	}
+
 	h.uploadFileResponse(c, params, request)
 }
