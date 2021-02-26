@@ -50,11 +50,11 @@ type fileTransferParams struct {
 const (
 	hdrContentType            = "Content-Type"
 	hdrContentDisposition     = "Content-Disposition"
-	hdrMenderFileTransferPath = "X-Mender-Path"
-	hdrMenderFileTransferUID  = "X-Mender-UID"
-	hdrMenderFileTransferGID  = "X-Mender-GID"
-	hdrMenderFileTransferMode = "X-Mender-Mode"
-	hdrMenderFileTransferSize = "X-Mender-Size"
+	hdrMenderFileTransferPath = "X-Men-File-Path"
+	hdrMenderFileTransferUID  = "X-Men-File-UID"
+	hdrMenderFileTransferGID  = "X-Men-File-GID"
+	hdrMenderFileTransferMode = "X-Men-File-Mode"
+	hdrMenderFileTransferSize = "X-Men-File-Size"
 )
 
 const (
