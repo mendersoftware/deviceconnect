@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/ws"
@@ -76,6 +77,10 @@ func TestManagementDownloadFile(t *testing.T) {
 		DeviceID string
 		Body     []byte
 		Identity *identity.Identity
+
+		RBACGroups  string
+		RBACAllowed bool
+		RBACError   error
 
 		GetDevice          *model.Device
 		GetDeviceError     error
@@ -600,6 +605,46 @@ func TestManagementDownloadFile(t *testing.T) {
 			HTTPStatus: http.StatusInternalServerError,
 		},
 		{
+			Name:     "ko, RBAC check failure",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			RBACGroups: "group1,group",
+			RBACError:  errors.New("error"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			Name:     "ko, RBAC forbidden",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			RBACGroups:  "group1,group",
+			RBACAllowed: false,
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusForbidden,
+		},
+		{
 			Name:     "ko, bad request, relative path",
 			DeviceID: "1234567890",
 			Identity: &identity.Identity{
@@ -747,6 +792,18 @@ func TestManagementDownloadFile(t *testing.T) {
 				t.FailNow()
 			}
 
+			if tc.RBACGroups != "" {
+				req.Header.Set(model.RBACHeaderRemoteTerminalGroups, tc.RBACGroups)
+				app.On("RemoteTerminalAllowed",
+					mock.MatchedBy(func(ctx context.Context) bool {
+						return true
+					}),
+					tc.Identity.Tenant,
+					tc.DeviceID,
+					strings.Split(tc.RBACGroups, ","),
+				).Return(tc.RBACAllowed, tc.RBACError)
+			}
+
 			if tc.Identity != nil {
 				jwt := GenerateJWT(*tc.Identity)
 				req.Header.Set(headerAuthorization, "Bearer "+jwt)
@@ -793,6 +850,10 @@ func TestManagementUploadFile(t *testing.T) {
 		Body     map[string][]string
 		File     []byte
 		Identity *identity.Identity
+
+		RBACGroups  string
+		RBACAllowed bool
+		RBACError   error
 
 		GetDevice        *model.Device
 		GetDeviceError   error
@@ -994,6 +1055,58 @@ func TestManagementUploadFile(t *testing.T) {
 			AppUploadFile: true,
 
 			HTTPStatus: http.StatusRequestTimeout,
+		},
+		{
+			Name:     "ko, RBAC check failure",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			RBACGroups: "group1,group",
+			RBACError:  errors.New("error"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			Name:     "ko, RBAC forbidden",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			RBACGroups:  "group1,group",
+			RBACAllowed: false,
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusForbidden,
 		},
 		{
 			Name:     "ko, failed to submit audit log",
@@ -1238,6 +1351,18 @@ func TestManagementUploadFile(t *testing.T) {
 				req.Header.Add("Content-Type", "multipart/form-data; boundary=\"boundary\"")
 			}
 
+			if tc.RBACGroups != "" {
+				req.Header.Set(model.RBACHeaderRemoteTerminalGroups, tc.RBACGroups)
+				app.On("RemoteTerminalAllowed",
+					mock.MatchedBy(func(ctx context.Context) bool {
+						return true
+					}),
+					tc.Identity.Tenant,
+					tc.DeviceID,
+					strings.Split(tc.RBACGroups, ","),
+				).Return(tc.RBACAllowed, tc.RBACError)
+			}
+
 			if tc.Identity != nil {
 				jwt := GenerateJWT(*tc.Identity)
 				req.Header.Set(headerAuthorization, "Bearer "+jwt)
@@ -1256,6 +1381,74 @@ func TestManagementUploadFile(t *testing.T) {
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 			assert.Equal(t, tc.HTTPStatus, w.Code)
+		})
+	}
+}
+
+func TestFileTransferAllowed(t *testing.T) {
+	testCases := []struct {
+		Name string
+
+		Groups   string
+		TenantID string
+		DeviceID string
+
+		Allowed bool
+		Error   error
+
+		ReturnAllowed bool
+		ReturnError   error
+	}{
+		{
+			Name: "no group restrictions",
+
+			ReturnAllowed: true,
+		},
+		{
+			Name:   "group restrictions",
+			Groups: "group1,group2",
+
+			Allowed: true,
+
+			ReturnAllowed: true,
+		},
+		{
+			Name:   "group restrictions",
+			Groups: "group1,group2",
+
+			Allowed: false,
+			Error:   errors.New("generic error"),
+
+			ReturnAllowed: false,
+			ReturnError:   errors.New("generic error"),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			ctx := &gin.Context{}
+			ctx.Request, _ = http.NewRequest("POST", "/", nil)
+			ctx.Request.Header.Set(model.RBACHeaderRemoteTerminalGroups, tc.Groups)
+
+			app := &app_mocks.App{}
+			defer app.AssertExpectations(t)
+
+			if tc.Groups != "" {
+				app.On("RemoteTerminalAllowed",
+					ctx,
+					tc.TenantID,
+					tc.DeviceID,
+					strings.Split(tc.Groups, ","),
+				).Return(tc.Allowed, tc.Error)
+			}
+
+			ctrl := NewManagementController(app, nil)
+			allowed, err := ctrl.fileTransferAllowed(ctx, tc.TenantID, tc.DeviceID)
+			assert.Equal(t, tc.ReturnAllowed, allowed)
+			if tc.ReturnError == nil {
+				assert.NoError(t, err)
+			} else {
+				assert.EqualError(t, err, tc.ReturnError.Error())
+			}
 		})
 	}
 }
