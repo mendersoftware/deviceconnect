@@ -127,6 +127,8 @@ func (h ManagementController) publishFileTransferProtoMessage(sessionID, userID,
 	var msgBody []byte
 	if msgType == wsft.MessageTypeChunk {
 		msgBody = body.([]byte)
+	} else if msgType == wsft.MessageTypeACK {
+		msgBody = nil
 	} else {
 		var err error
 		msgBody, err = msgpack.Marshal(body)
@@ -289,11 +291,6 @@ func (h ManagementController) downloadFileResponse(c *gin.Context, params *fileT
 				return
 			}
 
-			// check the message belongs to our session
-			if msg.Header.SessionID != params.SessionID {
-				continue
-			}
-
 			// process incoming messages from the device by type
 			switch msg.Header.MsgType {
 
@@ -331,6 +328,13 @@ func (h ManagementController) downloadFileResponse(c *gin.Context, params *fileT
 				}
 				_, err := c.Writer.Write(msg.Body)
 				if err != nil {
+					return
+				}
+
+				// ack the chunk
+				if err := h.publishFileTransferProtoMessage(params.SessionID,
+					params.UserID, deviceTopic, wsft.MessageTypeACK,
+					nil, 0); err != nil {
 					return
 				}
 			}
@@ -443,45 +447,33 @@ func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTra
 	}
 
 	// receive the message from the device
-	for {
-		canContinue := false
-		select {
-		case wsMessage := <-msgChan:
-			msg, msgBody, err := h.decodeFileTransferProtoMessage(wsMessage.Data)
-			if err != nil {
-				responseError = err
-				return
-			}
-
-			// check the message belongs to our session
-			if msg.Header.SessionID != params.SessionID {
-				continue
-			}
-
-			// process incoming messages from the device by type
-			switch msg.Header.MsgType {
-
-			// error message, stop here
-			case wsft.MessageTypeError:
-				errorMsg := msgBody.(*wsft.Error)
-				errorStatusCode = http.StatusBadRequest
-				responseError = errors.New(*errorMsg.Error)
-				return
-
-			// you can continue the upload
-			case wsft.MessageTypeContinue:
-				canContinue = true
-			}
-
-		// no message after timeout expired, stop here
-		case <-time.After(fileTransferTimeout):
-			errorStatusCode = http.StatusRequestTimeout
-			responseError = errFileTranserTimeout
+	select {
+	case wsMessage := <-msgChan:
+		msg, msgBody, err := h.decodeFileTransferProtoMessage(wsMessage.Data)
+		if err != nil {
+			responseError = err
 			return
 		}
-		if canContinue {
-			break
+
+		// process incoming messages from the device by type
+		switch msg.Header.MsgType {
+
+		// error message, stop here
+		case wsft.MessageTypeError:
+			errorMsg := msgBody.(*wsft.Error)
+			errorStatusCode = http.StatusBadRequest
+			responseError = errors.New(*errorMsg.Error)
+			return
+
+		// you can continue the upload
+		case wsft.MessageTypeACK:
 		}
+
+	// no message after timeout expired, stop here
+	case <-time.After(fileTransferTimeout):
+		errorStatusCode = http.StatusRequestTimeout
+		responseError = errFileTranserTimeout
+		return
 	}
 
 	data := make([]byte, fileTransferBufferSize)
@@ -502,6 +494,38 @@ func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTra
 			responseError = err
 			return
 		}
+
+		// receive the ack message from the device
+		select {
+		case wsMessage := <-msgChan:
+			msg, msgBody, err := h.decodeFileTransferProtoMessage(wsMessage.Data)
+			if err != nil {
+				responseError = err
+				return
+			}
+
+			// process incoming messages from the device by type
+			switch msg.Header.MsgType {
+
+			// error message, stop here
+			case wsft.MessageTypeError:
+				errorMsg := msgBody.(*wsft.Error)
+				errorStatusCode = http.StatusBadRequest
+				responseError = errors.New(*errorMsg.Error)
+				return
+
+			// you can continue the upload
+			case wsft.MessageTypeACK:
+			}
+
+		// no message after timeout expired, stop here
+		case <-time.After(fileTransferTimeout):
+			errorStatusCode = http.StatusRequestTimeout
+			responseError = errFileTranserTimeout
+			return
+		}
+
+		// update the offset
 		offset += int64(n)
 	}
 
@@ -562,6 +586,10 @@ func (h ManagementController) parseUploadFileRequest(c *gin.Context) (*model.Upl
 			part.Close()
 		case fieldUploadFile:
 			request.File = part
+		}
+		// file is the last part we can process, in order to avoid loading it in memory
+		if request.File != nil {
+			break
 		}
 	}
 

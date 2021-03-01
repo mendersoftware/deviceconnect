@@ -213,6 +213,8 @@ github.com/mattn/go-isatty v0.0.12/go.mod h1:cbi8OIDigv2wuxKPP5vlRcQ1OAZbq2CE4Ky
 github.com/matttproud/golang_protobuf_extensions v1.0.1/go.mod h1:D8He9yQNgCq6Z5Ld7szi9bcBfOoFv/3dc6xSMkL2PC0=
 github.com/mendersoftware/go-lib-micro v0.0.0-20210219095151-13466b5958fb h1:TxxeigPztPVCMiKstl20acFSxcL06C11ktNEW6xJFbU=
 github.com/mendersoftware/go-lib-micro v0.0.0-20210219095151-13466b5958fb/go.mod h1:XeXkX/pfX7FOwG/y+NIWBcbtmhnN/sAzuuq0RZ6GcPQ=
+github.com/mendersoftware/go-lib-micro v0.0.0-20210301092156-349d3ae1e399 h1:RlM224ofXg2Wh8jD2z93m3yI/eqRyrnwISWSOgxcGls=
+github.com/mendersoftware/go-lib-micro v0.0.0-20210301092156-349d3ae1e399/go.mod h1:XeXkX/pfX7FOwG/y+NIWBcbtmhnN/sAzuuq0RZ6GcPQ=
 github.com/miekg/dns v1.0.14/go.mod h1:W1PPwlIAgtquWBMBEV9nkV9Cazfe8ScdGz/Lj7v3Nrg=
 github.com/mitchellh/cli v1.0.0/go.mod h1:hNIlj7HEI86fIcpObd7a0FcrxTWetlwJDGcceTlRvqc=
 github.com/mitchellh/go-homedir v1.0.0/go.mod h1:SfyaCUpYCn1Vlf4IUYiD9fPX4A5wJrkLzIz1N1q0pr0=
