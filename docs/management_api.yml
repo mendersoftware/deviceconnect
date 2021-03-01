@@ -40,7 +40,8 @@ paths:
           required: true
           schema:
             type: string
-          description: ID for the target device.
+            fomat: uuid
+          description: ID of the device.
       responses:
         200:
           description: Successful response.
@@ -73,7 +74,8 @@ paths:
           required: true
           schema:
             type: string
-          description: ID for the target device.
+            fomat: uuid
+          description: ID of the device.
       responses:
         202:
           description: Accepted
@@ -108,7 +110,8 @@ paths:
           required: true
           schema:
             type: string
-          description: ID for the target device.
+            fomat: uuid
+          description: ID of the device.
         - in: header
           name: Connection
           schema:
@@ -166,7 +169,8 @@ paths:
           required: true
           schema:
             type: string
-          description: ID for the target device.
+            fomat: uuid
+          description: ID of the device.
       requestBody:
         content:
           'application/json':
@@ -175,30 +179,30 @@ paths:
               properties:
                 path:
                   type: string
-                  description: Path of the file on the target device.          
+                  description: Path of the file on the device.          
               required:
                 - path
       responses:
         200:
-          description: The content of the file will be returned as attachment
+          description: The content of the file will be returned in the response body
           headers:
-            X-Men-File-Path:
+            X-MEN-File-Path:
               schema:
                 type: string
               description: The path of the file on the device
-            X-Men-File-UID:
+            X-MEN-File-UID:
               schema:
                 type: integer
               description: The numerical UID of the file on the device
-            X-Men-File-GID:
+            X-MEN-File-GID:
               schema:
                 type: integer
               description: The numerical GID of the file on the device
-            X-Men-File-Mode:
+            X-MEN-File-Mode:
               schema:
                 type: string
               description: The octal representation of the mode of the file on the device
-            X-Men-File-Size:
+            X-MEN-File-Size:
               schema:
                 type: integer
               description: The size of the file on the device
@@ -238,7 +242,8 @@ paths:
           required: true
           schema:
             type: string
-          description: ID for the target device.
+            fomat: uuid
+          description: ID of the device.
       responses:
         202:
           description: Accepted
@@ -338,7 +343,8 @@ paths:
           required: true
           schema:
             type: string
-          description: ID for the target device.
+            fomat: uuid
+          description: ID of the device.
       requestBody:
         content:
           multipart/form-data:
@@ -413,7 +419,7 @@ components:
       properties:
         path:
           type: string
-          description: The path of the file on the device
+          description: The path of the file on the device to download
         uid:
           type: integer
           description: The numerical UID of the file on the device
