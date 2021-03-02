@@ -262,6 +262,12 @@ func TestManagementConnect(t *testing.T) {
 				}),
 				tc.SessionID,
 			).Return(nil)
+			app.On("GetControlRecorder",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				}),
+				tc.SessionID,
+			).Return(nil)
 			app.On("GetRecorder",
 				mock.MatchedBy(func(_ context.Context) bool {
 					return true

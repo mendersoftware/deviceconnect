@@ -15,10 +15,7 @@
 package app
 
 import (
-	"github.com/mendersoftware/go-lib-micro/ws"
-	"github.com/mendersoftware/go-lib-micro/ws/shell"
 	"github.com/nats-io/nats.go"
-	"github.com/vmihailenco/msgpack/v5"
 	"time"
 )
 
@@ -41,28 +38,13 @@ func NewPlayback(sessionID string, deviceChan chan *nats.Msg, sleepMilliseconds 
 }
 
 func (r *Playback) Write(d []byte) (n int, err error) {
-	msg := ws.ProtoMsg{
-		Header: ws.ProtoHdr{
-			Proto:     ws.ProtoTypeShell,
-			MsgType:   shell.MessageTypeShellCommand,
-			SessionID: r.sessionID,
-			Properties: map[string]interface{}{
-				"status": shell.NormalMessage,
-			},
-		},
-		Body: nil,
-	}
-
+	//now playback gets the msgpacked ProtoMsgs
 	m := nats.Msg{
 		Subject: "playback",
 		Reply:   "no-reply",
-		Data:    nil,
+		Data:    d,
 		Sub:     nil,
 	}
-
-	msg.Body = d
-	data, _ := msgpack.Marshal(msg)
-	m.Data = data
 	time.Sleep(time.Duration(r.sleepMilliseconds) * time.Millisecond)
 	r.deviceChan <- &m
 	return len(d), nil

@@ -19,6 +19,9 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/base64"
+	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/shell"
+	"github.com/vmihailenco/msgpack/v5"
 	"testing"
 	"time"
 
@@ -447,9 +450,11 @@ func TestGetSessionRecording(t *testing.T) {
 	testCases := []struct {
 		Name string
 
-		Ctx           context.Context
-		SessionID     string
-		RecordingData string
+		Ctx            context.Context
+		SessionID      string
+		RecordingData  string
+		ControlData    string
+		ExpectedDelays []uint16
 
 		Error error
 	}{
@@ -465,6 +470,27 @@ func TestGetSessionRecording(t *testing.T) {
 			SessionID:     "00000000-0000-0000-0000-000000000000",
 			RecordingData: "H4sIAAAAAAAA/5TNscrDMAwE4P2H/wm83NjJtSTbsdyta8eMWZNCKWlomvenONlMKOQGG8RxH5EmjxYAWweArAAimdn6iHF49cOMOuZ0Nd1oOtGL19F0t/+/7URc1uZpWrYil0kHqFBoIsCBJQLEFFONwmcSm+Q4qknDLqrJ+4I2ygVl5RplytxYdYfRMhB30DWu+tqVWxvbm73a4PD8TPflMb/7M/1EvwAAAP//AQAA//8CyiAFpQEAAA==",
 		},
+		{
+			Name: "ok with control data",
+
+			Ctx: identity.WithContext(
+				context.Background(),
+				&identity.Identity{
+					Tenant: "000000000000000000000000",
+				},
+			),
+			SessionID:     "00000000-0000-0000-0000-200000000002",
+			RecordingData: "H4sIAAAAAAAA/7RRvWr0MBAsPyPQE7iZwu2HZFuExGpS5SVMCvmsIBHLEtJecnn7IB8hpEpzgd1lf2aZgelgTy6CnC/wBeQszrsnkC1UUE52N9lHzn4FdBCL38ViiuOsfZY6+cdsSlpszh/JTxCrISOS/9fOstfjEH4C2lnKMF1vKnyB0R17lM3ahHtd1aJBE3WDBvGVs5o3p9sK/ptthaCQOFvz++UIQt8jx0jXouTDHZ7sgmFELyel0M4ytPMotRpC/a3zH8g7LHPmzeLlvHP23d2e6eKpesvZJwAAAP//AQAA//89LDUxKQIAAA==",
+			ControlData:   "H4sIAAAAAAAA/2JiYmBguM7JdJCBgaFRnkmMkYHhJxuTDCMDg78A01ZGBgYdOaZdjAwMNzgBAAAA//8BAAD//wLpMwwqAAAA",
+			ExpectedDelays: []uint16{
+				2519,
+				8065,
+				1785,
+				4175,
+				7724,
+				2520,
+			},
+		},
 	}
 
 	for i := range testCases {
@@ -476,14 +502,28 @@ func TestGetSessionRecording(t *testing.T) {
 			database := db.Client().Database(mstore.DbNameForTenant(
 				"000000000000000000000000", DbName,
 			))
-			collSess := database.Collection(RecordingsCollectionName)
-			d, err := base64.StdEncoding.DecodeString(tc.RecordingData)
+			collRecordings := database.Collection(RecordingsCollectionName)
+			collControl := database.Collection(ControlCollectionName)
+			rec, err := base64.StdEncoding.DecodeString(tc.RecordingData)
 			assert.NoError(t, err)
 
-			_, err = collSess.InsertOne(nil, &model.Recording{
+			if len(tc.ControlData) > 0 {
+				ctrl, err := base64.StdEncoding.DecodeString(tc.ControlData)
+				assert.NoError(t, err)
+				_, err = collControl.InsertOne(nil, &model.ControlData{
+					ID:        uuid.New(),
+					SessionID: tc.SessionID,
+					Control:   ctrl,
+					CreatedTs: time.Now().UTC(),
+					ExpireTs:  time.Now().UTC(),
+				})
+				assert.NoError(t, err)
+			}
+
+			_, err = collRecordings.InsertOne(nil, &model.Recording{
 				ID:        uuid.New(),
 				SessionID: tc.SessionID,
-				Recording: d,
+				Recording: rec,
 				CreatedTs: time.Now().UTC(),
 				ExpireTs:  time.Now().UTC(),
 			})
@@ -491,16 +531,47 @@ func TestGetSessionRecording(t *testing.T) {
 
 			readRecordingChannel := make(chan []byte, 1)
 			sessionWriter := &sessionWriterTest{c: readRecordingChannel}
-			go ds.GetSessionRecording(tc.Ctx, tc.SessionID, sessionWriter)
+			go ds.WriteSessionRecords(tc.Ctx, tc.SessionID, sessionWriter)
 
-			if tc.Error != nil {
+			if len(tc.ControlData) > 0 {
+				var messages []ws.ProtoMsg
+				stop := false
+				for !stop {
+					select {
+					case recording := <-sessionWriter.c:
+						var msg ws.ProtoMsg
+						e := msgpack.Unmarshal(recording, &msg)
+						assert.NoError(t, e)
+						messages = append(messages, msg)
+					case <-time.After(time.Second):
+						stop = true
+					}
+				}
+				var recording []byte
+				var delays []uint16
+				for _, msg := range messages {
+					if msg.Header.Proto == ws.ProtoTypeShell && msg.Header.MsgType == shell.MessageTypeShellCommand {
+						recording = append(recording, msg.Body...)
+						t.Logf("got: %+v", msg)
+					}
+					if msg.Header.Proto == ws.ProtoTypeShell && msg.Header.MsgType == model.DelayMessageName {
+						delays = append(delays, msg.Header.Properties[model.DelayMessageValueField].(uint16))
+					}
+				}
+				assert.Equal(t, tc.ExpectedDelays, delays)
 			} else {
 				assert.NoError(t, err)
 				select {
 				case recording := <-sessionWriter.c:
+					var msg ws.ProtoMsg
+					e := msgpack.Unmarshal(recording, &msg)
+					assert.NoError(t, e)
+					//now, the WriteSessionRecords writes do the io.Writer passed in 3rd arg
+					//the ws.ProtoMsg structs, which represent a stream of bytes as well as
+					//control messages in order of playback.
 					var buffer bytes.Buffer
 
-					_, e := buffer.Write(d)
+					_, e = buffer.Write(rec)
 					assert.NoError(t, e)
 					gzipReader, e := gzip.NewReader(&buffer)
 					assert.NoError(t, e)
@@ -509,7 +580,9 @@ func TestGetSessionRecording(t *testing.T) {
 					n, e := gzipReader.Read(output)
 					assert.NoError(t, e)
 					gzipReader.Close()
-					assert.Equal(t, recording, output[:n])
+					if msg.Header.Proto == ws.ProtoTypeShell && msg.Header.MsgType == shell.MessageTypeShellCommand {
+						assert.Equal(t, output[:n], msg.Body)
+					}
 				case <-time.After(time.Second):
 					t.Fatal("cannot read the recording data.")
 					t.Fail()

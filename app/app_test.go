@@ -664,7 +664,7 @@ func TestGetSessionRecording(t *testing.T) {
 			sessionId := "00000000-0000-0000-0000-000000000000"
 			writer := ioutil.Discard
 			store := &store_mocks.DataStore{}
-			store.On("GetSessionRecording",
+			store.On("WriteSessionRecords",
 				mock.MatchedBy(func(ctx context.Context) bool {
 					return true
 				}),
