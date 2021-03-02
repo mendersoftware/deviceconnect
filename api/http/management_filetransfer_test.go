@@ -58,14 +58,17 @@ func TestManagementDownloadFile(t *testing.T) {
 	originalNewFileTransferSessionID := newFileTransferSessionID
 	originalFileTransferTimeout := fileTransferTimeout
 	originalFileTransferPingInterval := fileTransferPingInterval
+	originalAckSlidingWindowSend := ackSlidingWindowSend
 	defer func() {
 		newFileTransferSessionID = originalNewFileTransferSessionID
 		fileTransferTimeout = originalFileTransferTimeout
 		fileTransferPingInterval = originalFileTransferPingInterval
+		ackSlidingWindowSend = originalAckSlidingWindowSend
 	}()
 
 	fileTransferTimeout = 2 * time.Second
 	fileTransferPingInterval = 500 * time.Millisecond
+	ackSlidingWindowSend = 1
 
 	sessionID, _ := uuid.NewRandom()
 	newFileTransferSessionID = func() (uuid.UUID, error) {
@@ -135,6 +138,9 @@ func TestManagementDownloadFile(t *testing.T) {
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(0),
+								},
 							},
 							Body: []byte("12345"),
 						}
@@ -148,6 +154,9 @@ func TestManagementDownloadFile(t *testing.T) {
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(5),
+								},
 							},
 							Body: nil,
 						}
@@ -231,6 +240,9 @@ func TestManagementDownloadFile(t *testing.T) {
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(0),
+								},
 							},
 							Body: []byte("12345"),
 						}
@@ -244,6 +256,9 @@ func TestManagementDownloadFile(t *testing.T) {
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(5),
+								},
 							},
 							Body: []byte("67890"),
 						}
@@ -409,6 +424,9 @@ func TestManagementDownloadFile(t *testing.T) {
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(0),
+								},
 							},
 							Body: []byte("12345"),
 						}
@@ -558,8 +576,113 @@ func TestManagementDownloadFile(t *testing.T) {
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(0),
+								},
 							},
 							Body: []byte("12345"),
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypeStat {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeGet {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeACK {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppDownloadFile: true,
+
+			HTTPStatus: http.StatusOK,
+			HTTPBody:   []byte("12345"),
+		},
+		{
+			Name:     "ko, wrong offset in chunks",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// file info response
+						body := wsft.FileInfo{
+							Path: string2pointer("/absolute/path"),
+							Size: int642pointer(10),
+						}
+						bodyData, err := msgpack.Marshal(body)
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeFileInfo,
+								SessionID: sessionID.String(),
+							},
+							Body: bodyData,
+						}
+
+						data, err := msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// first chunk
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeChunk,
+								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(0),
+								},
+							},
+							Body: []byte("12345"),
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// second chunk
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeChunk,
+								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(100),
+								},
+							},
+							Body: []byte("67890"),
 						}
 
 						data, err = msgpack.Marshal(msg)
@@ -847,12 +970,15 @@ func TestManagementDownloadFile(t *testing.T) {
 func TestManagementUploadFile(t *testing.T) {
 	originalNewFileTransferSessionID := newFileTransferSessionID
 	originalFileTransferTimeout := fileTransferTimeout
+	originalAckSlidingWindowRecv := ackSlidingWindowRecv
 	defer func() {
 		newFileTransferSessionID = originalNewFileTransferSessionID
 		fileTransferTimeout = originalFileTransferTimeout
+		ackSlidingWindowRecv = originalAckSlidingWindowRecv
 	}()
 
 	fileTransferTimeout = 2 * time.Second
+	ackSlidingWindowRecv = 0
 
 	sessionID, _ := uuid.NewRandom()
 	newFileTransferSessionID = func() (uuid.UUID, error) {
