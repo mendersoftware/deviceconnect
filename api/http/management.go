@@ -330,6 +330,32 @@ func websocketPing(conn *websocket.Conn) bool {
 	return true
 }
 
+func writerFinalizer(conn *websocket.Conn, e *error, l *log.Logger) {
+	err := *e
+	if err != nil {
+		if !websocket.IsUnexpectedCloseError(errors.Cause(err)) {
+			errMsg := err.Error()
+			errBody := make([]byte, len(errMsg)+2)
+			binary.BigEndian.PutUint16(errBody,
+				websocket.CloseInternalServerErr)
+			copy(errBody[2:], errMsg)
+			errClose := conn.WriteControl(
+				websocket.CloseMessage,
+				errBody,
+				time.Now().Add(writeWait),
+			)
+			if errClose != nil {
+				err = errors.Wrapf(err,
+					"error sending websocket close frame: %s",
+					errClose.Error(),
+				)
+			}
+		}
+		l.Errorf("websocket closed with error: %s", err.Error())
+	}
+	conn.Close()
+}
+
 // websocketWriter is the go-routine responsible for the writing end of the
 // websocket. The routine forwards messages posted on the NATS session subject
 // and periodically pings the connection. If the connection times out or a
@@ -344,30 +370,7 @@ func (h ManagementController) websocketWriter(
 	controlRecorder io.Writer,
 ) (err error) {
 	l := log.FromContext(ctx)
-	defer func() {
-		if err != nil {
-			if !websocket.IsUnexpectedCloseError(errors.Cause(err)) {
-				errMsg := err.Error()
-				errBody := make([]byte, len(errMsg)+2)
-				binary.BigEndian.PutUint16(errBody,
-					websocket.CloseInternalServerErr)
-				copy(errBody[2:], errMsg)
-				errClose := conn.WriteControl(
-					websocket.CloseMessage,
-					errBody,
-					time.Now().Add(writeWait),
-				)
-				if errClose != nil {
-					err = errors.Wrapf(err,
-						"error sending websocket close frame: %s",
-						errClose.Error(),
-					)
-				}
-			}
-			l.Errorf("websocket closed with error: %s", err.Error())
-		}
-		conn.Close()
-	}()
+	defer writerFinalizer(conn, &err, l)
 
 	// handle the ping-pong connection health check
 	err = conn.SetReadDeadline(time.Now().Add(pongWait))
