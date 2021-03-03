@@ -550,18 +550,28 @@ func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTra
 	go h.uploadFileResponseHandleInboundMessages(c, msgChan, errorChan, &latestAckOffset,
 		latestAckOffsets)
 
+	h.uploadFileResponseWriter(c, params, request, errorChan, &latestAckOffset,
+		latestAckOffsets, &errorStatusCode, &responseError)
+}
+
+func (h ManagementController) uploadFileResponseWriter(c *gin.Context,
+	params *fileTransferParams, request *model.UploadFileRequest,
+	errorChan chan error, latestAckOffset *int64, latestAckOffsets chan int64,
+	errorStatusCode *int, responseError *error) {
+	deviceTopic := model.GetDeviceSubject(params.TenantID, params.Device.ID)
+
 	data := make([]byte, fileTransferBufferSize)
 	offset := int64(0)
 	for {
 		n, err := request.File.Read(data)
 		if err != nil && err != io.EOF {
-			responseError = err
+			*responseError = err
 			return
 		} else if n == 0 {
 			if err := h.publishFileTransferProtoMessage(params.SessionID,
 				params.UserID, deviceTopic, wsft.MessageTypeChunk, nil,
 				offset); err != nil {
-				responseError = err
+				*responseError = err
 				return
 			}
 			break
@@ -577,7 +587,7 @@ func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTra
 		if err := h.publishFileTransferProtoMessage(params.SessionID,
 			params.UserID, deviceTopic, wsft.MessageTypeChunk, data[0:n],
 			offset); err != nil {
-			responseError = err
+			*responseError = err
 			return
 		}
 
@@ -585,24 +595,24 @@ func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTra
 		offset += int64(n)
 
 		// wait for acks, in case the ack sliding window is over
-		if offset > latestAckOffset+int64(fileTransferBufferSize*ackSlidingWindowRecv) {
+		if offset > *latestAckOffset+int64(fileTransferBufferSize*ackSlidingWindowRecv) {
 			select {
 			case err := <-errorChan:
-				errorStatusCode = http.StatusBadRequest
-				responseError = err
+				*errorStatusCode = http.StatusBadRequest
+				*responseError = err
 				return
 			case <-latestAckOffsets:
 			case <-time.After(fileTransferTimeout):
-				errorStatusCode = http.StatusRequestTimeout
-				responseError = errFileTranserTimeout
+				*errorStatusCode = http.StatusRequestTimeout
+				*responseError = errFileTranserTimeout
 				return
 			}
 		} else {
 			// in case of error, report it
 			select {
 			case err := <-errorChan:
-				errorStatusCode = http.StatusBadRequest
-				responseError = err
+				*errorStatusCode = http.StatusBadRequest
+				*responseError = err
 				return
 			default:
 			}
