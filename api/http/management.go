@@ -425,7 +425,8 @@ Loop:
 				switch mr.Header.MsgType {
 				case shell.MessageTypeShellCommand:
 
-					if recordedBytes >= app.MessageSizeLimit || controlBytes >= app.MessageSizeLimit {
+					if recordedBytes >= app.MessageSizeLimit ||
+						controlBytes >= app.MessageSizeLimit {
 						sendLimitErrDevice(ctx, session, h.nats)
 						userErrMsg, err := prepLimitErrUser(ctx, session)
 						if err != nil {
@@ -436,46 +437,16 @@ Loop:
 						//override original message with shell error
 						forwardedMsg = userErrMsg
 					} else {
-						// session recording
-						b, e := recorderBuffered.Write(mr.Body)
-						if e != nil {
-							l.Errorf("session logging: "+
-								"recorderBuffered.Write"+
-								"(len=%d)=%d,%+v",
-								len(mr.Body), b, e)
-						}
-						recordedBytes += len(mr.Body)
-						session.BytesRecordedMutex.Lock()
-						session.BytesRecorded = recordedBytes
-						session.BytesRecordedMutex.Unlock()
-
-						// session control recording
-						timeNowUTC := time.Now().UTC().UnixNano()
-						keystrokeDelay := timeNowUTC - lastKeystrokeAt
-						if keystrokeDelay >= keyStrokeDelayRecordingThresholdNs {
-							if keystrokeDelay > keyStrokeMaxDelayRecording {
-								keystrokeDelay = keyStrokeMaxDelayRecording
-							}
-							controlMsg := app.Control{
-								Type:   app.DelayMessage,
-								Offset: recordedBytes,
-								DelayMs: uint16(float64(keystrokeDelay) *
-									0.000001),
-								TerminalHeight: 0,
-								TerminalWidth:  0,
-							}
-							n, _ := controlRecorderBuffered.Write(
-								controlMsg.MarshalBinary())
-							l.Debugf("saving control delay message: %+v/%d",
-								controlMsg, n)
-							controlBytes += n
-						}
-						lastKeystrokeAt = timeNowUTC
-						b, e = recorderBuffered.Write(mr.Body)
-						if e != nil {
-							l.Errorf("session logging: "+
-								"recorderBuffered.Write(len=%d)=%d,%+v",
-								len(mr.Body), b, e)
+						if err = recordSession(ctx,
+							mr,
+							recorderBuffered,
+							controlRecorderBuffered,
+							&recordedBytes,
+							&controlBytes,
+							&lastKeystrokeAt,
+							session,
+						); err != nil {
+							return err
 						}
 					}
 
@@ -503,6 +474,62 @@ Loop:
 		}
 	}
 	return err
+}
+
+func recordSession(ctx context.Context,
+	msg *ws.ProtoMsg,
+	recorder io.Writer,
+	recorderCtrl io.Writer,
+	recBytes *int,
+	ctrlBytes *int,
+	lastKeystrokeAt *int64,
+	session *model.Session) error {
+	l := log.FromContext(ctx)
+
+	b, e := recorder.Write(msg.Body)
+	if e != nil {
+		l.Errorf("session logging: "+
+			"recorderBuffered.Write"+
+			"(len=%d)=%d,%+v",
+			len(msg.Body), b, e)
+	}
+	(*recBytes) += len(msg.Body)
+	session.BytesRecordedMutex.Lock()
+	session.BytesRecorded = *recBytes
+	session.BytesRecordedMutex.Unlock()
+
+	timeNowUTC := time.Now().UTC().UnixNano()
+	keystrokeDelay := timeNowUTC - (*lastKeystrokeAt)
+
+	if keystrokeDelay >= keyStrokeDelayRecordingThresholdNs {
+		if keystrokeDelay > keyStrokeMaxDelayRecording {
+			keystrokeDelay = keyStrokeMaxDelayRecording
+		}
+
+		controlMsg := app.Control{
+			Type:   app.DelayMessage,
+			Offset: *recBytes,
+			DelayMs: uint16(float64(keystrokeDelay) *
+				0.000001),
+			TerminalHeight: 0,
+			TerminalWidth:  0,
+		}
+		n, _ := recorderCtrl.Write(
+			controlMsg.MarshalBinary())
+		l.Debugf("saving control delay message: %+v/%d",
+			controlMsg, n)
+		(*ctrlBytes) += n
+	}
+
+	(*lastKeystrokeAt) = timeNowUTC
+	b, e = recorder.Write(msg.Body)
+	if e != nil {
+		l.Errorf("session logging: "+
+			"recorder.Write(len=%d)=%d,%+v",
+			len(msg.Body), b, e)
+	}
+
+	return nil
 }
 
 // prepLimitErrUser preps a session limit exceeded error for the user (shell cmd + err status)
