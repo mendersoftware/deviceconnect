@@ -49,6 +49,7 @@ var (
 	ErrMissingUserAuthentication = errors.New(
 		"missing or non-user identity in the authorization headers",
 	)
+	ErrMsgSessionLimit = "session byte limit exceeded"
 
 	//The name of the field holding a number of milliseconds to sleep between
 	//the consecutive writes of session recording data. Note that it does not have
@@ -408,6 +409,8 @@ func (h ManagementController) websocketWriter(
 	lastKeystrokeAt := time.Now().UTC().UnixNano()
 Loop:
 	for {
+		var forwardedMsg []byte
+
 		select {
 		case msg := <-deviceChan:
 			mr := &ws.ProtoMsg{}
@@ -415,52 +418,67 @@ Loop:
 			if err != nil {
 				return err
 			}
+
+			forwardedMsg = msg.Data
+
 			if mr.Header.Proto == ws.ProtoTypeShell {
 				switch mr.Header.MsgType {
 				case shell.MessageTypeShellCommand:
-					timeNowUTC := time.Now().UTC().UnixNano()
-					keystrokeDelay := timeNowUTC - lastKeystrokeAt
-					if keystrokeDelay >= keyStrokeDelayRecordingThresholdNs {
-						if keystrokeDelay > keyStrokeMaxDelayRecording {
-							keystrokeDelay = keyStrokeMaxDelayRecording
+
+					if recordedBytes >= app.MessageSizeLimit || controlBytes >= app.MessageSizeLimit {
+						sendLimitErrDevice(ctx, session, h.nats)
+						userErrMsg, err := prepLimitErrUser(ctx, session)
+						if err != nil {
+							l.Errorf("session limit: " +
+								"failed to notify user")
 						}
-						controlMsg := app.Control{
-							Type:   app.DelayMessage,
-							Offset: recordedBytes,
-							DelayMs: uint16(float64(keystrokeDelay) *
-								0.000001),
-							TerminalHeight: 0,
-							TerminalWidth:  0,
+
+						//override original message with shell error
+						forwardedMsg = userErrMsg
+					} else {
+						// session recording
+						b, e := recorderBuffered.Write(mr.Body)
+						if e != nil {
+							l.Errorf("session logging: "+
+								"recorderBuffered.Write"+
+								"(len=%d)=%d,%+v",
+								len(mr.Body), b, e)
 						}
-						n, _ := controlRecorderBuffered.Write(
-							controlMsg.MarshalBinary())
-						l.Debugf("saving control delay message: %+v/%d",
-							controlMsg, n)
-						controlBytes += n
-						if controlBytes >= app.MessageSizeLimit {
-							l.Infof("closing session session_id=%s"+
-								"on control data limit reached.",
-								session.ID)
-							//see MEN-4448
-							break Loop
+						recordedBytes += len(mr.Body)
+						session.BytesRecordedMutex.Lock()
+						session.BytesRecorded = recordedBytes
+						session.BytesRecordedMutex.Unlock()
+
+						// session control recording
+						timeNowUTC := time.Now().UTC().UnixNano()
+						keystrokeDelay := timeNowUTC - lastKeystrokeAt
+						if keystrokeDelay >= keyStrokeDelayRecordingThresholdNs {
+							if keystrokeDelay > keyStrokeMaxDelayRecording {
+								keystrokeDelay = keyStrokeMaxDelayRecording
+							}
+							controlMsg := app.Control{
+								Type:   app.DelayMessage,
+								Offset: recordedBytes,
+								DelayMs: uint16(float64(keystrokeDelay) *
+									0.000001),
+								TerminalHeight: 0,
+								TerminalWidth:  0,
+							}
+							n, _ := controlRecorderBuffered.Write(
+								controlMsg.MarshalBinary())
+							l.Debugf("saving control delay message: %+v/%d",
+								controlMsg, n)
+							controlBytes += n
+						}
+						lastKeystrokeAt = timeNowUTC
+						b, e = recorderBuffered.Write(mr.Body)
+						if e != nil {
+							l.Errorf("session logging: "+
+								"recorderBuffered.Write(len=%d)=%d,%+v",
+								len(mr.Body), b, e)
 						}
 					}
-					lastKeystrokeAt = timeNowUTC
-					b, e := recorderBuffered.Write(mr.Body)
-					if e != nil {
-						l.Errorf("session logging: "+
-							"recorderBuffered.Write(len=%d)=%d,%+v",
-							len(mr.Body), b, e)
-					}
-					recordedBytes += len(mr.Body)
-					session.BytesRecordedMutex.Lock()
-					session.BytesRecorded = recordedBytes
-					session.BytesRecordedMutex.Unlock()
-					if recordedBytes >= app.MessageSizeLimit {
-						l.Infof("closing session on limit reached.")
-						//see https://tracker.mender.io/browse/MEN-4448
-						break Loop
-					}
+
 				case shell.MessageTypeStopShell:
 					l.Debugf("session logging: recorderBuffered.Flush()"+
 						" at %d on stop shell", recordedBytes)
@@ -468,7 +486,7 @@ Loop:
 				}
 			}
 
-			err = conn.WriteMessage(websocket.BinaryMessage, msg.Data)
+			err = conn.WriteMessage(websocket.BinaryMessage, forwardedMsg)
 			if err != nil {
 				l.Error(err)
 				break Loop
@@ -485,6 +503,67 @@ Loop:
 		}
 	}
 	return err
+}
+
+// prepLimitErrUser preps a session limit exceeded error for the user (shell cmd + err status)
+func prepLimitErrUser(ctx context.Context, session *model.Session) ([]byte, error) {
+	userErrMsg := ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:     ws.ProtoTypeShell,
+			MsgType:   shell.MessageTypeShellCommand,
+			SessionID: session.ID,
+			Properties: map[string]interface{}{
+				"status": shell.ErrorMessage,
+			},
+		},
+		Body: []byte(ErrMsgSessionLimit),
+	}
+
+	return msgpack.Marshal(userErrMsg)
+}
+
+// sendLimitErrDevice preps and sends
+// session limit exceeded error to device (stop shell + err status)
+// this is best effort, log and swallow errors
+func sendLimitErrDevice(ctx context.Context, session *model.Session, nats nats.Client) {
+	l := log.FromContext(ctx)
+
+	msg := ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:     ws.ProtoTypeShell,
+			MsgType:   shell.MessageTypeStopShell,
+			SessionID: session.ID,
+			Properties: map[string]interface{}{
+				"status":       shell.ErrorMessage,
+				PropertyUserID: session.UserID,
+			},
+		},
+		Body: []byte(ErrMsgSessionLimit),
+	}
+	data, err := msgpack.Marshal(msg)
+	if err != nil {
+		l.Errorf(
+			"session limit: "+
+				"failed to prep stop session"+
+				"%s message to device: %s, error %v",
+			session.ID,
+			session.DeviceID,
+			err,
+		)
+	}
+	err = nats.Publish(model.GetDeviceSubject(
+		session.TenantID, session.DeviceID),
+		data,
+	)
+	if err != nil {
+		l.Errorf(
+			"session limit: failed to send stop session"+
+				"%s message to device: %s, error %v",
+			session.ID,
+			session.DeviceID,
+			err,
+		)
+	}
 }
 
 // ConnectServeWS starts a websocket connection with the device

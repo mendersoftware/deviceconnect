@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -865,6 +866,164 @@ func TestManagementConnectFailures(t *testing.T) {
 				assert.Equal(t, tc.HTTPError.Error(), value)
 			}
 		})
+	}
+}
+
+func TestManagementSessionLimit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mapp := &app_mocks.App{}
+	natsClient := NewNATSTestClient(t)
+	router, _ := NewRouter(mapp, natsClient)
+
+	sid := "test_session_id"
+
+	identity := identity.Identity{
+		Subject: "00000000-0000-0000-0000-000000000000",
+		Tenant:  "000000000000000000000000",
+		IsUser:  true,
+		Plan:    "professional",
+	}
+	devid := "1"
+
+	headers := http.Header{}
+	headers.Set(headerAuthorization, "Bearer "+GenerateJWT(identity))
+
+	mapp.On("PrepareUserSession",
+		mock.MatchedBy(func(_ context.Context) bool {
+			return true
+		}),
+		mock.MatchedBy(func(sess *model.Session) bool {
+			sess.ID = sid
+			return true
+		}),
+	).Return(nil)
+	mapp.On("FreeUserSession",
+		mock.MatchedBy(func(_ context.Context) bool {
+			return true
+		}),
+		sid,
+	).Return(nil)
+	mapp.On("GetRecorder",
+		mock.MatchedBy(func(_ context.Context) bool {
+			return true
+		}),
+		sid,
+	).Return(ioutil.Discard)
+	mapp.On("GetControlRecorder",
+		mock.MatchedBy(func(_ context.Context) bool {
+			return true
+		}),
+		sid,
+	).Return(nil)
+
+	s := httptest.NewServer(router)
+	defer s.Close()
+
+	natsChan := make(chan *nats.Msg)
+	sub, _ := natsClient.ChanSubscribe(
+		model.GetDeviceSubject(
+			identity.Tenant,
+			devid,
+		), natsChan,
+	)
+	defer sub.Unsubscribe()
+
+	url := "ws" + strings.TrimPrefix(s.URL, "http")
+	url = url + strings.Replace(
+		APIURLManagementDeviceConnect, ":deviceId",
+		devid, 1,
+	)
+	conn, _, err := websocket.DefaultDialer.Dial(url, headers)
+	assert.NoError(t, err)
+
+	// MessageSizeLimit = 8 * 1024 * 1024
+	// chunk spamming every 1msec should saturate session in ~1sec
+	chunkSize := 8 * 1024
+	buf := make([]byte, chunkSize)
+
+	msg := ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:     ws.ProtoTypeShell,
+			MsgType:   shell.MessageTypeShellCommand,
+			SessionID: sid,
+			Properties: map[string]interface{}{
+				"status": shell.NormalMessage,
+			},
+		},
+		Body: buf,
+	}
+	b, _ := msgpack.Marshal(msg)
+
+	// device just spams us with chunks, as if we e.g. started 'top'
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				err = natsClient.Publish(
+					model.GetSessionSubject(identity.Tenant, sid),
+					b,
+				)
+				assert.NoError(t, err)
+				time.Sleep(1 * time.Millisecond)
+			}
+		}
+	}()
+
+	// receive shell data on user end
+	// expect limit will be exceed at the app limit (error shell message)
+	go func() {
+		readBytes := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				_, data, err := conn.ReadMessage()
+				assert.NoError(t, err)
+
+				var rMsg ws.ProtoMsg
+				err = msgpack.Unmarshal(data, &rMsg)
+				assert.NoError(t, err)
+
+				if readBytes < app.MessageSizeLimit {
+					assert.Equal(t, ws.ProtoTypeShell, rMsg.Header.Proto)
+					assert.Equal(t, shell.MessageTypeShellCommand, rMsg.Header.MsgType)
+					assert.Equal(t, sid, rMsg.Header.SessionID)
+					assert.Equal(t, int8(shell.NormalMessage), rMsg.Header.Properties["status"])
+
+					readBytes += len(rMsg.Body)
+				} else {
+					assert.Equal(t, ws.ProtoTypeShell, rMsg.Header.Proto)
+					assert.Equal(t, shell.MessageTypeShellCommand, rMsg.Header.MsgType)
+					assert.Equal(t, sid, rMsg.Header.SessionID)
+					assert.Equal(t, int8(shell.ErrorMessage), rMsg.Header.Properties["status"])
+					assert.Equal(t, "session byte limit exceeded", string(rMsg.Body))
+				}
+			}
+		}
+	}()
+
+	select {
+	case natsMsg := <-natsChan:
+		var rMsg ws.ProtoMsg
+		err = msgpack.Unmarshal(natsMsg.Data, &rMsg)
+		assert.NoError(t, err)
+		assert.Equal(t, ws.ProtoTypeShell, rMsg.Header.Proto)
+		assert.Equal(t, shell.MessageTypeStopShell, rMsg.Header.MsgType)
+		assert.Equal(t, sid, rMsg.Header.SessionID)
+		assert.Equal(t, identity.Subject, rMsg.Header.Properties["user_id"])
+		assert.Equal(t, int8(shell.ErrorMessage), rMsg.Header.Properties["status"])
+		assert.Equal(t, "session byte limit exceeded", string(rMsg.Body))
+		break
+	case <-time.After(time.Second * 5):
+		assert.Fail(t,
+			"api did not forward shell_stop to nats device subject",
+		)
+		break
 	}
 }
 
