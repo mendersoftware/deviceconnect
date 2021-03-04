@@ -734,7 +734,6 @@ func TestGetRecorder(t *testing.T) {
 			ctx := context.Background()
 			r := app.GetRecorder(ctx, sessionId)
 			assert.NotNil(t, r)
-			assert.Equal(t, store, r.store)
 		})
 	}
 }
