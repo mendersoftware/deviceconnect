@@ -433,27 +433,15 @@ Loop:
 						controlBytes >= app.MessageSizeLimit {
 						sessOverLimit = true
 
-						// attempt to clean up once
-						if !sessOverLimitHandled {
-							sendLimitErrDevice(ctx, session, h.nats)
-							userErrMsg, err := prepLimitErrUser(ctx, session)
-							if err != nil {
-								l.Errorf("session limit: " +
-									"failed to notify user")
-							}
+						errMsg := h.handleSessLimit(ctx,
+							session,
+							&sessOverLimitHandled,
+						)
 
-							//override original message with shell error
-							forwardedMsg = userErrMsg
-
-							err = h.app.FreeUserSession(ctx, session.ID)
-							if err != nil {
-								l.Warnf("failed to free session that went over limit: %s", err.Error())
-							}
-
-							sessOverLimitHandled = true
+						//override original message with shell error
+						if errMsg != nil {
+							forwardedMsg = errMsg
 						}
-						// we're not routing messages over limit which was handled
-						// (the shell error msg is the last one the user will see)
 					} else {
 						if err = recordSession(ctx,
 							mr,
@@ -494,6 +482,38 @@ Loop:
 		}
 	}
 	return err
+}
+
+func (h ManagementController) handleSessLimit(ctx context.Context,
+	session *model.Session,
+	handled *bool,
+) []byte {
+	l := log.FromContext(ctx)
+
+	// possible error return message (ws->user)
+	var retMsg []byte
+
+	// attempt to clean up once
+	if !(*handled) {
+		sendLimitErrDevice(ctx, session, h.nats)
+		userErrMsg, err := prepLimitErrUser(ctx, session)
+		if err != nil {
+			l.Errorf("session limit: " +
+				"failed to notify user")
+		}
+
+		retMsg = userErrMsg
+
+		err = h.app.FreeUserSession(ctx, session.ID)
+		if err != nil {
+			l.Warnf("failed to free session"+
+				"that went over limit: %s", err.Error())
+		}
+
+		*handled = true
+	}
+
+	return retMsg
 }
 
 func recordSession(ctx context.Context,
