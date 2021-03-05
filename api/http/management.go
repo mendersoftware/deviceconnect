@@ -406,6 +406,10 @@ func (h ManagementController) websocketWriter(
 	defer controlRecorderBuffered.Flush()
 	recordedBytes := 0
 	controlBytes := 0
+
+	sessOverLimit := false
+	sessOverLimitHandled := false
+
 	lastKeystrokeAt := time.Now().UTC().UnixNano()
 Loop:
 	for {
@@ -427,15 +431,29 @@ Loop:
 
 					if recordedBytes >= app.MessageSizeLimit ||
 						controlBytes >= app.MessageSizeLimit {
-						sendLimitErrDevice(ctx, session, h.nats)
-						userErrMsg, err := prepLimitErrUser(ctx, session)
-						if err != nil {
-							l.Errorf("session limit: " +
-								"failed to notify user")
-						}
+						sessOverLimit = true
 
-						//override original message with shell error
-						forwardedMsg = userErrMsg
+						// attempt to clean up once
+						if !sessOverLimitHandled {
+							sendLimitErrDevice(ctx, session, h.nats)
+							userErrMsg, err := prepLimitErrUser(ctx, session)
+							if err != nil {
+								l.Errorf("session limit: " +
+									"failed to notify user")
+							}
+
+							//override original message with shell error
+							forwardedMsg = userErrMsg
+
+							err = h.app.FreeUserSession(ctx, session.ID)
+							if err != nil {
+								l.Warnf("failed to free session that went over limit: %s", err.Error())
+							}
+
+							sessOverLimitHandled = true
+						}
+						// we're not routing messages over limit which was handled
+						// (the shell error msg is the last one the user will see)
 					} else {
 						if err = recordSession(ctx,
 							mr,
@@ -457,10 +475,12 @@ Loop:
 				}
 			}
 
-			err = conn.WriteMessage(websocket.BinaryMessage, forwardedMsg)
-			if err != nil {
-				l.Error(err)
-				break Loop
+			if !sessOverLimit {
+				err = conn.WriteMessage(websocket.BinaryMessage, forwardedMsg)
+				if err != nil {
+					l.Error(err)
+					break Loop
+				}
 			}
 		case <-ctx.Done():
 			break Loop
