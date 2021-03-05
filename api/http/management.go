@@ -522,12 +522,6 @@ func recordSession(ctx context.Context,
 	}
 
 	(*lastKeystrokeAt) = timeNowUTC
-	b, e = recorder.Write(msg.Body)
-	if e != nil {
-		l.Errorf("session logging: "+
-			"recorder.Write(len=%d)=%d,%+v",
-			len(msg.Body), b, e)
-	}
 
 	return nil
 }
