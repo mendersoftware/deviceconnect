@@ -332,7 +332,7 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /devices/{id}/upload:
-    post:
+    put:
       tags:
         - ManagementAPI
       operationId: Upload

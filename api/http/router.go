@@ -121,7 +121,7 @@ func NewRouter(
 	router.POST(APIURLManagementDeviceDownload, management.DownloadFile)
 	router.POST(APIURLManagementDeviceCheckUpdate, management.CheckUpdate)
 	router.POST(APIURLManagementDeviceSendInventory, management.SendInventory)
-	router.POST(APIURLManagementDeviceUpload, management.UploadFile)
+	router.PUT(APIURLManagementDeviceUpload, management.UploadFile)
 	router.GET(APIURLManagementPlayback, management.Playback)
 
 	return router, nil

@@ -1636,7 +1636,7 @@ func TestManagementUploadFile(t *testing.T) {
 			}
 
 			url := strings.Replace(APIURLManagementDeviceUpload, ":deviceId", tc.DeviceID, 1)
-			req, err := http.NewRequest(http.MethodPost, "http://localhost"+url, body)
+			req, err := http.NewRequest(http.MethodPut, "http://localhost"+url, body)
 			if !assert.NoError(t, err) {
 				t.FailNow()
 			}

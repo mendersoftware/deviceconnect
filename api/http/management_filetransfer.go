@@ -15,8 +15,6 @@
 package http
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -202,9 +200,11 @@ func (h ManagementController) decodeFileTransferProtoMessage(data []byte) (*ws.P
 			return nil, nil, errors.Wrap(err, errFileTranserUnmarshalling.Error())
 		}
 		return msg, msgBody, nil
+	case wsft.MessageTypeACK, wsft.MessageTypeChunk, ws.MessageTypePing, ws.MessageTypePong:
+		return msg, nil, nil
 	}
 
-	return msg, nil, nil
+	return nil, nil, errors.Errorf("unexpected message type '%s'", msg.Header.MsgType)
 }
 
 func writeHeaders(c *gin.Context, fileInfo *wsft.FileInfo) {
@@ -281,101 +281,123 @@ func (h ManagementController) downloadFileResponse(c *gin.Context, params *fileT
 	defer ticker.Stop()
 
 	// handle messages from the device
-	latestMessage := time.Now()
+	timeout := time.NewTimer(fileTransferTimeout)
 	latestOffset := int64(0)
 	numberOfChunks := 0
 	for {
-		ctx, cancel := context.WithDeadline(context.Background(),
-			latestMessage.Add(fileTransferTimeout))
-		defer cancel()
-
 		select {
 		case wsMessage := <-msgChan:
-			latestMessage = time.Now()
-			msg, msgBody, err := h.decodeFileTransferProtoMessage(wsMessage.Data)
-			if err != nil {
+			// reset the timeout ticket
+			timeout.Reset(fileTransferTimeout)
+			// process the message
+			err := h.downloadFileResponseProcessMessage(c, params, request,
+				wsMessage, deviceTopic, &latestOffset, &numberOfChunks,
+				&responseHeaderSent, ticker)
+			if err == io.EOF {
+				return
+			} else if err != nil {
 				responseError = err
 				return
 			}
-
-			// process incoming messages from the device by type
-			switch msg.Header.MsgType {
-
-			// error message, stop here
-			case wsft.MessageTypeError:
-				errorMsg := msgBody.(*wsft.Error)
-				if *errorMsg.MessageType == wsft.MessageTypeStat {
-					responseError = errors.Wrap(errors.New(*errorMsg.Error),
-						errFileTranserFailed.Error())
-				} else {
-					responseError = errors.New(*errorMsg.Error)
-				}
-				return
-
-			// file stat response, if okay, let's get the file
-			case wsft.MessageTypeFileInfo:
-				req := wsft.GetFile{
-					Path: request.Path,
-				}
-				if err := h.publishFileTransferProtoMessage(params.SessionID,
-					params.UserID, deviceTopic, wsft.MessageTypeGet,
-					req, 0); err != nil {
-					responseError = err
-					return
-				}
-
-				fileInfo := msgBody.(*wsft.FileInfo)
-				writeHeaders(c, fileInfo)
-				responseHeaderSent = true
-
-			// file data chunk
-			case wsft.MessageTypeChunk:
-				if msg.Body == nil {
-					if err := h.publishFileTransferProtoMessage(
-						params.SessionID, params.UserID, deviceTopic,
-						wsft.MessageTypeACK, nil,
-						latestOffset); err != nil {
-						return
-					}
-					return
-				}
-
-				// verify the offset property
-				propOffset, _ := msg.Header.Properties[PropertyOffset].(int64)
-				if propOffset != latestOffset {
-					responseError = errors.Wrap(errFileTranserFailed,
-						"wrong offset received")
-					return
-				}
-				latestOffset += int64(len(msg.Body))
-
-				_, err := c.Writer.Write(msg.Body)
-				if err != nil {
-					return
-				}
-
-				numberOfChunks++
-				if numberOfChunks >= ackSlidingWindowSend {
-					if err := h.publishFileTransferProtoMessage(
-						params.SessionID, params.UserID, deviceTopic,
-						wsft.MessageTypeACK, nil,
-						latestOffset); err != nil {
-						return
-					}
-					numberOfChunks = 0
-				}
-			}
-
 		// send a Ping message to keep the session alive
 		case <-ticker.C:
 			h.publishFileTransferPing(params.SessionID, deviceTopic)
 
 		// no message after timeout expired, stop here
-		case <-ctx.Done():
+		case <-timeout.C:
 			responseError = errFileTranserTimeout
 			return
 		}
 	}
+}
+
+func (h ManagementController) downloadFileResponseProcessMessage(c *gin.Context,
+	params *fileTransferParams, request *model.DownloadFileRequest, wsMessage *natsio.Msg,
+	deviceTopic string, latestOffset *int64, numberOfChunks *int, responseHeaderSent *bool,
+	ticker *time.Ticker) error {
+	msg, msgBody, err := h.decodeFileTransferProtoMessage(wsMessage.Data)
+	if err != nil {
+		return err
+	}
+
+	// process incoming messages from the device by type
+	switch msg.Header.MsgType {
+
+	// error message, stop here
+	case wsft.MessageTypeError:
+		errorMsg := msgBody.(*wsft.Error)
+		if *errorMsg.MessageType == wsft.MessageTypeStat {
+			return errors.Wrap(errors.New(*errorMsg.Error),
+				errFileTranserFailed.Error())
+		} else {
+			return errors.New(*errorMsg.Error)
+		}
+
+	// file stat response, if okay, let's get the file
+	case wsft.MessageTypeFileInfo:
+		req := wsft.GetFile{
+			Path: request.Path,
+		}
+		if err := h.publishFileTransferProtoMessage(params.SessionID,
+			params.UserID, deviceTopic, wsft.MessageTypeGet,
+			req, 0); err != nil {
+			return err
+		}
+
+		fileInfo := msgBody.(*wsft.FileInfo)
+		writeHeaders(c, fileInfo)
+		*responseHeaderSent = true
+
+	// file data chunk
+	case wsft.MessageTypeChunk:
+		if msg.Body == nil {
+			if err := h.publishFileTransferProtoMessage(
+				params.SessionID, params.UserID, deviceTopic,
+				wsft.MessageTypeACK, nil,
+				*latestOffset); err != nil {
+				return err
+			}
+			return io.EOF
+		}
+
+		// verify the offset property
+		propOffset, _ := msg.Header.Properties[PropertyOffset].(int64)
+		if propOffset != *latestOffset {
+			return errors.Wrap(errFileTranserFailed,
+				"wrong offset received")
+		}
+		*latestOffset += int64(len(msg.Body))
+
+		_, err := c.Writer.Write(msg.Body)
+		if err != nil {
+			return err
+		}
+
+		(*numberOfChunks)++
+		if *numberOfChunks >= ackSlidingWindowSend {
+			if err := h.publishFileTransferProtoMessage(
+				params.SessionID, params.UserID, deviceTopic,
+				wsft.MessageTypeACK, nil,
+				*latestOffset); err != nil {
+				return err
+			}
+			*numberOfChunks = 0
+		}
+
+	case ws.MessageTypePing:
+		if err := h.publishFileTransferProtoMessage(
+			params.SessionID, params.UserID, deviceTopic,
+			ws.MessageTypePong, nil,
+			-1); err != nil {
+			return err
+		}
+		fallthrough
+
+	case ws.MessageTypePong:
+		ticker.Reset(fileTransferPingInterval)
+	}
+
+	return nil
 }
 
 func (h ManagementController) DownloadFile(c *gin.Context) {
@@ -385,16 +407,8 @@ func (h ManagementController) DownloadFile(c *gin.Context) {
 		return
 	}
 
-	rawData, err := c.GetRawData()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "failed to get the request body",
-		})
-		return
-	}
-
 	request := &model.DownloadFileRequest{}
-	if err = json.Unmarshal(rawData, request); err != nil {
+	if err := c.ShouldBindJSON(request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": errors.Wrap(err, "invalid request body").Error(),
 		})
@@ -560,6 +574,7 @@ func (h ManagementController) uploadFileResponseWriter(c *gin.Context,
 	errorStatusCode *int, responseError *error) {
 	deviceTopic := model.GetDeviceSubject(params.TenantID, params.Device.ID)
 
+	timeout := time.NewTimer(fileTransferTimeout)
 	data := make([]byte, fileTransferBufferSize)
 	offset := int64(0)
 	for {
@@ -596,13 +611,14 @@ func (h ManagementController) uploadFileResponseWriter(c *gin.Context,
 
 		// wait for acks, in case the ack sliding window is over
 		if offset > *latestAckOffset+int64(fileTransferBufferSize*ackSlidingWindowRecv) {
+			timeout.Reset(fileTransferTimeout)
 			select {
 			case err := <-errorChan:
 				*errorStatusCode = http.StatusBadRequest
 				*responseError = err
 				return
 			case <-latestAckOffsets:
-			case <-time.After(fileTransferTimeout):
+			case <-timeout.C:
 				*errorStatusCode = http.StatusRequestTimeout
 				*responseError = errFileTranserTimeout
 				return
@@ -667,7 +683,7 @@ func (h ManagementController) parseUploadFileRequest(c *gin.Context) (*model.Upl
 				nGID := uint32(v)
 				request.GID = &nGID
 			case fieldUploadMode:
-				v, err := strconv.Atoi(string(data[:n]))
+				v, err := strconv.ParseUint(string(data[:n]), 8, 32)
 				if err != nil {
 					return nil, err
 				}
