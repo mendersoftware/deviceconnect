@@ -101,7 +101,7 @@ func (h InternalController) sendMenderCommand(c *gin.Context, msgType string) {
 		return
 	} else if device.Status != model.DeviceStatusConnected {
 		c.JSON(http.StatusConflict, gin.H{
-			"error": "device not connected",
+			"error": app.ErrDeviceNotConnected,
 		})
 		return
 	}

@@ -43,6 +43,20 @@ func (_m *App) DeleteDevice(ctx context.Context, tenantID string, deviceID strin
 	return r0
 }
 
+// DownloadFile provides a mock function with given fields: ctx, userID, deviceID, path
+func (_m *App) DownloadFile(ctx context.Context, userID string, deviceID string, path string) error {
+	ret := _m.Called(ctx, userID, deviceID, path)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
+		r0 = rf(ctx, userID, deviceID, path)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // FreeUserSession provides a mock function with given fields: ctx, sessionID
 func (_m *App) FreeUserSession(ctx context.Context, sessionID string) error {
 	ret := _m.Called(ctx, sessionID)
@@ -224,6 +238,20 @@ func (_m *App) UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
 		r0 = rf(ctx, tenantID, deviceID, status)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// UploadFile provides a mock function with given fields: ctx, userID, deviceID, path
+func (_m *App) UploadFile(ctx context.Context, userID string, deviceID string, path string) error {
+	ret := _m.Called(ctx, userID, deviceID, path)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
+		r0 = rf(ctx, userID, deviceID, path)
 	} else {
 		r0 = ret.Error(0)
 	}

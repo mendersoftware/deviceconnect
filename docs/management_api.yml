@@ -40,7 +40,8 @@ paths:
           required: true
           schema:
             type: string
-          description: ID for the target device.
+            fomat: uuid
+          description: ID of the device.
       responses:
         200:
           description: Successful response.
@@ -61,6 +62,41 @@ paths:
                 request_id: "eed14d55-d996-42cd-8248-e806663810aa"
         500:
           $ref: '#/components/responses/InternalServerError'
+  /devices/{id}/check-update:
+    post:
+      tags:
+        - ManagementAPI
+      operationId: Check Update
+      summary: Trigger check-update for the Mender client running on the device
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            fomat: uuid
+          description: ID of the device.
+      responses:
+        202:
+          description: Accepted
+        400:
+          $ref: '#/components/responses/InvalidRequestError'
+        403:
+          $ref: '#/components/responses/ForbiddenError'
+        404:
+          description: Device not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        409:
+          description: Device not connected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          $ref: '#/components/responses/InternalServerError'
 
   /devices/{id}/connect:
     get:
@@ -74,7 +110,8 @@ paths:
           required: true
           schema:
             type: string
-          description: ID for the target device.
+            fomat: uuid
+          description: ID of the device.
         - in: header
           name: Connection
           schema:
@@ -120,22 +157,60 @@ paths:
         500:
           $ref: '#/components/responses/InternalServerError'
 
-  /devices/{id}/check-update:
+  /devices/{id}/download:
     post:
       tags:
         - ManagementAPI
-      operationId: Check Update
-      summary: Trigger check-update for the Mender client running on the device
+      operationId: Download
+      summary: Download a file from the device
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
-          description: ID for the target device.
+            fomat: uuid
+          description: ID of the device.
+      requestBody:
+        content:
+          'application/json':
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                  description: Path of the file on the device.          
+              required:
+                - path
       responses:
-        202:
-          description: Accepted
+        200:
+          description: The content of the file will be returned in the response body
+          headers:
+            X-MEN-File-Path:
+              schema:
+                type: string
+              description: The path of the file on the device
+            X-MEN-File-UID:
+              schema:
+                type: integer
+              description: The numerical UID of the file on the device
+            X-MEN-File-GID:
+              schema:
+                type: integer
+              description: The numerical GID of the file on the device
+            X-MEN-File-Mode:
+              schema:
+                type: string
+              description: The octal representation of the mode of the file on the device
+            X-MEN-File-Size:
+              schema:
+                type: integer
+              description: The size of the file on the device
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
         400:
           $ref: '#/components/responses/InvalidRequestError'
         403:
@@ -167,7 +242,8 @@ paths:
           required: true
           schema:
             type: string
-          description: ID for the target device.
+            fomat: uuid
+          description: ID of the device.
       responses:
         202:
           description: Accepted
@@ -255,6 +331,46 @@ paths:
         500:
           $ref: '#/components/responses/InternalServerError'
 
+  /devices/{id}/upload:
+    put:
+      tags:
+        - ManagementAPI
+      operationId: Upload
+      summary: Upload a file to the device
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            fomat: uuid
+          description: ID of the device.
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FileUpload'
+      responses:
+        201:
+          description: The file was successfully uploaded
+        400:
+          $ref: '#/components/responses/InvalidRequestError'
+        403:
+          $ref: '#/components/responses/ForbiddenError'
+        404:
+          description: Device not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        409:
+          description: Device not connected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          $ref: '#/components/responses/InternalServerError'
 
 components:
   securitySchemes:
@@ -298,6 +414,26 @@ components:
         error: "<error description>"
         request_id: "eed14d55-d996-42cd-8248-e806663810a8"
 
+    FileUpload:
+      type: object
+      properties:
+        path:
+          type: string
+          description: The path of the file on the device to download
+        uid:
+          type: integer
+          description: The numerical UID of the file on the device
+        gid:
+          type: integer
+          description: The numerical GID of the file on the device
+        mode:
+          type: string
+          description: The octal representation of the mode of the file on the device
+        file:
+          type: string
+          format: binary
+      required:
+        - path
 
   responses:
     InternalServerError:
