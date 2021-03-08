@@ -136,10 +136,13 @@ func (h ManagementController) publishFileTransferProtoMessage(sessionID, userID,
 			return errors.Wrap(err, errFileTranserMarshalling.Error())
 		}
 	}
-
+	proto := ws.ProtoTypeFileTransfer
+	if msgType == ws.MessageTypePing || msgType == ws.MessageTypePong {
+		proto = ws.ProtoTypeControl
+	}
 	msg := &ws.ProtoMsg{
 		Header: ws.ProtoHdr{
-			Proto:     ws.ProtoTypeFileTransfer,
+			Proto:     proto,
 			MsgType:   msgType,
 			SessionID: sessionID,
 			Properties: map[string]interface{}{
@@ -212,7 +215,8 @@ func writeHeaders(c *gin.Context, fileInfo *wsft.FileInfo) {
 	c.Writer.Header().Add(hdrContentType, "application/octet-stream")
 	if fileInfo.Path != nil {
 		filename := path.Base(*fileInfo.Path)
-		c.Writer.Header().Add(hdrContentDisposition, "attachment; filname=\""+filename+"\"")
+		c.Writer.Header().Add(hdrContentDisposition,
+			"attachment; filename=\""+filename+"\"")
 		c.Writer.Header().Add(hdrMenderFileTransferPath, *fileInfo.Path)
 	}
 	if fileInfo.UID != nil {
