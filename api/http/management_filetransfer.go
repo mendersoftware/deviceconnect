@@ -451,8 +451,9 @@ func (h ManagementController) DownloadFile(c *gin.Context) {
 }
 
 func (h ManagementController) uploadFileResponseHandleInboundMessages(c *gin.Context,
-	msgChan chan *natsio.Msg, errorChan chan error, latestAckOffset *int64,
-	latestAckOffsets chan int64) {
+	params *fileTransferParams, msgChan chan *natsio.Msg, errorChan chan error,
+	latestAckOffset *int64, latestAckOffsets chan int64) {
+	deviceTopic := model.GetDeviceSubject(params.TenantID, params.Device.ID)
 	for {
 		select {
 		case wsMessage := <-msgChan:
@@ -482,6 +483,15 @@ func (h ManagementController) uploadFileResponseHandleInboundMessages(c *gin.Con
 					case latestAckOffsets <- *latestAckOffset:
 					default:
 					}
+				}
+
+			// handle ping messages
+			case ws.MessageTypePing:
+				if err := h.publishFileTransferProtoMessage(
+					params.SessionID, params.UserID, deviceTopic,
+					ws.MessageTypePong, nil,
+					-1); err != nil {
+					errorChan <- err
 				}
 			}
 		case <-c.Done():
@@ -565,8 +575,8 @@ func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTra
 	latestAckOffset := int64(-1)
 	latestAckOffsets := make(chan int64, 1)
 	errorChan := make(chan error)
-	go h.uploadFileResponseHandleInboundMessages(c, msgChan, errorChan, &latestAckOffset,
-		latestAckOffsets)
+	go h.uploadFileResponseHandleInboundMessages(c, params, msgChan, errorChan,
+		&latestAckOffset, latestAckOffsets)
 
 	h.uploadFileResponseWriter(c, params, request, errorChan, &latestAckOffset,
 		latestAckOffsets, &errorStatusCode, &responseError)
