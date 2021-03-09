@@ -16,6 +16,7 @@ package model
 
 import (
 	"strings"
+	"sync"
 	"time"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
@@ -56,11 +57,13 @@ func GetDeviceSubject(tenantID, deviceID string) string {
 
 // Session represents a session from a user to a device and its attributes
 type Session struct {
-	ID       string    `json:"id" bson:"_id"`
-	UserID   string    `json:"user_id" bson:"user_id"`
-	DeviceID string    `json:"device_id" bson:"device_id"`
-	StartTS  time.Time `json:"start_ts" bson:"start_ts"`
-	TenantID string    `json:"tenant_id" bson:"-"`
+	ID                 string      `json:"id" bson:"_id"`
+	UserID             string      `json:"user_id" bson:"user_id"`
+	DeviceID           string      `json:"device_id" bson:"device_id"`
+	StartTS            time.Time   `json:"start_ts" bson:"start_ts"`
+	TenantID           string      `json:"tenant_id" bson:"-"`
+	BytesRecordedMutex *sync.Mutex `json:"-" bson:"-"`
+	BytesRecorded      int         `json:"bytes_transferred" bson:"bytes_transferred"`
 }
 
 func (sess Session) Subject(tenantID string) string {

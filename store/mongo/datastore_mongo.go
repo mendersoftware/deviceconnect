@@ -15,11 +15,14 @@
 package mongo
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"fmt"
+	"github.com/mendersoftware/deviceconnect/app"
+	"github.com/mendersoftware/go-lib-micro/log"
+	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/shell"
+	"github.com/vmihailenco/msgpack/v5"
 	"io"
 	"strings"
 	"time"
@@ -43,8 +46,10 @@ import (
 )
 
 var (
-	clock                   utils.Clock = utils.RealClock{}
-	recordingReadBufferSize             = 1024
+	clock                        utils.Clock = utils.RealClock{}
+	recordingReadBufferSize                  = 1024
+	ErrUnknownControlMessageType             = errors.New("unknown control message type")
+	ErrRecordingDataInconsistent             = errors.New("recording data corrupt")
 )
 
 const (
@@ -56,6 +61,9 @@ const (
 
 	// RecordingsCollectionName name of the collection of session recordings
 	RecordingsCollectionName = "recordings"
+
+	// ControlCollectionName name of the collection of session control data
+	ControlCollectionName = "control"
 
 	dbFieldSessionID = "session_id"
 	dbFieldStatus    = "status"
@@ -338,20 +346,57 @@ func (db *DataStoreMongo) GetSession(
 	return session, nil
 }
 
+func sendControlMessage(control app.Control, sessionID string, w io.Writer) (int, error) {
+	messageType := ""
+	var data []byte
+	properties := make(map[string]interface{})
+
+	switch control.Type {
+	case app.DelayMessage:
+		messageType = model.DelayMessageName
+		properties[model.DelayMessageValueField] = control.DelayMs
+	case app.ResizeMessage:
+		messageType = shell.MessageTypeResizeShell
+		properties[model.ResizeMessageTermHeightField] = control.TerminalHeight
+		properties[model.ResizeMessageTermWidthField] = control.TerminalWidth
+	default:
+		return 0, ErrUnknownControlMessageType
+	}
+
+	msg := ws.ProtoMsg{
+		Header: ws.ProtoHdr{
+			Proto:      ws.ProtoTypeShell,
+			MsgType:    messageType,
+			SessionID:  sessionID,
+			Properties: properties,
+		},
+		Body: data,
+	}
+	messagePacked, err := msgpack.Marshal(&msg)
+	if err != nil {
+		return 0, err
+	} else {
+		return w.Write(messagePacked)
+	}
+}
+
 // GetSession writes session recordings to given io.Writer
-func (db *DataStoreMongo) GetSessionRecording(ctx context.Context,
+func (db *DataStoreMongo) WriteSessionRecords(ctx context.Context,
 	sessionID string,
 	w io.Writer) error {
+	l := log.FromContext(ctx)
 	dbname := mstore.DbFromContext(ctx, DbName)
-	coll := db.client.Database(dbname).
+	collRecording := db.client.Database(dbname).
 		Collection(RecordingsCollectionName)
+	collControl := db.client.Database(dbname).
+		Collection(ControlCollectionName)
 
 	findOptions := mopts.Find()
 	sortField := bson.M{
 		"created_ts": 1,
 	}
 	findOptions.SetSort(sortField)
-	c, err := coll.Find(ctx,
+	recordingsCursor, err := collRecording.Find(ctx,
 		bson.M{
 			dbFieldSessionID: sessionID,
 		},
@@ -360,36 +405,125 @@ func (db *DataStoreMongo) GetSessionRecording(ctx context.Context,
 	if err != nil {
 		return err
 	}
+	defer recordingsCursor.Close(ctx)
 
-	output := make([]byte, recordingReadBufferSize)
-	var buffer bytes.Buffer
-	for c.Next(ctx) {
-		var r model.Recording
-		err = c.Decode(&r)
-		if err != nil {
-			return err
-		}
+	controlCursor, err := collControl.Find(ctx,
+		bson.M{
+			dbFieldSessionID: sessionID,
+		},
+		findOptions,
+	)
+	if err != nil {
+		return err
+	}
+	defer controlCursor.Close(ctx)
 
-		buffer.Reset()
-		buffer.Write(r.Recording)
-		gzipReader, e := gzip.NewReader(&buffer)
-		if e != nil {
-			err = e
-		}
+	controlReader := NewControlMessageReader(ctx, controlCursor)
+	recordingReader := NewRecordingReader(ctx, recordingsCursor)
 
-		for {
-			n, e := gzipReader.Read(output)
-			if n == 0 || e != nil {
-				gzipReader.Close()
+	recordingWriter := NewRecordingWriter(sessionID, w)
+	recordingBuffer := make([]byte, recordingReadBufferSize)
+	recordingBytesSent := 0
+	for {
+		control := controlReader.Pop()
+		if control == nil {
+			l.Debug("WriteSessionRecords: no more control " +
+				"messages, flushing the recording upstream.")
+			//no more control messages, we send the whole recording
+			n, err := io.Copy(recordingWriter, recordingReader)
+			if err != nil && err != io.ErrShortWrite && n < 1 {
+				l.Errorf("WriteSessionRecords: "+
+					"error writing recording data, err: %+v n:%d",
+					err, n)
+			}
+			if n == 0 {
+				l.Errorf("WriteSessionRecords: "+
+					"failed to write any recording data, err: %+v",
+					err)
+			} else {
+				recordingBytesSent += int(n)
+			}
+			break
+		} else {
+			if recordingBytesSent > control.Offset {
+				//this should never happen, we missed
+				//the control message, data inconsistency
+				l.Errorf("WriteSessionRecords: recordingBytesSent > control.Offset")
+				err = ErrRecordingDataInconsistent
 				break
 			}
-			_, e = w.Write(output[:n])
-			if e != nil {
-				err = e
+
+			bytesUntilControlMessage := control.Offset - recordingBytesSent
+			l.Debugf("(1) WriteSessionRecords: control.Offset:%d"+
+				" recordingBytesSent:%d "+
+				" bytesUntilControlMessage:%d (recordingBuffer.len=%d) "+
+				"reading up to %d bytes of recording and sending.",
+				control.Offset,
+				recordingBytesSent,
+				bytesUntilControlMessage,
+				len(recordingBuffer),
+				control.Offset-recordingBytesSent)
+			//it is possible that the recording is larger than one recordingBuffer,
+			//we need to send until we have the control.Offset in the buffer
+			for bytesUntilControlMessage > len(recordingBuffer) {
+				n, e := recordingReader.Read(recordingBuffer)
+				if n > 0 {
+					_, err = sendRecordingMessage(recordingBuffer[:n],
+						sessionID,
+						w)
+					if err != nil {
+						l.Errorf("error sending recording data: %s",
+							err.Error())
+						break
+					}
+					recordingBytesSent += n
+					bytesUntilControlMessage = control.Offset -
+						recordingBytesSent
+				}
+				if e != nil || n == 0 {
+					break
+				}
+			}
+			if err != nil {
+				break
+			}
+
+			bytesUntilControlMessage = control.Offset - recordingBytesSent
+			l.Debugf("(2) WriteSessionRecords: control.Offset:%d"+
+				" recordingBytesSent:%d "+
+				" bytesUntilControlMessage:%d (recordingBuffer.len=%d) "+
+				"reading up to %d bytes of recording and sending.",
+				control.Offset,
+				recordingBytesSent,
+				bytesUntilControlMessage,
+				len(recordingBuffer),
+				bytesUntilControlMessage)
+			//this means that the control offset is in the future
+			//part of the recording buffer
+			//we can send up to control.Offset-recordingBytesSent
+			//bytes and then send the control message
+			n, e := recordingReader.Read(recordingBuffer[:bytesUntilControlMessage])
+			l.Debugf("recordingReader.Read(len=%d)=%d,%+v",
+				bytesUntilControlMessage, n, e)
+			if n > 0 {
+				_, err = sendRecordingMessage(recordingBuffer[:n], sessionID, w)
+				if err != nil {
+					l.Errorf("error sending recording data: %s",
+						err.Error())
+					break
+				}
+				recordingBytesSent += n
+			}
+			l.Debugf("WriteSessionRecords: sending %+v.", *control)
+			_, err = sendControlMessage(*control, sessionID, w)
+			if err != nil {
+				l.Errorf("error sending recording data: %s",
+					err.Error())
+				break
 			}
 		}
-		gzipReader.Close()
 	}
+	l.Infof("session playback: WriteSessionRecords: sent %d bytes.", recordingBytesSent)
 
 	return err
 }
@@ -407,6 +541,28 @@ func (db *DataStoreMongo) InsertSessionRecording(ctx context.Context,
 		ID:        uuid.New(),
 		SessionID: sessionID,
 		Recording: sessionBytes,
+		CreatedTs: now,
+		ExpireTs:  now.Add(db.recordingExpire),
+	}
+	_, err := coll.InsertOne(ctx,
+		&recording,
+	)
+	return err
+}
+
+// Inserts control data recording
+func (db *DataStoreMongo) InsertControlRecording(ctx context.Context,
+	sessionID string,
+	sessionBytes []byte) error {
+	dbname := mstore.DbFromContext(ctx, DbName)
+	coll := db.client.Database(dbname).
+		Collection(ControlCollectionName)
+
+	now := clock.Now().UTC()
+	recording := model.ControlData{
+		ID:        uuid.New(),
+		SessionID: sessionID,
+		Control:   sessionBytes,
 		CreatedTs: now,
 		ExpireTs:  now.Add(db.recordingExpire),
 	}

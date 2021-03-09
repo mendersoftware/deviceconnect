@@ -8,7 +8,7 @@ require (
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/google/uuid v1.2.0
 	github.com/gorilla/websocket v1.4.2
-	github.com/mendersoftware/go-lib-micro v0.0.0-20210209124906-f6c8c1916174
+	github.com/mendersoftware/go-lib-micro v0.0.0-20210301092156-349d3ae1e399
 	github.com/nats-io/nats-server/v2 v2.1.9
 	github.com/nats-io/nats.go v1.10.0
 	github.com/pkg/errors v0.9.1

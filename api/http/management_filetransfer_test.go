@@ -1,0 +1,1748 @@
+// Copyright 2021 Northern.tech AS
+//
+//    Licensed under the Apache License, Version 2.0 (the "License");
+//    you may not use this file except in compliance with the License.
+//    You may obtain a copy of the License at
+//
+//        http://www.apache.org/licenses/LICENSE-2.0
+//
+//    Unless required by applicable law or agreed to in writing, software
+//    distributed under the License is distributed on an "AS IS" BASIS,
+//    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//    See the License for the specific language governing permissions and
+//    limitations under the License.
+
+package http
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/mendersoftware/go-lib-micro/identity"
+	"github.com/mendersoftware/go-lib-micro/ws"
+	natsio "github.com/nats-io/nats.go"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/vmihailenco/msgpack/v5"
+
+	"github.com/mendersoftware/deviceconnect/app"
+	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
+	nats_mocks "github.com/mendersoftware/deviceconnect/client/nats/mocks"
+	"github.com/mendersoftware/deviceconnect/model"
+	wsft "github.com/mendersoftware/go-lib-micro/ws/filetransfer"
+)
+
+func string2pointer(v string) *string {
+	return &v
+}
+
+func uint322pointer(v uint32) *uint32 {
+	return &v
+}
+
+func int642pointer(v int64) *int64 {
+	return &v
+}
+
+func TestManagementDownloadFile(t *testing.T) {
+	originalNewFileTransferSessionID := newFileTransferSessionID
+	originalFileTransferTimeout := fileTransferTimeout
+	originalFileTransferPingInterval := fileTransferPingInterval
+	originalAckSlidingWindowSend := ackSlidingWindowSend
+	defer func() {
+		newFileTransferSessionID = originalNewFileTransferSessionID
+		fileTransferTimeout = originalFileTransferTimeout
+		fileTransferPingInterval = originalFileTransferPingInterval
+		ackSlidingWindowSend = originalAckSlidingWindowSend
+	}()
+
+	fileTransferTimeout = 2 * time.Second
+	fileTransferPingInterval = 500 * time.Millisecond
+	ackSlidingWindowSend = 1
+
+	sessionID, _ := uuid.NewRandom()
+	newFileTransferSessionID = func() (uuid.UUID, error) {
+		return sessionID, nil
+	}
+
+	testCases := []struct {
+		Name     string
+		DeviceID string
+		Body     []byte
+		Identity *identity.Identity
+
+		RBACGroups  string
+		RBACAllowed bool
+		RBACError   error
+
+		GetDevice          *model.Device
+		GetDeviceError     error
+		DeviceFunc         func(*nats_mocks.Client)
+		AppDownloadFile    bool
+		AppDownloadFileErr error
+
+		HTTPStatus int
+		HTTPBody   []byte
+	}{
+		{
+			Name:     "ok, successful download, single chunk",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// file info response
+						body := wsft.FileInfo{
+							Path: string2pointer("/absolute/path"),
+							UID:  uint322pointer(0),
+							GID:  uint322pointer(0),
+							Mode: uint322pointer(777),
+							Size: int642pointer(10),
+						}
+						bodyData, err := msgpack.Marshal(body)
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeFileInfo,
+								SessionID: sessionID.String(),
+							},
+							Body: bodyData,
+						}
+
+						data, err := msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// first chunk
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeChunk,
+								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(0),
+								},
+							},
+							Body: []byte("12345"),
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// final chunk
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeChunk,
+								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(5),
+								},
+							},
+							Body: nil,
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypeStat {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeGet {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeACK {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppDownloadFile: true,
+
+			HTTPStatus: http.StatusOK,
+			HTTPBody:   []byte("12345"),
+		},
+		{
+			Name:     "ok, successful download, two chunks",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// file info response
+						body := wsft.FileInfo{
+							Path: string2pointer("/absolute/path"),
+							Size: int642pointer(10),
+						}
+						bodyData, err := msgpack.Marshal(body)
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeFileInfo,
+								SessionID: sessionID.String(),
+							},
+							Body: bodyData,
+						}
+
+						data, err := msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// first chunk
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeChunk,
+								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(0),
+								},
+							},
+							Body: []byte("12345"),
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// second chunk
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeChunk,
+								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(5),
+								},
+							},
+							Body: []byte("67890"),
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// final chunk
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeChunk,
+								SessionID: sessionID.String(),
+							},
+							Body: nil,
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypeStat {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeGet {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeACK {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppDownloadFile: true,
+
+			HTTPStatus: http.StatusOK,
+			HTTPBody:   []byte("1234567890"),
+		},
+		{
+			Name:     "ko, file not found",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// file info response
+						body := wsft.Error{
+							Error:       string2pointer("file not found"),
+							MessageType: string2pointer(wsft.MessageTypeStat),
+						}
+						bodyData, err := msgpack.Marshal(body)
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeError,
+								SessionID: sessionID.String(),
+							},
+							Body: bodyData,
+						}
+
+						data, err := msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypeStat {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeGet {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeACK {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppDownloadFile: true,
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:     "ko, error between chunks",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// file info response
+						body := wsft.FileInfo{
+							Path: string2pointer("/absolute/path"),
+							Size: int642pointer(10),
+						}
+						bodyData, err := msgpack.Marshal(body)
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeFileInfo,
+								SessionID: sessionID.String(),
+							},
+							Body: bodyData,
+						}
+
+						data, err := msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// first chunk
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeChunk,
+								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(0),
+								},
+							},
+							Body: []byte("12345"),
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// error
+						errBody := wsft.Error{
+							Error:       string2pointer("file not found"),
+							MessageType: string2pointer(wsft.MessageTypeStat),
+						}
+						bodyData, err = msgpack.Marshal(errBody)
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeError,
+								SessionID: sessionID.String(),
+							},
+							Body: bodyData,
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypeStat {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeGet {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeACK {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppDownloadFile: true,
+
+			HTTPStatus: http.StatusOK,
+			HTTPBody:   []byte("12345"),
+		},
+		{
+			Name:     "ko, request timeout",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypeStat {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeGet {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppDownloadFile: true,
+
+			HTTPStatus: http.StatusRequestTimeout,
+		},
+		{
+			Name:     "ko, request timeout between chunks",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// file info response
+						body := wsft.FileInfo{
+							Path: string2pointer("/absolute/path"),
+							Size: int642pointer(10),
+						}
+						bodyData, err := msgpack.Marshal(body)
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeFileInfo,
+								SessionID: sessionID.String(),
+							},
+							Body: bodyData,
+						}
+
+						data, err := msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// first chunk
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeChunk,
+								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(0),
+								},
+							},
+							Body: []byte("12345"),
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypeStat {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeGet {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeACK {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppDownloadFile: true,
+
+			HTTPStatus: http.StatusOK,
+			HTTPBody:   []byte("12345"),
+		},
+		{
+			Name:     "ko, wrong offset in chunks",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// file info response
+						body := wsft.FileInfo{
+							Path: string2pointer("/absolute/path"),
+							Size: int642pointer(10),
+						}
+						bodyData, err := msgpack.Marshal(body)
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeFileInfo,
+								SessionID: sessionID.String(),
+							},
+							Body: bodyData,
+						}
+
+						data, err := msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// first chunk
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeChunk,
+								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(0),
+								},
+							},
+							Body: []byte("12345"),
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// second chunk
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeChunk,
+								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									PropertyOffset: int64(100),
+								},
+							},
+							Body: []byte("67890"),
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypeStat {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeGet {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeACK {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppDownloadFile: true,
+
+			HTTPStatus: http.StatusOK,
+			HTTPBody:   []byte("12345"),
+		},
+		{
+			Name:     "ko, failed to submit audit log",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			AppDownloadFile:    true,
+			AppDownloadFileErr: errors.New("generic error"),
+
+			HTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			Name:     "ko, RBAC check failure",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			RBACGroups: "group1,group",
+			RBACError:  errors.New("error"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			Name:     "ko, RBAC forbidden",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			RBACGroups:  "group1,group",
+			RBACAllowed: false,
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusForbidden,
+		},
+		{
+			Name:     "ko, bad request, relative path",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "relative/path"}`),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:     "ko, malformed request",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte("dummy"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:     "ko, missing request body",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:     "ko, missing auth",
+			DeviceID: "1234567890",
+
+			HTTPStatus: http.StatusUnauthorized,
+		},
+		{
+			Name: "ko, wrong auth",
+			Identity: &identity.Identity{
+				Subject:  "00000000-0000-0000-0000-000000000000",
+				Tenant:   "000000000000000000000000",
+				IsDevice: true,
+			},
+
+			DeviceID: "1234567890",
+
+			HTTPStatus: http.StatusUnauthorized,
+		},
+		{
+			Name:     "ko, not connected",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusDisconnected,
+			},
+			HTTPStatus: http.StatusConflict,
+		},
+		{
+			Name:     "ko, not found",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDeviceError: app.ErrDeviceNotFound,
+
+			HTTPStatus: http.StatusNotFound,
+		},
+		{
+			Name:     "ko, other error",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDeviceError: errors.New("error"),
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			app := &app_mocks.App{}
+			defer app.AssertExpectations(t)
+
+			if tc.AppDownloadFile {
+				app.On("DownloadFile",
+					mock.MatchedBy(func(_ context.Context) bool {
+						return true
+					}),
+					tc.Identity.Subject,
+					tc.DeviceID,
+					mock.AnythingOfType("string"),
+				).Return(tc.AppDownloadFileErr)
+			}
+
+			natsClient := &nats_mocks.Client{}
+			defer natsClient.AssertExpectations(t)
+
+			if tc.DeviceFunc != nil {
+				tc.DeviceFunc(natsClient)
+			}
+
+			router, _ := NewRouter(app, natsClient)
+			s := httptest.NewServer(router)
+			defer s.Close()
+
+			url := strings.Replace(APIURLManagementDeviceDownload, ":deviceId", tc.DeviceID, 1)
+			var body io.Reader
+			if tc.Body != nil {
+				body = bytes.NewReader(tc.Body)
+			}
+			req, err := http.NewRequest(http.MethodPost, "http://localhost"+url, body)
+			if !assert.NoError(t, err) {
+				t.FailNow()
+			}
+
+			if tc.RBACGroups != "" {
+				req.Header.Set(model.RBACHeaderRemoteTerminalGroups, tc.RBACGroups)
+				app.On("RemoteTerminalAllowed",
+					mock.MatchedBy(func(ctx context.Context) bool {
+						return true
+					}),
+					tc.Identity.Tenant,
+					tc.DeviceID,
+					strings.Split(tc.RBACGroups, ","),
+				).Return(tc.RBACAllowed, tc.RBACError)
+			}
+
+			if tc.Identity != nil {
+				jwt := GenerateJWT(*tc.Identity)
+				req.Header.Set(headerAuthorization, "Bearer "+jwt)
+
+				if tc.Identity.IsUser {
+					app.On("GetDevice",
+						mock.MatchedBy(func(_ context.Context) bool {
+							return true
+						}),
+						tc.Identity.Tenant,
+						tc.DeviceID,
+					).Return(tc.GetDevice, tc.GetDeviceError)
+				}
+			}
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			assert.Equal(t, tc.HTTPStatus, w.Code)
+			if tc.HTTPStatus == http.StatusOK {
+				assert.Equal(t, tc.HTTPBody, w.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestManagementUploadFile(t *testing.T) {
+	originalNewFileTransferSessionID := newFileTransferSessionID
+	originalFileTransferTimeout := fileTransferTimeout
+	originalAckSlidingWindowRecv := ackSlidingWindowRecv
+	defer func() {
+		newFileTransferSessionID = originalNewFileTransferSessionID
+		fileTransferTimeout = originalFileTransferTimeout
+		ackSlidingWindowRecv = originalAckSlidingWindowRecv
+	}()
+
+	fileTransferTimeout = 2 * time.Second
+	ackSlidingWindowRecv = 0
+
+	sessionID, _ := uuid.NewRandom()
+	newFileTransferSessionID = func() (uuid.UUID, error) {
+		return sessionID, nil
+	}
+
+	testCases := []struct {
+		Name     string
+		DeviceID string
+		Body     map[string][]string
+		File     []byte
+		Identity *identity.Identity
+
+		RBACGroups  string
+		RBACAllowed bool
+		RBACError   error
+
+		GetDevice        *model.Device
+		GetDeviceError   error
+		DeviceFunc       func(*nats_mocks.Client)
+		AppUploadFile    bool
+		AppUploadFileErr error
+
+		HTTPStatus int
+	}{
+		{
+			Name:     "ok, upload",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// ack the put operation
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeACK,
+								SessionID: sessionID.String(),
+							},
+						}
+
+						data, err := msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// ack the chunk
+						chanMsg <- &natsio.Msg{Data: data}
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypePut {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeChunk {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppUploadFile: true,
+
+			HTTPStatus: http.StatusCreated,
+		},
+		{
+			Name:     "ko, missing ack from device after chunk",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// ack the put operation
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeACK,
+								SessionID: sessionID.String(),
+							},
+						}
+
+						data, err := msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypePut {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeChunk {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppUploadFile: true,
+
+			HTTPStatus: http.StatusRequestTimeout,
+		},
+		{
+			Name:     "ko, error from device",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// put response
+						body := wsft.Error{
+							Error:       string2pointer("file not writeable"),
+							MessageType: string2pointer(wsft.MessageTypePut),
+						}
+						bodyData, err := msgpack.Marshal(body)
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeError,
+								SessionID: sessionID.String(),
+							},
+							Body: bodyData,
+						}
+
+						data, err := msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypePut {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeChunk {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppUploadFile: true,
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:     "ko, error from device after the first chunk",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// ack the put operation
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeACK,
+								SessionID: sessionID.String(),
+							},
+						}
+
+						data, err := msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						// put response
+						body := wsft.Error{
+							Error:       string2pointer("failed to Write"),
+							MessageType: string2pointer(wsft.MessageTypePut),
+						}
+						bodyData, err := msgpack.Marshal(body)
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeError,
+								SessionID: sessionID.String(),
+							},
+							Body: bodyData,
+						}
+
+						data, err = msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypePut {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeChunk {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppUploadFile: true,
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:     "ko, timeout",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypePut {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeChunk {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppUploadFile: true,
+
+			HTTPStatus: http.StatusRequestTimeout,
+		},
+		{
+			Name:     "ko, RBAC check failure",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			RBACGroups: "group1,group",
+			RBACError:  errors.New("error"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			Name:     "ko, RBAC forbidden",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			RBACGroups:  "group1,group",
+			RBACAllowed: false,
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusForbidden,
+		},
+		{
+			Name:     "ko, failed to submit audit log",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			AppUploadFile:    true,
+			AppUploadFileErr: errors.New("generic error"),
+
+			HTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			Name:     "ko, bad request, missing file",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:     "ko, bad request, relative path",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"relative/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:     "ko, bad request, relative path",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"relative/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:     "ko, malformed request",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:     "ko, missing request body",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
+			Name:     "ko, missing auth",
+			DeviceID: "1234567890",
+
+			HTTPStatus: http.StatusUnauthorized,
+		},
+		{
+			Name: "ko, wrong auth",
+			Identity: &identity.Identity{
+				Subject:  "00000000-0000-0000-0000-000000000000",
+				Tenant:   "000000000000000000000000",
+				IsDevice: true,
+			},
+
+			DeviceID: "1234567890",
+
+			HTTPStatus: http.StatusUnauthorized,
+		},
+		{
+			Name:     "ko, not connected",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusDisconnected,
+			},
+			HTTPStatus: http.StatusConflict,
+		},
+		{
+			Name:     "ko, not found",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDeviceError: app.ErrDeviceNotFound,
+
+			HTTPStatus: http.StatusNotFound,
+		},
+		{
+			Name:     "ko, other error",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+
+			GetDeviceError: errors.New("error"),
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			app := &app_mocks.App{}
+			defer app.AssertExpectations(t)
+
+			if tc.AppUploadFile {
+				app.On("UploadFile",
+					mock.MatchedBy(func(_ context.Context) bool {
+						return true
+					}),
+					tc.Identity.Subject,
+					tc.DeviceID,
+					mock.AnythingOfType("string"),
+				).Return(tc.AppUploadFileErr)
+			}
+
+			natsClient := &nats_mocks.Client{}
+			defer natsClient.AssertExpectations(t)
+
+			if tc.DeviceFunc != nil {
+				tc.DeviceFunc(natsClient)
+			}
+
+			router, _ := NewRouter(app, natsClient)
+			s := httptest.NewServer(router)
+			defer s.Close()
+
+			var body io.Reader
+			if tc.Body != nil {
+				var b bytes.Buffer
+				w := multipart.NewWriter(&b)
+				w.SetBoundary("boundary")
+				for key, value := range tc.Body {
+					for _, v := range value {
+						w.WriteField(key, v)
+					}
+				}
+				if tc.File != nil {
+					fileWriter, _ := w.CreateFormFile(fieldUploadFile, "dummy.txt")
+					fileWriter.Write(tc.File)
+				}
+				w.Close()
+				data := make([]byte, 10240)
+				n, _ := b.Read(data)
+				body = bytes.NewReader(data[:n])
+			}
+
+			url := strings.Replace(APIURLManagementDeviceUpload, ":deviceId", tc.DeviceID, 1)
+			req, err := http.NewRequest(http.MethodPut, "http://localhost"+url, body)
+			if !assert.NoError(t, err) {
+				t.FailNow()
+			}
+
+			if body != nil {
+				req.Header.Add("Content-Type", "multipart/form-data; boundary=\"boundary\"")
+			}
+
+			if tc.RBACGroups != "" {
+				req.Header.Set(model.RBACHeaderRemoteTerminalGroups, tc.RBACGroups)
+				app.On("RemoteTerminalAllowed",
+					mock.MatchedBy(func(ctx context.Context) bool {
+						return true
+					}),
+					tc.Identity.Tenant,
+					tc.DeviceID,
+					strings.Split(tc.RBACGroups, ","),
+				).Return(tc.RBACAllowed, tc.RBACError)
+			}
+
+			if tc.Identity != nil {
+				jwt := GenerateJWT(*tc.Identity)
+				req.Header.Set(headerAuthorization, "Bearer "+jwt)
+
+				if tc.Identity.IsUser {
+					app.On("GetDevice",
+						mock.MatchedBy(func(_ context.Context) bool {
+							return true
+						}),
+						tc.Identity.Tenant,
+						tc.DeviceID,
+					).Return(tc.GetDevice, tc.GetDeviceError)
+				}
+			}
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			assert.Equal(t, tc.HTTPStatus, w.Code)
+		})
+	}
+}
+
+func TestFileTransferAllowed(t *testing.T) {
+	testCases := []struct {
+		Name string
+
+		Groups   string
+		TenantID string
+		DeviceID string
+
+		Allowed bool
+		Error   error
+
+		ReturnAllowed bool
+		ReturnError   error
+	}{
+		{
+			Name: "no group restrictions",
+
+			ReturnAllowed: true,
+		},
+		{
+			Name:   "group restrictions",
+			Groups: "group1,group2",
+
+			Allowed: true,
+
+			ReturnAllowed: true,
+		},
+		{
+			Name:   "group restrictions",
+			Groups: "group1,group2",
+
+			Allowed: false,
+			Error:   errors.New("generic error"),
+
+			ReturnAllowed: false,
+			ReturnError:   errors.New("generic error"),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			ctx := &gin.Context{}
+			ctx.Request, _ = http.NewRequest("POST", "/", nil)
+			ctx.Request.Header.Set(model.RBACHeaderRemoteTerminalGroups, tc.Groups)
+
+			app := &app_mocks.App{}
+			defer app.AssertExpectations(t)
+
+			if tc.Groups != "" {
+				app.On("RemoteTerminalAllowed",
+					ctx,
+					tc.TenantID,
+					tc.DeviceID,
+					strings.Split(tc.Groups, ","),
+				).Return(tc.Allowed, tc.Error)
+			}
+
+			ctrl := NewManagementController(app, nil)
+			allowed, err := ctrl.fileTransferAllowed(ctx, tc.TenantID, tc.DeviceID)
+			assert.Equal(t, tc.ReturnAllowed, allowed)
+			if tc.ReturnError == nil {
+				assert.NoError(t, err)
+			} else {
+				assert.EqualError(t, err, tc.ReturnError.Error())
+			}
+		})
+	}
+}

@@ -17,6 +17,9 @@ SRCFILES := $(filter-out _test.go,$(GOFILES))
 BINFILE := bin/deviceconnect
 COVERFILE := coverage.txt
 
+.PHONY: build
+build: $(BINFILE)
+
 .PHONY: all
 all: fmt lint docs build
 
@@ -43,9 +46,6 @@ $(COVERFILE): $(GOFILES)
 
 .PHONY: docs
 docs: $(patsubst docs/%.yml,tests/%,$(DOCFILES))
-
-.PHONY: build
-build: $(BINFILE)
 
 .PHONY: build-test
 build-test: $(BINFILE).test

@@ -34,8 +34,9 @@ type DataStore interface {
 	UpsertDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error
 	AllocateSession(ctx context.Context, sess *model.Session) error
 	GetSession(ctx context.Context, sessionID string) (*model.Session, error)
-	GetSessionRecording(ctx context.Context, sessionID string, w io.Writer) error
+	WriteSessionRecords(ctx context.Context, sessionID string, w io.Writer) error
 	InsertSessionRecording(ctx context.Context, sessionID string, sessionBytes []byte) error
+	InsertControlRecording(ctx context.Context, sessionID string, sessionBytes []byte) error
 	DeleteSession(ctx context.Context, sessionID string) (*model.Session, error)
 	Close() error
 }
