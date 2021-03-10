@@ -235,8 +235,9 @@ func writeHeaders(c *gin.Context, fileInfo *wsft.FileInfo) {
 
 func (h ManagementController) downloadFileResponseError(c *gin.Context,
 	responseHeaderSent *bool, responseError *error) {
+	l := log.FromContext(c.Request.Context())
 	if !*responseHeaderSent && *responseError != nil {
-		log.FromContext(c).Error((*responseError).Error())
+		l.Error((*responseError).Error())
 		status := http.StatusInternalServerError
 		// errFileTranserFailed is a special case, we return 400 instead of 500
 		if strings.Contains((*responseError).Error(), errFileTranserFailed.Error()) {
@@ -405,14 +406,18 @@ func (h ManagementController) downloadFileResponseProcessMessage(c *gin.Context,
 }
 
 func (h ManagementController) DownloadFile(c *gin.Context) {
+	l := log.FromContext(c.Request.Context())
+
 	params, statusCode, err := h.getFileTransferParams(c)
 	if err != nil {
+		l.Error(err)
 		c.JSON(statusCode, gin.H{"error": err.Error()})
 		return
 	}
 
 	request := &model.DownloadFileRequest{}
 	if err := c.ShouldBindJSON(request); err != nil {
+		l.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": errors.Wrap(err, "invalid request body").Error(),
 		})
@@ -420,6 +425,7 @@ func (h ManagementController) DownloadFile(c *gin.Context) {
 	}
 
 	if err := request.Validate(); err != nil {
+		l.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": errors.Wrap(err, "bad request").Error(),
 		})
@@ -428,19 +434,24 @@ func (h ManagementController) DownloadFile(c *gin.Context) {
 
 	allowed, err := h.fileTransferAllowed(c, params.TenantID, params.Device.ID)
 	if err != nil {
+		l.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": errors.Wrap(err, "failed to check RBAC"),
 		})
 		return
 	} else if !allowed {
+		msg := "Access denied (RBAC)."
+		l.Warn(msg)
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Access denied (RBAC).",
+			"error": msg,
 		})
 		return
 	}
 
-	if err := h.app.DownloadFile(c, params.UserID, params.Device.ID,
+	ctx := c.Request.Context()
+	if err := h.app.DownloadFile(ctx, params.UserID, params.Device.ID,
 		*request.Path); err != nil {
+		l.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": errors.Wrap(err, "bad request").Error(),
 		})
@@ -502,12 +513,14 @@ func (h ManagementController) uploadFileResponseHandleInboundMessages(c *gin.Con
 
 func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTransferParams,
 	request *model.UploadFileRequest) {
+	l := log.FromContext(c.Request.Context())
+
 	// send a JSON-encoded error message in case of failure
 	var responseError error
 	errorStatusCode := http.StatusInternalServerError
 	defer func() {
 		if responseError != nil {
-			log.FromContext(c).Error(responseError.Error())
+			l.Error(responseError.Error())
 			c.JSON(errorStatusCode, gin.H{
 				"error": responseError.Error(),
 			})
@@ -718,19 +731,24 @@ func (h ManagementController) parseUploadFileRequest(c *gin.Context) (*model.Upl
 }
 
 func (h ManagementController) UploadFile(c *gin.Context) {
+	l := log.FromContext(c.Request.Context())
+
 	params, statusCode, err := h.getFileTransferParams(c)
 	if err != nil {
+		l.Error(err.Error())
 		c.JSON(statusCode, gin.H{"error": err.Error()})
 		return
 	}
 
 	request, err := h.parseUploadFileRequest(c)
 	if err != nil {
+		l.Error(err.Error())
 		c.JSON(statusCode, gin.H{"error": err.Error()})
 		return
 	}
 
 	if err := request.Validate(); err != nil {
+		l.Error(err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": errors.Wrap(err, "bad request").Error(),
 		})
@@ -741,19 +759,24 @@ func (h ManagementController) UploadFile(c *gin.Context) {
 
 	allowed, err := h.fileTransferAllowed(c, params.TenantID, params.Device.ID)
 	if err != nil {
+		l.Error(err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": errors.Wrap(err, "failed to check RBAC"),
 		})
 		return
 	} else if !allowed {
+		msg := "Access denied (RBAC)."
+		l.Warn(msg)
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Access denied (RBAC).",
+			"error": msg,
 		})
 		return
 	}
 
-	if err := h.app.UploadFile(c, params.UserID, params.Device.ID,
+	ctx := c.Request.Context()
+	if err := h.app.UploadFile(ctx, params.UserID, params.Device.ID,
 		*request.Path); err != nil {
+		l.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": errors.Wrap(err, "bad request").Error(),
 		})

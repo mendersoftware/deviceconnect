@@ -105,6 +105,7 @@ func (l AuditLog) Validate() error {
 		validation.Field(&l.Actor, validation.Required),
 		validation.Field(&l.Action, validation.In(
 			ActionTerminalOpen, ActionTerminalClose,
+			ActionDownloadFile, ActionUploadFile,
 		), validation.Required),
 		validation.Field(&l.Object, validation.Required),
 		validation.Field(&l.EventTS, validation.Required),
