@@ -112,6 +112,22 @@ func TestManagementDownloadFile(t *testing.T) {
 				client.On("ChanSubscribe",
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
+
 						// file info response
 						body := wsft.FileInfo{
 							Path: string2pointer("/absolute/path"),
@@ -121,7 +137,7 @@ func TestManagementDownloadFile(t *testing.T) {
 							Size: int642pointer(10),
 						}
 						bodyData, err := msgpack.Marshal(body)
-						msg := &ws.ProtoMsg{
+						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeFileInfo,
 								SessionID: sessionID.String(),
@@ -188,6 +204,8 @@ func TestManagementDownloadFile(t *testing.T) {
 						} else if msg.Header.MsgType == ws.MessageTypePing {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -217,13 +235,29 @@ func TestManagementDownloadFile(t *testing.T) {
 				client.On("ChanSubscribe",
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
+
 						// file info response
 						body := wsft.FileInfo{
 							Path: string2pointer("/absolute/path"),
 							Size: int642pointer(10),
 						}
 						bodyData, err := msgpack.Marshal(body)
-						msg := &ws.ProtoMsg{
+						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeFileInfo,
 								SessionID: sessionID.String(),
@@ -303,6 +337,8 @@ func TestManagementDownloadFile(t *testing.T) {
 						} else if msg.Header.MsgType == ws.MessageTypePing {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -332,13 +368,29 @@ func TestManagementDownloadFile(t *testing.T) {
 				client.On("ChanSubscribe",
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
+
 						// file info response
 						body := wsft.Error{
 							Error:       string2pointer("file not found"),
 							MessageType: string2pointer(wsft.MessageTypeStat),
 						}
 						bodyData, err := msgpack.Marshal(body)
-						msg := &ws.ProtoMsg{
+						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeError,
 								SessionID: sessionID.String(),
@@ -373,6 +425,8 @@ func TestManagementDownloadFile(t *testing.T) {
 						} else if msg.Header.MsgType == ws.MessageTypePing {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -401,13 +455,28 @@ func TestManagementDownloadFile(t *testing.T) {
 				client.On("ChanSubscribe",
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
 						// file info response
 						body := wsft.FileInfo{
 							Path: string2pointer("/absolute/path"),
 							Size: int642pointer(10),
 						}
 						bodyData, err := msgpack.Marshal(body)
-						msg := &ws.ProtoMsg{
+						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeFileInfo,
 								SessionID: sessionID.String(),
@@ -476,6 +545,8 @@ func TestManagementDownloadFile(t *testing.T) {
 						} else if msg.Header.MsgType == ws.MessageTypePing {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -505,6 +576,22 @@ func TestManagementDownloadFile(t *testing.T) {
 				client.On("ChanSubscribe",
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
+						// then timeout...
 						return true
 					}),
 				).Return(&natsio.Subscription{}, nil)
@@ -522,9 +609,14 @@ func TestManagementDownloadFile(t *testing.T) {
 						} else if msg.Header.MsgType == wsft.MessageTypeGet {
 							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeACK {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
 						} else if msg.Header.MsgType == ws.MessageTypePing {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -553,13 +645,28 @@ func TestManagementDownloadFile(t *testing.T) {
 				client.On("ChanSubscribe",
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
 						// file info response
 						body := wsft.FileInfo{
 							Path: string2pointer("/absolute/path"),
 							Size: int642pointer(10),
 						}
 						bodyData, err := msgpack.Marshal(body)
-						msg := &ws.ProtoMsg{
+						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeFileInfo,
 								SessionID: sessionID.String(),
@@ -610,6 +717,8 @@ func TestManagementDownloadFile(t *testing.T) {
 						} else if msg.Header.MsgType == ws.MessageTypePing {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -639,13 +748,28 @@ func TestManagementDownloadFile(t *testing.T) {
 				client.On("ChanSubscribe",
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
 						// file info response
 						body := wsft.FileInfo{
 							Path: string2pointer("/absolute/path"),
 							Size: int642pointer(10),
 						}
 						bodyData, err := msgpack.Marshal(body)
-						msg := &ws.ProtoMsg{
+						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeFileInfo,
 								SessionID: sessionID.String(),
@@ -712,6 +836,8 @@ func TestManagementDownloadFile(t *testing.T) {
 						} else if msg.Header.MsgType == ws.MessageTypePing {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -722,6 +848,73 @@ func TestManagementDownloadFile(t *testing.T) {
 
 			HTTPStatus: http.StatusOK,
 			HTTPBody:   []byte("12345"),
+		},
+		{
+			Name:     "error, device does not support filetransfer",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: []byte(`{"path": "/absolute/path"}`),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// accept the open request
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeOpen,
+								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									"status": 1,
+								},
+							},
+							Body: []byte("mender-connect v1.0 simulation"),
+						}
+						b, _ := msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypeStat {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeGet {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeACK {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppDownloadFile: true,
+
+			HTTPStatus: http.StatusInternalServerError,
 		},
 		{
 			Name:     "ko, failed to submit audit log",
@@ -959,7 +1152,7 @@ func TestManagementDownloadFile(t *testing.T) {
 
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
-			assert.Equal(t, tc.HTTPStatus, w.Code)
+			assert.Equal(t, tc.HTTPStatus, w.Code, w.Body.Bytes())
 			if tc.HTTPStatus == http.StatusOK {
 				assert.Equal(t, tc.HTTPBody, w.Body.Bytes())
 			}
@@ -1028,8 +1221,24 @@ func TestManagementUploadFile(t *testing.T) {
 				client.On("ChanSubscribe",
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
-						// ack the put operation
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
 						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
+
+						// ack the put operation
+						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeACK,
 								SessionID: sessionID.String(),
@@ -1063,6 +1272,8 @@ func TestManagementUploadFile(t *testing.T) {
 						} else if msg.Header.MsgType == ws.MessageTypePing {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -1097,8 +1308,23 @@ func TestManagementUploadFile(t *testing.T) {
 				client.On("ChanSubscribe",
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
-						// ack the put operation
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
 						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
+						// ack the put operation
+						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeACK,
 								SessionID: sessionID.String(),
@@ -1129,6 +1355,8 @@ func TestManagementUploadFile(t *testing.T) {
 						} else if msg.Header.MsgType == ws.MessageTypePing {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -1138,6 +1366,82 @@ func TestManagementUploadFile(t *testing.T) {
 			AppUploadFile: true,
 
 			HTTPStatus: http.StatusRequestTimeout,
+		},
+		{
+			Name:     "error, filetransfer disabled",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version: ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{
+								ws.ProtoTypeShell,
+								ws.ProtoTypeMenderClient,
+							},
+						})
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypePut {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeChunk {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppUploadFile: true,
+
+			HTTPStatus: http.StatusInternalServerError,
 		},
 		{
 			Name:     "ko, error from device",
@@ -1163,13 +1467,28 @@ func TestManagementUploadFile(t *testing.T) {
 				client.On("ChanSubscribe",
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
 						// put response
 						body := wsft.Error{
 							Error:       string2pointer("file not writeable"),
 							MessageType: string2pointer(wsft.MessageTypePut),
 						}
 						bodyData, err := msgpack.Marshal(body)
-						msg := &ws.ProtoMsg{
+						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeError,
 								SessionID: sessionID.String(),
@@ -1201,6 +1520,8 @@ func TestManagementUploadFile(t *testing.T) {
 						} else if msg.Header.MsgType == ws.MessageTypePing {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -1235,8 +1556,23 @@ func TestManagementUploadFile(t *testing.T) {
 				client.On("ChanSubscribe",
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
-						// ack the put operation
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
 						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
+						// ack the put operation
+						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
 								MsgType:   wsft.MessageTypeACK,
 								SessionID: sessionID.String(),
@@ -1285,6 +1621,8 @@ func TestManagementUploadFile(t *testing.T) {
 						} else if msg.Header.MsgType == ws.MessageTypePing {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -1319,7 +1657,23 @@ func TestManagementUploadFile(t *testing.T) {
 				client.On("ChanSubscribe",
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
 
+						// then timeout...
 						return true
 					}),
 				).Return(&natsio.Subscription{}, nil)
@@ -1340,6 +1694,8 @@ func TestManagementUploadFile(t *testing.T) {
 						} else if msg.Header.MsgType == ws.MessageTypePing {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -1349,6 +1705,133 @@ func TestManagementUploadFile(t *testing.T) {
 			AppUploadFile: true,
 
 			HTTPStatus: http.StatusRequestTimeout,
+		},
+		{
+			Name:     "error, timeout in handshake",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypePut {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeChunk {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppUploadFile: true,
+
+			HTTPStatus: http.StatusRequestTimeout,
+		},
+		{
+			Name:     "error, handshake client error",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Body: map[string][]string{
+				fieldUploadPath: {"/absolute/path"},
+				fieldUploadUID:  {"0"},
+				fieldUploadGID:  {"0"},
+				fieldUploadMode: {"0644"},
+			},
+			File: []byte("1234567890"),
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						b, _ := msgpack.Marshal(ws.Error{
+							Error: "I don't understand...",
+						})
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeError,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypePut {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeChunk {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeError {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppUploadFile: true,
+
+			HTTPStatus: http.StatusInternalServerError,
 		},
 		{
 			Name:     "ko, RBAC check failure",
@@ -1674,7 +2157,7 @@ func TestManagementUploadFile(t *testing.T) {
 
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
-			assert.Equal(t, tc.HTTPStatus, w.Code)
+			assert.Equal(t, tc.HTTPStatus, w.Code, w.Body.String())
 		})
 	}
 }
