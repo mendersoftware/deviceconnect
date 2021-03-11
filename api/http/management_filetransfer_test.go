@@ -1245,11 +1245,24 @@ func TestManagementUploadFile(t *testing.T) {
 							},
 						}
 
-						data, err := msgpack.Marshal(msg)
-						assert.NoError(t, err)
+						data, _ := msgpack.Marshal(ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeACK,
+								SessionID: sessionID.String(),
+							},
+						})
 						chanMsg <- &natsio.Msg{Data: data}
 
 						// ack the chunk
+						data, _ = msgpack.Marshal(ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeACK,
+								SessionID: sessionID.String(),
+								Properties: map[string]interface{}{
+									"offset": int64(10),
+								},
+							},
+						})
 						chanMsg <- &natsio.Msg{Data: data}
 
 						return true
@@ -1273,6 +1286,8 @@ func TestManagementUploadFile(t *testing.T) {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 

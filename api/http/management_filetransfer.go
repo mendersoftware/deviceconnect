@@ -497,9 +497,12 @@ func (h ManagementController) DownloadFile(c *gin.Context) {
 	h.downloadFileResponse(c, params, request)
 }
 
-func (h ManagementController) uploadFileResponseHandleInboundMessages(c *gin.Context,
-	params *fileTransferParams, msgChan chan *natsio.Msg, errorChan chan error,
-	latestAckOffset *int64, latestAckOffsets chan int64) {
+func (h ManagementController) uploadFileResponseHandleInboundMessages(
+	c *gin.Context, params *fileTransferParams,
+	msgChan chan *natsio.Msg, errorChan chan error,
+	latestAckOffsets chan int64,
+) {
+	var latestAckOffset int64
 	deviceTopic := model.GetDeviceSubject(params.TenantID, params.Device.ID)
 	for {
 		select {
@@ -524,11 +527,13 @@ func (h ManagementController) uploadFileResponseHandleInboundMessages(c *gin.Con
 			case wsft.MessageTypeACK:
 				propValue := msg.Header.Properties[PropertyOffset]
 				propOffset, _ := propValue.(int64)
-				if propOffset > *latestAckOffset {
-					*latestAckOffset = propOffset
+				if propOffset > latestAckOffset {
+					latestAckOffset = propOffset
 					select {
-					case latestAckOffsets <- *latestAckOffset:
-					default:
+					case latestAckOffsets <- latestAckOffset:
+					case <-latestAckOffsets:
+						// Replace ack offset with the latest one
+						latestAckOffsets <- latestAckOffset
 					}
 				}
 
@@ -682,25 +687,29 @@ func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTra
 	}
 
 	// receive the ack message from the device
-	latestAckOffset := int64(-1)
 	latestAckOffsets := make(chan int64, 1)
 	errorChan := make(chan error)
-	go h.uploadFileResponseHandleInboundMessages(c, params, msgChan, errorChan,
-		&latestAckOffset, latestAckOffsets)
+	go h.uploadFileResponseHandleInboundMessages(
+		c, params, msgChan, errorChan, latestAckOffsets,
+	)
 
-	h.uploadFileResponseWriter(c, params, request, errorChan, &latestAckOffset,
-		latestAckOffsets, &errorStatusCode, &responseError)
+	h.uploadFileResponseWriter(
+		c, params, request, errorChan, latestAckOffsets, &errorStatusCode, &responseError,
+	)
 }
 
 func (h ManagementController) uploadFileResponseWriter(c *gin.Context,
 	params *fileTransferParams, request *model.UploadFileRequest,
-	errorChan chan error, latestAckOffset *int64, latestAckOffsets chan int64,
+	errorChan chan error, latestAckOffsets <-chan int64,
 	errorStatusCode *int, responseError *error) {
+	var (
+		offset          int64
+		latestAckOffset int64
+	)
 	deviceTopic := model.GetDeviceSubject(params.TenantID, params.Device.ID)
 
 	timeout := time.NewTimer(fileTransferTimeout)
 	data := make([]byte, fileTransferBufferSize)
-	offset := int64(0)
 	for {
 		n, err := request.File.Read(data)
 		if err != nil && err != io.EOF {
@@ -716,12 +725,6 @@ func (h ManagementController) uploadFileResponseWriter(c *gin.Context,
 			break
 		}
 
-		// drain latestAckOffsets and errorChan
-		select {
-		case <-latestAckOffsets:
-		default:
-		}
-
 		// send the chunk
 		if err := h.publishFileTransferProtoMessage(params.SessionID,
 			params.UserID, deviceTopic, wsft.MessageTypeChunk, data[0:n],
@@ -734,14 +737,14 @@ func (h ManagementController) uploadFileResponseWriter(c *gin.Context,
 		offset += int64(n)
 
 		// wait for acks, in case the ack sliding window is over
-		if offset > *latestAckOffset+int64(fileTransferBufferSize*ackSlidingWindowRecv) {
+		if offset > latestAckOffset+int64(fileTransferBufferSize*ackSlidingWindowRecv) {
 			timeout.Reset(fileTransferTimeout)
 			select {
 			case err := <-errorChan:
 				*errorStatusCode = http.StatusBadRequest
 				*responseError = err
 				return
-			case <-latestAckOffsets:
+			case latestAckOffset = <-latestAckOffsets:
 			case <-timeout.C:
 				*errorStatusCode = http.StatusRequestTimeout
 				*responseError = errFileTransferTimeout
@@ -758,6 +761,17 @@ func (h ManagementController) uploadFileResponseWriter(c *gin.Context,
 			}
 		}
 
+	}
+
+	for offset > latestAckOffset {
+		timeout.Reset(fileTransferTimeout)
+		select {
+		case latestAckOffset = <-latestAckOffsets:
+		case <-timeout.C:
+			*errorStatusCode = http.StatusRequestTimeout
+			*responseError = errFileTransferTimeout
+			return
+		}
 	}
 
 	c.Writer.WriteHeader(http.StatusCreated)
