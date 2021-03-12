@@ -25,6 +25,9 @@ coverage-acceptance-worker.txt
 __pycache__
 *.pyc
 .pytest_cache
+/tests/devices_api
+/tests/internal_api
+/tests/management_api
 
 # Pytest results
 /tests/results.xml
