@@ -21,6 +21,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -78,7 +79,7 @@ func TestManagementDownloadFile(t *testing.T) {
 	testCases := []struct {
 		Name     string
 		DeviceID string
-		Body     []byte
+		Path     string
 		Identity *identity.Identity
 
 		RBACGroups  string
@@ -102,7 +103,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte(`{"path": "/absolute/path"}`),
+			Path: "/absolute/path",
 
 			GetDevice: &model.Device{
 				ID:     "1234567890",
@@ -225,7 +226,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte(`{"path": "/absolute/path"}`),
+			Path: "/absolute/path",
 
 			GetDevice: &model.Device{
 				ID:     "1234567890",
@@ -358,7 +359,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte(`{"path": "/absolute/path"}`),
+			Path: "/absolute/path",
 
 			GetDevice: &model.Device{
 				ID:     "1234567890",
@@ -445,7 +446,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte(`{"path": "/absolute/path"}`),
+			Path: "/absolute/path",
 
 			GetDevice: &model.Device{
 				ID:     "1234567890",
@@ -566,7 +567,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte(`{"path": "/absolute/path"}`),
+			Path: "/absolute/path",
 
 			GetDevice: &model.Device{
 				ID:     "1234567890",
@@ -635,7 +636,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte(`{"path": "/absolute/path"}`),
+			Path: "/absolute/path",
 
 			GetDevice: &model.Device{
 				ID:     "1234567890",
@@ -738,7 +739,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte(`{"path": "/absolute/path"}`),
+			Path: "/absolute/path",
 
 			GetDevice: &model.Device{
 				ID:     "1234567890",
@@ -857,7 +858,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte(`{"path": "/absolute/path"}`),
+			Path: "/absolute/path",
 
 			GetDevice: &model.Device{
 				ID:     "1234567890",
@@ -924,7 +925,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte(`{"path": "/absolute/path"}`),
+			Path: "/absolute/path",
 
 			GetDevice: &model.Device{
 				ID:     "1234567890",
@@ -943,7 +944,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte(`{"path": "/absolute/path"}`),
+			Path: "/absolute/path",
 
 			RBACGroups: "group1,group",
 			RBACError:  errors.New("error"),
@@ -963,7 +964,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte(`{"path": "/absolute/path"}`),
+			Path: "/absolute/path",
 
 			RBACGroups:  "group1,group",
 			RBACAllowed: false,
@@ -983,7 +984,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte(`{"path": "relative/path"}`),
+			Path: "relative/path",
 
 			GetDevice: &model.Device{
 				ID:     "1234567890",
@@ -1000,7 +1001,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				Tenant:  "000000000000000000000000",
 				IsUser:  true,
 			},
-			Body: []byte("dummy"),
+			Path: "",
 
 			GetDevice: &model.Device{
 				ID:     "1234567890",
@@ -1113,12 +1114,9 @@ func TestManagementDownloadFile(t *testing.T) {
 			s := httptest.NewServer(router)
 			defer s.Close()
 
+			path := url.QueryEscape(tc.Path)
 			url := strings.Replace(APIURLManagementDeviceDownload, ":deviceId", tc.DeviceID, 1)
-			var body io.Reader
-			if tc.Body != nil {
-				body = bytes.NewReader(tc.Body)
-			}
-			req, err := http.NewRequest(http.MethodPost, "http://localhost"+url, body)
+			req, err := http.NewRequest(http.MethodGet, "http://localhost"+url+"?path="+path, nil)
 			if !assert.NoError(t, err) {
 				t.FailNow()
 			}

@@ -63,6 +63,8 @@ const (
 	fieldUploadFile = "file"
 
 	PropertyOffset = "offset"
+
+	paramDownloadPath = "path"
 )
 
 var fileTransferPingInterval = 30 * time.Second
@@ -106,7 +108,7 @@ func (h ManagementController) getFileTransferParams(c *gin.Context) (*fileTransf
 		return nil, http.StatusConflict, app.ErrDeviceNotConnected
 	}
 
-	if c.Request.Body == nil {
+	if c.Request.Method != http.MethodGet && c.Request.Body == nil {
 		return nil, http.StatusBadRequest, errors.New("missing request body")
 	}
 
@@ -451,13 +453,9 @@ func (h ManagementController) DownloadFile(c *gin.Context) {
 		return
 	}
 
-	request := &model.DownloadFileRequest{}
-	if err := c.ShouldBindJSON(request); err != nil {
-		l.Error(err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": errors.Wrap(err, "invalid request body").Error(),
-		})
-		return
+	path := c.Request.URL.Query().Get(paramDownloadPath)
+	request := &model.DownloadFileRequest{
+		Path: &path,
 	}
 
 	if err := request.Validate(); err != nil {
