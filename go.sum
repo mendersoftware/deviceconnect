@@ -213,10 +213,6 @@ github.com/mattn/go-isatty v0.0.9/go.mod h1:YNRxwqDuOph6SZLI9vUUz6OYw3QyUt7WiY2y
 github.com/mattn/go-isatty v0.0.12 h1:wuysRhFDzyxgEmMf5xjvJ2M9dZoWAXNNr5LSBS7uHXY=
 github.com/mattn/go-isatty v0.0.12/go.mod h1:cbi8OIDigv2wuxKPP5vlRcQ1OAZbq2CE4Kysco4FUpU=
 github.com/matttproud/golang_protobuf_extensions v1.0.1/go.mod h1:D8He9yQNgCq6Z5Ld7szi9bcBfOoFv/3dc6xSMkL2PC0=
-github.com/mendersoftware/go-lib-micro v0.0.0-20210219095151-13466b5958fb h1:TxxeigPztPVCMiKstl20acFSxcL06C11ktNEW6xJFbU=
-github.com/mendersoftware/go-lib-micro v0.0.0-20210219095151-13466b5958fb/go.mod h1:XeXkX/pfX7FOwG/y+NIWBcbtmhnN/sAzuuq0RZ6GcPQ=
-github.com/mendersoftware/go-lib-micro v0.0.0-20210301092156-349d3ae1e399 h1:RlM224ofXg2Wh8jD2z93m3yI/eqRyrnwISWSOgxcGls=
-github.com/mendersoftware/go-lib-micro v0.0.0-20210301092156-349d3ae1e399/go.mod h1:XeXkX/pfX7FOwG/y+NIWBcbtmhnN/sAzuuq0RZ6GcPQ=
 github.com/mendersoftware/go-lib-micro v0.0.0-20210311084510-06d0c5918746 h1:P6zxuOT3ATh8AnYZTI95iLnH0kEo7BWno/U6iytqIuI=
 github.com/mendersoftware/go-lib-micro v0.0.0-20210311084510-06d0c5918746/go.mod h1:AYMV1BNNHDcAt25V7KY6cd5XhAZXIlOVlCV9yZt51zM=
 github.com/miekg/dns v1.0.14/go.mod h1:W1PPwlIAgtquWBMBEV9nkV9Cazfe8ScdGz/Lj7v3Nrg=
@@ -287,8 +283,6 @@ github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPx
 github.com/sirupsen/logrus v1.4.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMBDgk/93Q=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
-github.com/sirupsen/logrus v1.7.0 h1:ShrD1U9pZB12TX0cVy0DtePoCH97K8EtX+mg7ZARUtM=
-github.com/sirupsen/logrus v1.7.0/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
 github.com/sirupsen/logrus v1.8.0 h1:nfhvjKcUMhBMVqbKHJlk5RPrrfYr/NMo3692g0dwfWU=
 github.com/sirupsen/logrus v1.8.0/go.mod h1:4GuYW9TZmE769R5STWrRakJc4UqQ3+QQ95fyz7ENv1A=
 github.com/smartystreets/assertions v0.0.0-20180927180507-b2de0cb4f26d h1:zE9ykElWQ6/NYmHa3jpm/yHnI4xSofP+UP6SpjHcSeM=
