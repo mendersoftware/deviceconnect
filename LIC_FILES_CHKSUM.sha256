@@ -1,3 +1,4 @@
+#
 # Apache-2.0
 b4acfcfa2a0ba1a8c82ec3965fbcee886cff8394ca4214e0ddac0a36beb1e05a  LICENSE
 b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1  vendor/gopkg.in/yaml.v2/LICENSE
@@ -11,14 +12,15 @@ c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.
 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.com/nats-io/nats-server/v2/LICENSE
 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.com/nats-io/nuid/LICENSE
 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.com/nats-io/nkeys/LICENSE
-c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.com/nats-io/jwt/LICENSE
 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.com/nats-io/nats.go/LICENSE
 03cfaf331a260694d06227a589cdd2b5fcfab474697b72e250736696c313655a  vendor/github.com/jmespath/go-jmespath/LICENSE
 09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b  vendor/github.com/xdg/stringprep/LICENSE
 09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b  vendor/github.com/xdg/scram/LICENSE
 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/go.mongodb.org/mongo-driver/LICENSE
 e31497e5f27700c6c7f25c7831641d0af1df47c3d4c6c3699d12d74d75fd0b33  vendor/github.com/magefile/mage/LICENSE
-
+cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30  vendor/github.com/minio/highwayhash/LICENSE
+c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.com/nats-io/jwt/v2/LICENSE
+#
 # MIT
 a94710b55e03b5285f77d048c5ba61bb9d6ee04a06c0eb90e68821e11b0c707a  vendor/gopkg.in/yaml.v2/LICENSE.libyaml
 d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b  vendor/gopkg.in/yaml.v3/LICENSE
@@ -49,7 +51,7 @@ f566a9f97bacdaf00d9f21dd991e81dc11201c4e016c86b470799429a1c9a79c  vendor/github.
 03458b6d5828e1be1127ca2adf122572eb574fc47b56190c3b38203b8b2a98d0  vendor/github.com/gin-contrib/sse/LICENSE
 bafe84dafda45b69105faab4dcd00c4c66736441f0dbe8deb836c48434f1cadc  vendor/github.com/gin-contrib/cors/LICENSE
 caa932df46551b53643952fe03b351d55db97be73b5393b986dcf6b05d3c416a  vendor/github.com/go-ozzo/ozzo-validation/v4/LICENSE
-
+#
 # BSD-3-Clause
 8407b13e462f755c06db3db3a034dc1fdc9157af19c6ea8986e7d5aecf4126b3  vendor/gopkg.in/tomb.v2/LICENSE
 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067  vendor/github.com/aws/aws-sdk-go/internal/sync/singleflight/LICENSE
@@ -67,7 +69,9 @@ c8001d18c3dda64c7e72146f1b23d73619fcf426aed6778f447599f5ac8e600a  vendor/github.
 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067  vendor/golang.org/x/crypto/LICENSE
 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067  vendor/golang.org/x/sys/LICENSE
 4835612df0098ca95f8e7d9e3bffcb02358d435dbb38057c844c99d7f725eb20  vendor/google.golang.org/protobuf/LICENSE
-
+2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067  vendor/golang.org/x/time/LICENSE
+08683b14bda8ae3538abf19e1879e853a39e3b8276a8d673363b529d15a61c1a  vendor/github.com/klauspost/compress/s2/LICENSE
+#
 # BSD-2-Clause
 fe60e0cc90e88f12c814adb7dc88df6791c6ec6798d8c856b7d5ad1b805b4f10  vendor/github.com/mendersoftware/go-lib-micro/mongo/dbtest/LICENSE
 1530185dd39cdde7cb2f786a7a5fcf8bc34368b6ae73c15e72bafe88fd80b9a2  vendor/github.com/vmihailenco/msgpack/v5/LICENSE
@@ -76,9 +80,9 @@ e45788cee53174eee4d7938484bedca0e66dcac6e92bec354b410273bdb5f6e7  vendor/github.
 8d427fd87bc9579ea368fde3d49f9ca22eac857f91a9dec7e3004bdfab7dee86  vendor/github.com/pkg/errors/LICENSE
 2be1b548b0387ca8948e1bb9434e709126904d15f622cc2d0d8e7f186e4d122d  vendor/github.com/gorilla/websocket/LICENSE
 75e1ca97a84a9da6051dee0114333388216f2c4a5a028296b882ff3d57274735  vendor/github.com/russross/blackfriday/v2/LICENSE.txt
-
+#
 # MPL-2.0
 bef1747eda88b9ed46e94830b0d978c3499dad5dfe38d364971760881901dadd  vendor/github.com/hashicorp/hcl/LICENSE
-
+#
 # ISC
 1b93a317849ee09d3d7e4f1d20c2b78ddb230b4becb12d7c224c927b9d470251  vendor/github.com/davecgh/go-spew/LICENSE
