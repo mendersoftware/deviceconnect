@@ -414,7 +414,7 @@ components:
       properties:
         path:
           type: string
-          description: The path of the file on the device to download
+          description: The destination path on the device
         uid:
           type: integer
           description: The numerical UID of the file on the device
