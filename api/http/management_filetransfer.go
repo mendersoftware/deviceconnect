@@ -711,7 +711,15 @@ func (h ManagementController) uploadFileResponseWriter(c *gin.Context,
 	for {
 		n, err := request.File.Read(data)
 		if err != nil && err != io.EOF {
-			*responseError = err
+			if err == io.ErrUnexpectedEOF {
+				*errorStatusCode = http.StatusBadRequest
+				*responseError = errors.New(
+					"malformed request body: " +
+						"did not find closing multipart boundary",
+				)
+			} else {
+				*responseError = err
+			}
 			return
 		} else if n == 0 {
 			if err := h.publishFileTransferProtoMessage(params.SessionID,
@@ -852,7 +860,7 @@ func (h ManagementController) UploadFile(c *gin.Context) {
 	request, err := h.parseUploadFileRequest(c)
 	if err != nil {
 		l.Error(err.Error())
-		c.JSON(statusCode, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
