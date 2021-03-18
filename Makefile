@@ -24,7 +24,7 @@ build: $(BINFILE)
 all: fmt lint docs build
 
 tests/%: docs/%.yml
-	rm -r $@; \
+	rm -rf $@; \
 	docker run --rm -t -v $(ROOTDIR):$(ROOTDIR) -w $(ROOTDIR) \
 		-u $(shell id -u):$(shell id -g) \
 		openapitools/openapi-generator-cli:v4.3.1 generate \
@@ -115,3 +115,4 @@ clean:
 	rm -f tests/acceptance.*.logs tests/results.xml \
 		tests/coverage-acceptance.txt coverage.txt
 	rm -f bin/*
+	rm -rf tests/devices_api tests/internal_api tests/management_api
