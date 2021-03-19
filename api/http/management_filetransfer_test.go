@@ -915,7 +915,7 @@ func TestManagementDownloadFile(t *testing.T) {
 			},
 			AppDownloadFile: true,
 
-			HTTPStatus: http.StatusInternalServerError,
+			HTTPStatus: http.StatusBadGateway,
 		},
 		{
 			Name:     "ko, failed to submit audit log",
@@ -1454,7 +1454,7 @@ func TestManagementUploadFile(t *testing.T) {
 			},
 			AppUploadFile: true,
 
-			HTTPStatus: http.StatusInternalServerError,
+			HTTPStatus: http.StatusBadGateway,
 		},
 		{
 			Name:     "ko, error from device",
