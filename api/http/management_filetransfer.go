@@ -268,6 +268,9 @@ func (h ManagementController) downloadFileResponseError(c *gin.Context,
 			status = http.StatusBadRequest
 		} else if *responseError == errFileTransferTimeout {
 			status = http.StatusRequestTimeout
+		} else if *responseError == errFileTransferNotImplemented ||
+			*responseError == errFileTransferDisabled {
+			status = http.StatusBadGateway
 		}
 		c.JSON(status, gin.H{
 			"error": (*responseError).Error(),
@@ -630,8 +633,11 @@ func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTra
 	defer sub.Unsubscribe()
 
 	if err = h.filetransferHandshake(msgChan, params.SessionID, deviceTopic); err != nil {
-		if err == errFileTransferTimeout {
+		switch err {
+		case errFileTransferTimeout:
 			errorStatusCode = http.StatusRequestTimeout
+		case errFileTransferNotImplemented, errFileTransferDisabled:
+			errorStatusCode = http.StatusBadGateway
 		}
 		responseError = err
 		return
