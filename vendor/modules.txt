@@ -174,14 +174,14 @@ github.com/ugorji/go/codec
 # github.com/urfave/cli v1.22.5
 ## explicit
 github.com/urfave/cli
-# github.com/vmihailenco/msgpack/v5 v5.1.0
+# github.com/vmihailenco/msgpack/v5 v5.3.0
 ## explicit
 github.com/vmihailenco/msgpack/v5
 github.com/vmihailenco/msgpack/v5/msgpcode
-# github.com/vmihailenco/tagparser v0.1.2
-github.com/vmihailenco/tagparser
-github.com/vmihailenco/tagparser/internal
-github.com/vmihailenco/tagparser/internal/parser
+# github.com/vmihailenco/tagparser/v2 v2.0.0
+github.com/vmihailenco/tagparser/v2
+github.com/vmihailenco/tagparser/v2/internal
+github.com/vmihailenco/tagparser/v2/internal/parser
 # github.com/xdg/scram v0.0.0-20180814205039-7eeb5667e42c
 github.com/xdg/scram
 # github.com/xdg/stringprep v0.0.0-20180714160509-73f8eece6fdc
