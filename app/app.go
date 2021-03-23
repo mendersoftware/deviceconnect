@@ -45,7 +45,8 @@ type App interface {
 	DeleteDevice(ctx context.Context, tenantID, deviceID string) error
 	UpdateDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error
 	PrepareUserSession(ctx context.Context, sess *model.Session) error
-	FreeUserSession(ctx context.Context, sessionID string) error
+	LogUserSession(ctx context.Context, sess *model.Session, sessionType string) error
+	FreeUserSession(ctx context.Context, sessionID string, sessionTypes []string) error
 	RemoteTerminalAllowed(ctx context.Context, tenantID, deviceID string, groups []string) (bool, error)
 	GetSessionRecording(ctx context.Context, id string, w io.Writer) (err error)
 	SaveSessionRecording(ctx context.Context, id string, sessionBytes []byte) error
@@ -163,38 +164,56 @@ func (a *app) PrepareUserSession(
 		return err
 	}
 
-	if a.HaveAuditLogs {
-		err = a.workflows.SubmitAuditLog(ctx, workflows.AuditLog{
-			Action: workflows.ActionTerminalOpen,
-			Actor: workflows.Actor{
-				ID:   sess.UserID,
-				Type: workflows.ActorUser,
-			},
-			Object: workflows.Object{
-				ID:   sess.DeviceID,
-				Type: workflows.ObjectDevice,
-			},
-			Change: "User requested a new terminal session",
-			MetaData: map[string][]string{
-				"session_id": {sess.ID},
-			},
-			EventTS: time.Now(),
-		})
-		if err != nil {
-			err = errors.Wrap(err,
-				"failed to submit audit log for creating terminal session",
-			)
-			_, e := a.store.DeleteSession(ctx, sess.ID)
-			if e != nil {
-				err = errors.Errorf(
-					"%s: failed to clean up session state: %s",
-					err.Error(), e.Error(),
-				)
-			}
-			return err
-		}
-	}
+	return nil
+}
 
+// LogUserSession logs a new user session
+func (a *app) LogUserSession(
+	ctx context.Context,
+	sess *model.Session,
+	sessionType string,
+) error {
+	if !a.HaveAuditLogs {
+		return nil
+	}
+	var change string
+	var action workflows.Action
+	if sessionType == model.SessionTypePortForward {
+		change = "User requested a new port forwarding session"
+		action = workflows.ActionPortForwardOpen
+	} else if sessionType == model.SessionTypeTerminal {
+		change = "User requested a new terminal session"
+		action = workflows.ActionTerminalOpen
+	} else {
+		return errors.New("unknown session type: " + sessionType)
+	}
+	err := a.workflows.SubmitAuditLog(ctx, workflows.AuditLog{
+		Action: action,
+		Actor: workflows.Actor{
+			ID:   sess.UserID,
+			Type: workflows.ActorUser,
+		},
+		Object: workflows.Object{
+			ID:   sess.DeviceID,
+			Type: workflows.ObjectDevice,
+		},
+		Change: change,
+		MetaData: map[string][]string{
+			"session_id": {sess.ID},
+		},
+		EventTS: time.Now(),
+	})
+	if err != nil {
+		err = errors.Wrap(err, "failed to submit audit log")
+		_, e := a.store.DeleteSession(ctx, sess.ID)
+		if e != nil {
+			err = errors.Errorf(
+				"%s: failed to clean up session state: %s",
+				err.Error(), e.Error(),
+			)
+		}
+		return err
+	}
 	return nil
 }
 
@@ -202,28 +221,42 @@ func (a *app) PrepareUserSession(
 func (a *app) FreeUserSession(
 	ctx context.Context,
 	sessionID string,
+	sessionTypes []string,
 ) error {
 	sess, err := a.store.DeleteSession(ctx, sessionID)
 	if err != nil {
 		return err
 	}
 	if a.HaveAuditLogs {
-		err = a.workflows.SubmitAuditLog(ctx, workflows.AuditLog{
-			Action: workflows.ActionTerminalClose,
-			Actor: workflows.Actor{
-				ID:   sess.UserID,
-				Type: workflows.ActorUser,
-			},
-			Object: workflows.Object{
-				ID:   sess.DeviceID,
-				Type: workflows.ObjectDevice,
-			},
-			MetaData: map[string][]string{
-				"session_id": {sess.ID},
-			},
-		})
+		for _, sessionType := range sessionTypes {
+			var action workflows.Action
+			if sessionType == model.SessionTypePortForward {
+				action = workflows.ActionPortForwardClose
+			} else if sessionType == model.SessionTypeTerminal {
+				action = workflows.ActionTerminalClose
+			} else {
+				continue
+			}
+			err = a.workflows.SubmitAuditLog(ctx, workflows.AuditLog{
+				Action: action,
+				Actor: workflows.Actor{
+					ID:   sess.UserID,
+					Type: workflows.ActorUser,
+				},
+				Object: workflows.Object{
+					ID:   sess.DeviceID,
+					Type: workflows.ObjectDevice,
+				},
+				MetaData: map[string][]string{
+					"session_id": {sess.ID},
+				},
+			})
+			if err != nil {
+				return errors.Wrap(err, "failed to submit audit log")
+			}
+		}
 	}
-	return err
+	return nil
 }
 
 func buildRBACFilter(deviceID string, groups []string) model.SearchParams {

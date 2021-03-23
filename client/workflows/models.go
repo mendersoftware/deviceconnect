@@ -30,10 +30,12 @@ type AuditWorkflow struct {
 type Action string
 
 const (
-	ActionTerminalOpen  Action = "open_terminal"
-	ActionTerminalClose Action = "close_terminal"
-	ActionDownloadFile  Action = "download_file"
-	ActionUploadFile    Action = "upload_file"
+	ActionTerminalOpen     Action = "open_terminal"
+	ActionTerminalClose    Action = "close_terminal"
+	ActionPortForwardOpen  Action = "open_portforward"
+	ActionPortForwardClose Action = "close_portforward"
+	ActionDownloadFile     Action = "download_file"
+	ActionUploadFile       Action = "upload_file"
 )
 
 type ActorType string
@@ -105,6 +107,7 @@ func (l AuditLog) Validate() error {
 		validation.Field(&l.Actor, validation.Required),
 		validation.Field(&l.Action, validation.In(
 			ActionTerminalOpen, ActionTerminalClose,
+			ActionPortForwardOpen, ActionPortForwardClose,
 			ActionDownloadFile, ActionUploadFile,
 		), validation.Required),
 		validation.Field(&l.Object, validation.Required),
