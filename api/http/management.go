@@ -168,6 +168,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 		DeviceID:           deviceID,
 		StartTS:            time.Now(),
 		BytesRecordedMutex: &sync.Mutex{},
+		Types:              []string{},
 	}
 
 	// Prepare the user session
@@ -190,7 +191,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 		return
 	}
 	defer func() {
-		err := h.app.FreeUserSession(ctx, session.ID)
+		err := h.app.FreeUserSession(ctx, session.ID, session.Types)
 		if err != nil {
 			l.Warnf("failed to free session: %s", err.Error())
 		}
@@ -504,7 +505,7 @@ func (h ManagementController) handleSessLimit(ctx context.Context,
 
 		retMsg = userErrMsg
 
-		err = h.app.FreeUserSession(ctx, session.ID)
+		err = h.app.FreeUserSession(ctx, session.ID, session.Types)
 		if err != nil {
 			l.Warnf("failed to free session"+
 				"that went over limit: %s", err.Error())
@@ -690,6 +691,23 @@ func (h ManagementController) ConnectServeWS(
 		errChan,
 		h.app.GetRecorder(ctx, sess.ID), controlRecorder)
 
+	return h.connectServeWSProcessMessages(ctx, conn, sess, deviceChan,
+		&remoteTerminalRunning, controlRecorderBuffered)
+}
+
+func (h ManagementController) connectServeWSProcessMessages(
+	ctx context.Context,
+	conn *websocket.Conn,
+	sess *model.Session,
+	deviceChan chan *natsio.Msg,
+	remoteTerminalRunning *bool,
+	controlRecorderBuffered *bufio.Writer,
+) (err error) {
+	l := log.FromContext(ctx)
+	id := identity.FromContext(ctx)
+	logTerminal := false
+	logPortForward := false
+
 	var data []byte
 	controlBytes := 0
 	ignoreControlMessages := false
@@ -715,11 +733,21 @@ func (h ManagementController) ConnectServeWS(
 		data, _ = msgpack.Marshal(m)
 		switch m.Header.Proto {
 		case ws.ProtoTypeShell:
+			// send the audit log for remote terminal
+			if !logTerminal {
+				if err := h.app.LogUserSession(ctx, sess,
+					model.SessionTypeTerminal); err != nil {
+					return err
+				}
+				sess.Types = append(sess.Types, model.SessionTypeTerminal)
+				logTerminal = true
+			}
+			// handle remote terminal-specific messages
 			switch m.Header.MsgType {
 			case shell.MessageTypeSpawnShell:
-				remoteTerminalRunning = true
+				*remoteTerminalRunning = true
 			case shell.MessageTypeStopShell:
-				remoteTerminalRunning = false
+				*remoteTerminalRunning = false
 			case shell.MessageTypeResizeShell:
 				if ignoreControlMessages {
 					continue
@@ -733,6 +761,15 @@ func (h ManagementController) ConnectServeWS(
 				}
 
 				controlBytes += sendResizeMessage(m, sess, controlRecorderBuffered)
+			}
+		case ws.ProtoTypePortForward:
+			if !logPortForward {
+				if err := h.app.LogUserSession(ctx, sess,
+					model.SessionTypePortForward); err != nil {
+					return err
+				}
+				sess.Types = append(sess.Types, model.SessionTypePortForward)
+				logPortForward = true
 			}
 		}
 

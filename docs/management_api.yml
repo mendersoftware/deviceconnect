@@ -391,6 +391,7 @@ components:
           enum:
             - connected
             - disconnected
+            - unknown
           description: Device status.
 
     Error:

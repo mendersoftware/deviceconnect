@@ -207,6 +207,8 @@ func TestManagementDownloadFile(t *testing.T) {
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -340,6 +342,8 @@ func TestManagementDownloadFile(t *testing.T) {
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -427,6 +431,8 @@ func TestManagementDownloadFile(t *testing.T) {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
@@ -548,6 +554,8 @@ func TestManagementDownloadFile(t *testing.T) {
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -617,6 +625,8 @@ func TestManagementDownloadFile(t *testing.T) {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
@@ -719,6 +729,8 @@ func TestManagementDownloadFile(t *testing.T) {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
@@ -839,6 +851,8 @@ func TestManagementDownloadFile(t *testing.T) {
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -907,6 +921,8 @@ func TestManagementDownloadFile(t *testing.T) {
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -915,7 +931,7 @@ func TestManagementDownloadFile(t *testing.T) {
 			},
 			AppDownloadFile: true,
 
-			HTTPStatus: http.StatusInternalServerError,
+			HTTPStatus: http.StatusBadGateway,
 		},
 		{
 			Name:     "ko, failed to submit audit log",
@@ -1370,6 +1386,8 @@ func TestManagementUploadFile(t *testing.T) {
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -1454,7 +1472,7 @@ func TestManagementUploadFile(t *testing.T) {
 			},
 			AppUploadFile: true,
 
-			HTTPStatus: http.StatusInternalServerError,
+			HTTPStatus: http.StatusBadGateway,
 		},
 		{
 			Name:     "ko, error from device",
@@ -1534,6 +1552,8 @@ func TestManagementUploadFile(t *testing.T) {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
@@ -1636,6 +1656,8 @@ func TestManagementUploadFile(t *testing.T) {
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -1709,6 +1731,8 @@ func TestManagementUploadFile(t *testing.T) {
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
 						return false
@@ -1764,6 +1788,8 @@ func TestManagementUploadFile(t *testing.T) {
 							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 							return true
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 
@@ -1835,6 +1861,8 @@ func TestManagementUploadFile(t *testing.T) {
 						} else if msg.Header.MsgType == ws.MessageTypeOpen {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						} else if msg.Header.MsgType == ws.MessageTypeError {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
 							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
 						}
 

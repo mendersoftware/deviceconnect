@@ -57,13 +57,13 @@ func (_m *App) DownloadFile(ctx context.Context, userID string, deviceID string,
 	return r0
 }
 
-// FreeUserSession provides a mock function with given fields: ctx, sessionID
-func (_m *App) FreeUserSession(ctx context.Context, sessionID string) error {
-	ret := _m.Called(ctx, sessionID)
+// FreeUserSession provides a mock function with given fields: ctx, sessionID, sessionTypes
+func (_m *App) FreeUserSession(ctx context.Context, sessionID string, sessionTypes []string) error {
+	ret := _m.Called(ctx, sessionID, sessionTypes)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string) error); ok {
-		r0 = rf(ctx, sessionID)
+	if rf, ok := ret.Get(0).(func(context.Context, string, []string) error); ok {
+		r0 = rf(ctx, sessionID, sessionTypes)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -147,6 +147,20 @@ func (_m *App) HealthCheck(ctx context.Context) error {
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context) error); ok {
 		r0 = rf(ctx)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// LogUserSession provides a mock function with given fields: ctx, sess, sessionType
+func (_m *App) LogUserSession(ctx context.Context, sess *model.Session, sessionType string) error {
+	ret := _m.Called(ctx, sess, sessionType)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, *model.Session, string) error); ok {
+		r0 = rf(ctx, sess, sessionType)
 	} else {
 		r0 = ret.Error(0)
 	}

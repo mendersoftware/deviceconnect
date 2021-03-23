@@ -237,25 +237,6 @@ func TestPrepareUserSession(t *testing.T) {
 
 		WorkflowsError: nil,
 	}, {
-		Name: "ok, with auditlogs",
-
-		CTX: context.Background(),
-		Session: &model.Session{
-			DeviceID: "00000000-0000-0000-0000-000000000000",
-			UserID:   "00000000-0000-0000-0000-000000000001",
-			TenantID: "000000000000000000000000",
-			StartTS:  time.Now(),
-		},
-		StoreGetDevice: &model.Device{
-			ID:     "00000000-0000-0000-0000-000000000000",
-			Status: model.DeviceStatusConnected,
-		},
-		StoreGetDeviceErr: nil,
-		StoreAllocSessErr: nil,
-
-		HaveAuditLogs:  true,
-		WorkflowsError: nil,
-	}, {
 		Name: "error, nil session",
 
 		CTX:           context.Background(),
@@ -347,53 +328,7 @@ func TestPrepareUserSession(t *testing.T) {
 		},
 		StoreAllocSessErr: errors.New("store: internal error"),
 		Erre:              errors.New("store: internal error"),
-	}, {
-		Name: "error, SubmitAuditLog http error",
-
-		CTX:           context.Background(),
-		HaveAuditLogs: true,
-		Session: &model.Session{
-			DeviceID: "00000000-0000-0000-0000-000000000000",
-			UserID:   "00000000-0000-0000-0000-000000000001",
-			TenantID: "000000000000000000000000",
-			StartTS:  time.Now(),
-		},
-		StoreGetDevice: &model.Device{
-			ID:     "00000000-0000-0000-0000-000000000000",
-			Status: model.DeviceStatusConnected,
-		},
-		WorkflowsError: errors.New("http error"),
-		Erre: errors.New(
-			"failed to submit audit log for creating terminal " +
-				"session: http error",
-		),
-	}, {
-		Name: "error, SubmitAuditLog http error and cleanup error",
-
-		CTX:           context.Background(),
-		HaveAuditLogs: true,
-		Session: &model.Session{
-			DeviceID: "00000000-0000-0000-0000-000000000000",
-			UserID:   "00000000-0000-0000-0000-000000000001",
-			TenantID: "000000000000000000000000",
-			StartTS:  time.Now(),
-		},
-		StoreGetDevice: &model.Device{
-			ID:     "00000000-0000-0000-0000-000000000000",
-			Status: model.DeviceStatusConnected,
-		},
-		WorkflowsError:        errors.New("http error"),
-		StoreDeleteSessionErr: errors.New("store: internal error"),
-		Erre: errors.New(
-			"failed to submit audit log for creating terminal " +
-				"session: http error: failed to clean up " +
-				"session state: store: internal error",
-		),
 	}}
-
-	validateAuditLog := mock.MatchedBy(func(log workflows.AuditLog) bool {
-		return assert.NoError(t, log.Validate())
-	})
 
 	for i := range testCases {
 		tc := testCases[i]
@@ -433,6 +368,128 @@ func TestPrepareUserSession(t *testing.T) {
 			if !tc.HaveAuditLogs {
 				goto execTest
 			}
+			ds.On("DeleteSession",
+				tc.CTX,
+				mock.AnythingOfType("string")).
+				Return(tc.Session, tc.StoreDeleteSessionErr)
+
+		execTest:
+			err := app.PrepareUserSession(tc.CTX, tc.Session)
+			if tc.Erre != nil {
+				if assert.Error(t, err) {
+					assert.Regexp(t,
+						tc.Erre.Error(),
+						err.Error(),
+					)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestLogUserSession(t *testing.T) {
+	testCases := []struct {
+		Name string
+
+		CTX     context.Context
+		Session *model.Session
+
+		Rand          io.Reader
+		BadParameters bool
+
+		HaveAuditLogs         bool
+		WorkflowsError        error
+		StoreDeleteSessionErr error
+
+		Erre error
+	}{{
+		Name: "ok, terminal",
+
+		CTX: context.Background(),
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			Types:    []string{model.SessionTypeTerminal},
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+
+		HaveAuditLogs:  true,
+		WorkflowsError: nil,
+	}, {
+		Name: "ok, port forward",
+
+		CTX: context.Background(),
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			Types:    []string{model.SessionTypePortForward},
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+
+		HaveAuditLogs:  true,
+		WorkflowsError: nil,
+	}, {
+		Name: "error, SubmitAuditLog http error",
+
+		CTX:           context.Background(),
+		HaveAuditLogs: true,
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			Types:    []string{model.SessionTypeTerminal},
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+		WorkflowsError: errors.New("http error"),
+		Erre: errors.New(
+			"failed to submit audit log: http error",
+		),
+	}, {
+		Name: "error, SubmitAuditLog http error and cleanup error",
+
+		CTX:           context.Background(),
+		HaveAuditLogs: true,
+		Session: &model.Session{
+			DeviceID: "00000000-0000-0000-0000-000000000000",
+			UserID:   "00000000-0000-0000-0000-000000000001",
+			Types:    []string{model.SessionTypeTerminal},
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now(),
+		},
+		WorkflowsError:        errors.New("http error"),
+		StoreDeleteSessionErr: errors.New("store: internal error"),
+		Erre: errors.New(
+			"failed to submit audit log: http error: failed to clean up " +
+				"session state: store: internal error",
+		),
+	}}
+
+	validateAuditLog := mock.MatchedBy(func(log workflows.AuditLog) bool {
+		return assert.NoError(t, log.Validate())
+	})
+
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.Name, func(t *testing.T) {
+			ds := new(store_mocks.DataStore)
+			defer ds.AssertExpectations(t)
+			wf := new(wf_mocks.Client)
+			defer wf.AssertExpectations(t)
+			inv := new(inv_mocks.Client)
+			defer inv.AssertExpectations(t)
+			uuid.SetRand(tc.Rand)
+			defer uuid.SetRand(nil)
+			app := New(
+				ds, inv,
+				wf, Config{HaveAuditLogs: tc.HaveAuditLogs},
+			)
+			if tc.BadParameters {
+				goto execTest
+			}
 			wf.On("SubmitAuditLog",
 				tc.CTX,
 				validateAuditLog).
@@ -446,7 +503,7 @@ func TestPrepareUserSession(t *testing.T) {
 				Return(tc.Session, tc.StoreDeleteSessionErr)
 
 		execTest:
-			err := app.PrepareUserSession(tc.CTX, tc.Session)
+			err := app.LogUserSession(tc.CTX, tc.Session, tc.Session.Types[0])
 			if tc.Erre != nil {
 				if assert.Error(t, err) {
 					assert.Regexp(t,
@@ -484,6 +541,7 @@ func TestFreeUserSession(t *testing.T) {
 			ID:       "00000000-0000-0000-0000-000000000000",
 			DeviceID: "00000000-0000-0000-0000-000000000001",
 			UserID:   "00000000-0000-0000-0000-000000000002",
+			Types:    []string{model.SessionTypeTerminal},
 			TenantID: "000000000000000000000000",
 			StartTS:  time.Now().Add(-time.Hour),
 		},
@@ -496,6 +554,21 @@ func TestFreeUserSession(t *testing.T) {
 			ID:       "00000000-0000-0000-0000-000000000000",
 			DeviceID: "00000000-0000-0000-0000-000000000001",
 			UserID:   "00000000-0000-0000-0000-000000000002",
+			Types:    []string{model.SessionTypeTerminal},
+			TenantID: "000000000000000000000000",
+			StartTS:  time.Now().Add(-time.Hour),
+		},
+		HaveAuditLogs: true,
+	}, {
+		Name: "ok, with audit logs port forward",
+
+		SessionID: "00000000-0000-0000-0000-000000000000",
+
+		StoreDeleteSession: &model.Session{
+			ID:       "00000000-0000-0000-0000-000000000000",
+			DeviceID: "00000000-0000-0000-0000-000000000001",
+			UserID:   "00000000-0000-0000-0000-000000000002",
+			Types:    []string{model.SessionTypePortForward},
 			TenantID: "000000000000000000000000",
 			StartTS:  time.Now().Add(-time.Hour),
 		},
@@ -518,6 +591,7 @@ func TestFreeUserSession(t *testing.T) {
 			ID:       "00000000-0000-0000-0000-000000000000",
 			DeviceID: "00000000-0000-0000-0000-000000000001",
 			UserID:   "00000000-0000-0000-0000-000000000002",
+			Types:    []string{model.SessionTypeTerminal},
 			TenantID: "000000000000000000000000",
 			StartTS:  time.Now().Add(-time.Hour),
 		},
@@ -553,7 +627,11 @@ func TestFreeUserSession(t *testing.T) {
 				Return(tc.WorkflowsErr)
 
 		execTest:
-			err := app.FreeUserSession(ctx, tc.SessionID)
+			types := []string{}
+			if tc.StoreDeleteSession != nil {
+				types = tc.StoreDeleteSession.Types
+			}
+			err := app.FreeUserSession(ctx, tc.SessionID, types)
 			if tc.Erre != nil {
 				if assert.Error(t, err) {
 					assert.Regexp(t,

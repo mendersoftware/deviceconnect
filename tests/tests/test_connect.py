@@ -15,6 +15,7 @@
 import json
 import pytest
 import uuid
+import time
 from base64 import urlsafe_b64encode
 
 import msgpack
@@ -66,6 +67,14 @@ class _TestConnect:
             raise Exception("Expected status code 404")
 
         with dev.connect() as dev_conn:
+            for i in range(15):
+                obj = api_mgmt.get_device(dev.id)
+                if obj.status == 'connected':
+                    break
+                time.sleep(1)
+            else:
+                raise Exception("Device not connecting to deviceconnect", obj)
+
             try:
                 api_mgmt.connect(dev.id)
             except management_api.ApiException as e:

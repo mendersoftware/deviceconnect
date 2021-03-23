@@ -257,11 +257,22 @@ func TestManagementConnect(t *testing.T) {
 					return true
 				}),
 			).Return(nil)
+			app.On("LogUserSession",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				}),
+				mock.MatchedBy(func(sess *model.Session) bool {
+					sess.ID = tc.SessionID
+					return true
+				}),
+				mock.AnythingOfType("string"),
+			).Return(nil)
 			app.On("FreeUserSession",
 				mock.MatchedBy(func(_ context.Context) bool {
 					return true
 				}),
 				tc.SessionID,
+				mock.AnythingOfType("[]string"),
 			).Return(nil)
 			app.On("GetControlRecorder",
 				mock.MatchedBy(func(_ context.Context) bool {
@@ -541,6 +552,7 @@ func TestManagementConnect(t *testing.T) {
 					return true
 				}),
 				tc.SessionID,
+				mock.AnythingOfType("[]string"),
 			).Return(nil)
 			err = conn.WriteMessage(websocket.BinaryMessage, []byte("bogus"))
 			assert.NoError(t, err)
@@ -825,6 +837,7 @@ func TestManagementConnectFailures(t *testing.T) {
 							return true
 						}),
 						tc.SessionID,
+						mock.AnythingOfType("[]string"),
 					).Return(nil)
 				}
 			}
@@ -904,6 +917,7 @@ func TestManagementSessionLimit(t *testing.T) {
 			return true
 		}),
 		sid,
+		mock.AnythingOfType("[]string"),
 	).Return(nil)
 	mapp.On("GetRecorder",
 		mock.MatchedBy(func(_ context.Context) bool {
