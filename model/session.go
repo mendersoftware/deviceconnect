@@ -28,6 +28,12 @@ const (
 	SessiontatusConnected     = "connected"
 )
 
+// Values for the session types attribute
+const (
+	SessionTypeTerminal    = "terminal"
+	SessionTypePortForward = "portforward"
+)
+
 func GetSessionSubject(tenantID, sessionID string) string {
 	if tenantID == "" {
 		return strings.Join([]string{
@@ -60,6 +66,7 @@ type Session struct {
 	ID                 string      `json:"id" bson:"_id"`
 	UserID             string      `json:"user_id" bson:"user_id"`
 	DeviceID           string      `json:"device_id" bson:"device_id"`
+	Types              []string    `json:"-" bson:"-"`
 	StartTS            time.Time   `json:"start_ts" bson:"start_ts"`
 	TenantID           string      `json:"tenant_id" bson:"-"`
 	BytesRecordedMutex *sync.Mutex `json:"-" bson:"-"`
