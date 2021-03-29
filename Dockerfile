@@ -7,7 +7,7 @@ RUN mkdir -p /go/src/github.com/mendersoftware/deviceconnect
 COPY . /go/src/github.com/mendersoftware/deviceconnect
 RUN cd /go/src/github.com/mendersoftware/deviceconnect && env CGO_ENABLED=1 go build
 
-FROM alpine:3.13.0
+FROM alpine:3.13.3
 RUN apk add --no-cache ca-certificates xz
 RUN mkdir -p /etc/deviceconnect
 COPY ./config.yaml /etc/deviceconnect
