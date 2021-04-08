@@ -648,11 +648,12 @@ func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTra
 	defer h.publishControlMessage(params.SessionID, deviceTopic, ws.MessageTypeClose, nil)
 
 	// initialize the file transfer
-	req := wsft.FileInfo{
-		Path: request.Path,
-		UID:  request.UID,
-		GID:  request.GID,
-		Mode: request.Mode,
+	req := wsft.UploadRequest{
+		SrcPath: request.SrcPath,
+		Path:    request.Path,
+		UID:     request.UID,
+		GID:     request.GID,
+		Mode:    request.Mode,
 	}
 	if err := h.publishFileTransferProtoMessage(params.SessionID,
 		params.UserID, deviceTopic, wsft.MessageTypePut, req, 0); err != nil {
@@ -842,6 +843,8 @@ func (h ManagementController) parseUploadFileRequest(c *gin.Context) (*model.Upl
 			}
 			part.Close()
 		case fieldUploadFile:
+			filename := part.FileName()
+			request.SrcPath = &filename
 			request.File = part
 		}
 		// file is the last part we can process, in order to avoid loading it in memory
