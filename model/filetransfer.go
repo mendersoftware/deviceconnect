@@ -39,6 +39,9 @@ func (f DownloadFileRequest) Validate() error {
 
 // DownloadFileRequest stores the request to upload a file
 type UploadFileRequest struct {
+	// The source filename which will be appended to the
+	// target path if it points to a directory
+	SrcPath *string `json:"src_path"`
 	// The file path to the file we are uploading
 	Path *string `json:"path"`
 	// The file owner
