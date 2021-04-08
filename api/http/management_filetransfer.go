@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -389,10 +390,14 @@ func (h ManagementController) downloadFileResponseProcessMessage(c *gin.Context,
 			req, 0); err != nil {
 			return err
 		}
-
 		fileInfo := msgBody.(*wsft.FileInfo)
-		writeHeaders(c, fileInfo)
-		*responseHeaderSent = true
+		if (os.FileMode(*fileInfo.Mode) & os.ModeType) != 0 {
+			err := errors.New("path is not a regular file")
+			return errors.Wrap(err, errFileTransferFailed.Error())
+		} else {
+			writeHeaders(c, fileInfo)
+			*responseHeaderSent = true
+		}
 
 	// file data chunk
 	case wsft.MessageTypeChunk:
