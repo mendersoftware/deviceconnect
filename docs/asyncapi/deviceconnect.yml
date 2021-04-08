@@ -584,6 +584,9 @@ components:
         Schema for file_upload request.
       type: object
       properties:
+        src_path:
+          description: Optional source filename which will be appended to the target path if it points to a directory.
+          type: string
         path:
           description: File path.
           type: string
