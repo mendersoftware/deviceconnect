@@ -151,6 +151,12 @@ class _TestConnect:
                     "body": b"sh-5.0$ ",
                 }
 
+        for i in range(15):
+            obj = api_mgmt.get_device(dev.id)
+            if obj.status != 'connected':
+                break
+            time.sleep(1)
+
         try:
             api_mgmt.connect(
                 dev.id,
