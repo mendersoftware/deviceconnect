@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -257,6 +258,7 @@ func TestManagementDownloadFile(t *testing.T) {
 						// file info response
 						body := wsft.FileInfo{
 							Path: string2pointer("/absolute/path"),
+							Mode: uint322pointer(777),
 							Size: int642pointer(10),
 						}
 						bodyData, err := msgpack.Marshal(body)
@@ -445,6 +447,98 @@ func TestManagementDownloadFile(t *testing.T) {
 			HTTPStatus: http.StatusBadRequest,
 		},
 		{
+			Name:     "ko, not a regular file",
+			DeviceID: "1234567890",
+			Identity: &identity.Identity{
+				Subject: "00000000-0000-0000-0000-000000000000",
+				Tenant:  "000000000000000000000000",
+				IsUser:  true,
+			},
+			Path: "/absolute/path",
+
+			GetDevice: &model.Device{
+				ID:     "1234567890",
+				Status: model.DeviceStatusConnected,
+			},
+			DeviceFunc: func(client *nats_mocks.Client) {
+				client.On("ChanSubscribe",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(chanMsg chan *natsio.Msg) bool {
+						// accept the open request
+						b, _ := msgpack.Marshal(ws.Accept{
+							Version:   ws.ProtocolVersion,
+							Protocols: []ws.ProtoType{ws.ProtoTypeFileTransfer},
+						})
+						msg := &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								Proto:     ws.ProtoTypeControl,
+								MsgType:   ws.MessageTypeAccept,
+								SessionID: sessionID.String(),
+							},
+							Body: b,
+						}
+						b, _ = msgpack.Marshal(msg)
+						chanMsg <- &natsio.Msg{Data: b}
+
+						// file info response
+						body := wsft.FileInfo{
+							Path: string2pointer("/absolute/path"),
+							UID:  uint322pointer(0),
+							GID:  uint322pointer(0),
+							Mode: uint322pointer(777 | uint32(os.ModeDir)),
+							Size: int642pointer(10),
+						}
+						bodyData, err := msgpack.Marshal(body)
+						msg = &ws.ProtoMsg{
+							Header: ws.ProtoHdr{
+								MsgType:   wsft.MessageTypeFileInfo,
+								SessionID: sessionID.String(),
+							},
+							Body: bodyData,
+						}
+
+						data, err := msgpack.Marshal(msg)
+						assert.NoError(t, err)
+						chanMsg <- &natsio.Msg{Data: data}
+
+						return true
+					}),
+				).Return(&natsio.Subscription{}, nil)
+
+				client.On("Publish",
+					mock.AnythingOfType("string"),
+					mock.MatchedBy(func(data []byte) bool {
+						msg := &ws.ProtoMsg{}
+						err := msgpack.Unmarshal(data, msg)
+						assert.NoError(t, err)
+
+						if msg.Header.MsgType == wsft.MessageTypeStat {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeGet {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == wsft.MessageTypeACK {
+							assert.Equal(t, ws.ProtoTypeFileTransfer, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypePing {
+							assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+							return true
+						} else if msg.Header.MsgType == ws.MessageTypeOpen {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						} else if msg.Header.MsgType == ws.MessageTypeClose {
+							return assert.Equal(t, ws.ProtoTypeControl, msg.Header.Proto)
+						}
+
+						return false
+					}),
+				).Return(nil)
+			},
+			AppDownloadFile: true,
+
+			HTTPStatus: http.StatusBadRequest,
+		},
+		{
 			Name:     "ko, error between chunks",
 			DeviceID: "1234567890",
 			Identity: &identity.Identity{
@@ -480,6 +574,7 @@ func TestManagementDownloadFile(t *testing.T) {
 						// file info response
 						body := wsft.FileInfo{
 							Path: string2pointer("/absolute/path"),
+							Mode: uint322pointer(777),
 							Size: int642pointer(10),
 						}
 						bodyData, err := msgpack.Marshal(body)
@@ -674,6 +769,7 @@ func TestManagementDownloadFile(t *testing.T) {
 						// file info response
 						body := wsft.FileInfo{
 							Path: string2pointer("/absolute/path"),
+							Mode: uint322pointer(777),
 							Size: int642pointer(10),
 						}
 						bodyData, err := msgpack.Marshal(body)
@@ -779,6 +875,7 @@ func TestManagementDownloadFile(t *testing.T) {
 						// file info response
 						body := wsft.FileInfo{
 							Path: string2pointer("/absolute/path"),
+							Mode: uint322pointer(777),
 							Size: int642pointer(10),
 						}
 						bodyData, err := msgpack.Marshal(body)

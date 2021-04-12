@@ -1,4 +1,4 @@
-FROM golang:1.15-alpine3.12 as builder
+FROM golang:1.16.3-alpine3.12 as builder
 RUN apk add --no-cache \
     xz-dev \
     musl-dev \
@@ -7,7 +7,7 @@ RUN mkdir -p /go/src/github.com/mendersoftware/deviceconnect
 COPY . /go/src/github.com/mendersoftware/deviceconnect
 RUN cd /go/src/github.com/mendersoftware/deviceconnect && env CGO_ENABLED=1 go build
 
-FROM alpine:3.13.0
+FROM alpine:3.13.4
 RUN apk add --no-cache ca-certificates xz
 RUN mkdir -p /etc/deviceconnect
 COPY ./config.yaml /etc/deviceconnect
