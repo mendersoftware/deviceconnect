@@ -326,6 +326,7 @@ func (h ManagementController) downloadFileResponse(c *gin.Context, params *fileT
 	timeout := time.NewTimer(fileTransferTimeout)
 	latestOffset := int64(0)
 	numberOfChunks := 0
+	var fileInfo wsft.FileInfo
 	for {
 		select {
 		case wsMessage := <-msgChan:
@@ -334,7 +335,7 @@ func (h ManagementController) downloadFileResponse(c *gin.Context, params *fileT
 			// process the message
 			err := h.downloadFileResponseProcessMessage(c, params, request,
 				wsMessage, deviceTopic, &latestOffset, &numberOfChunks,
-				&responseHeaderSent, ticker)
+				&responseHeaderSent, &fileInfo, ticker)
 			if err == io.EOF {
 				return
 			} else if err != nil {
@@ -361,7 +362,7 @@ func (h ManagementController) downloadFileResponse(c *gin.Context, params *fileT
 func (h ManagementController) downloadFileResponseProcessMessage(c *gin.Context,
 	params *fileTransferParams, request *model.DownloadFileRequest, wsMessage *natsio.Msg,
 	deviceTopic string, latestOffset *int64, numberOfChunks *int, responseHeaderSent *bool,
-	ticker *time.Ticker) error {
+	fileInfo *wsft.FileInfo, ticker *time.Ticker) error {
 	msg, msgBody, err := h.decodeFileTransferProtoMessage(wsMessage.Data)
 	if err != nil {
 		return err
@@ -390,17 +391,18 @@ func (h ManagementController) downloadFileResponseProcessMessage(c *gin.Context,
 			req, 0); err != nil {
 			return err
 		}
-		fileInfo := msgBody.(*wsft.FileInfo)
+		*fileInfo = *msgBody.(*wsft.FileInfo)
 		if (os.FileMode(*fileInfo.Mode) & os.ModeType) != 0 {
 			err := errors.New("path is not a regular file")
 			return errors.Wrap(err, errFileTransferFailed.Error())
-		} else {
-			writeHeaders(c, fileInfo)
-			*responseHeaderSent = true
 		}
 
 	// file data chunk
 	case wsft.MessageTypeChunk:
+		if !*responseHeaderSent {
+			writeHeaders(c, fileInfo)
+			*responseHeaderSent = true
+		}
 		if msg.Body == nil {
 			if err := h.publishFileTransferProtoMessage(
 				params.SessionID, params.UserID, deviceTopic,
