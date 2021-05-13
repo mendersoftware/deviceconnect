@@ -124,12 +124,12 @@ github.com/nats-io/nats-server/v2/internal/ldap
 github.com/nats-io/nats-server/v2/logger
 github.com/nats-io/nats-server/v2/server
 github.com/nats-io/nats-server/v2/server/pse
-# github.com/nats-io/nats.go v1.10.0
+# github.com/nats-io/nats.go v1.11.0
 ## explicit
 github.com/nats-io/nats.go
 github.com/nats-io/nats.go/encoders/builtin
 github.com/nats-io/nats.go/util
-# github.com/nats-io/nkeys v0.1.4
+# github.com/nats-io/nkeys v0.3.0
 github.com/nats-io/nkeys
 # github.com/nats-io/nuid v1.0.1
 github.com/nats-io/nuid
@@ -187,7 +187,7 @@ github.com/xdg-go/scram
 github.com/xdg-go/stringprep
 # github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d
 github.com/youmark/pkcs8
-# go.mongodb.org/mongo-driver v1.5.1
+# go.mongodb.org/mongo-driver v1.5.2
 ## explicit
 go.mongodb.org/mongo-driver/bson
 go.mongodb.org/mongo-driver/bson/bsoncodec
@@ -221,7 +221,7 @@ go.mongodb.org/mongo-driver/x/mongo/driver/session
 go.mongodb.org/mongo-driver/x/mongo/driver/topology
 go.mongodb.org/mongo-driver/x/mongo/driver/uuid
 go.mongodb.org/mongo-driver/x/mongo/driver/wiremessage
-# golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
+# golang.org/x/crypto v0.0.0-20210314154223-e6e6c4f2bb5b
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blowfish
 golang.org/x/crypto/ed25519
@@ -229,7 +229,7 @@ golang.org/x/crypto/ed25519/internal/edwards25519
 golang.org/x/crypto/ocsp
 golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/sha3
-# golang.org/x/net v0.0.0-20200202094626-16171245cfb2
+# golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
 golang.org/x/net/context
 # golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 golang.org/x/sync/errgroup
