@@ -20,13 +20,13 @@ servers:
   - url: https://mender-deviceconnect:8080/api/internal/v1/deviceconnect
 
 tags:
-  - name: InternalAPI
+  - name: Internal API
 
 paths:
   /health:
     get:
       tags:
-        - InternalAPI
+        - Internal API
       summary: Get health status of service
       operationId: Check Health
       responses:
@@ -48,7 +48,7 @@ paths:
   /alive:
     get:
       tags:
-        - InternalAPI
+        - Internal API
       summary: Get service liveliness status.
       operationId: Check Liveliness
       responses:
@@ -64,7 +64,7 @@ paths:
   /tenants:
     post:
       tags:
-        - InternalAPI
+        - Internal API
       operationId: Provision tenant
       summary: Initialize internal state for a new tenant
       requestBody:
@@ -83,7 +83,7 @@ paths:
   /tenants/{tenantId}/devices:
     post:
       tags:
-        - InternalAPI
+        - Internal API
       operationId: Provision device
       summary: Register a new device with the deviceconnect service.
       parameters:
@@ -109,7 +109,7 @@ paths:
   /tenants/{tenantId}/devices/{deviceId}:
     delete:
       tags:
-        - InternalAPI
+        - Internal API
       operationId: Decomission device
       summary: Remove a device from the deviceconnect service.
       parameters:
@@ -134,7 +134,7 @@ paths:
   /tenants/{tenantId}/devices/{deviceId}/check-update:
     post:
       tags:
-        - InternalAPI
+        - Internal API
       operationId: Check Update
       summary: Trigger check-update for the Mender client running on the device 
       parameters:
@@ -173,7 +173,7 @@ paths:
   /tenants/{tenantId}/devices/{deviceId}/send-inventory:
     post:
       tags:
-        - InternalAPI
+        - Internal API
       operationId: Send Inventory
       summary: Trigger send-inventory for the Mender client running on the device 
       parameters:
