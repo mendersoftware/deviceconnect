@@ -24,14 +24,14 @@ security:
   - DeviceJWT: []
 
 tags:
-  - name: DevicesAPI
+  - name: Device API
 
 paths:
 
   /connect:
     get:
       tags:
-        - DevicesAPI
+        - Device API
       operationId: Connect
       summary: >-
         Connect the device and make it available to the server.
