@@ -25,13 +25,13 @@ security:
   - ManagementJWT: []
 
 tags:
-  - name: ManagementAPI
+  - name: Management API
 
 paths:
   /devices/{id}:
     get:
       tags:
-        - ManagementAPI
+        - Management API
       operationId: Get device
       summary: Fetch the state of a device.
       parameters:
@@ -65,7 +65,7 @@ paths:
   /devices/{id}/check-update:
     post:
       tags:
-        - ManagementAPI
+        - Management API
       operationId: Check Update
       summary: Trigger check-update for the Mender client running on the device
       parameters:
@@ -101,7 +101,7 @@ paths:
   /devices/{id}/connect:
     get:
       tags:
-        - ManagementAPI
+        - Management API
       operationId: Connect
       summary: Establish permanent connection with device
       parameters:
@@ -160,7 +160,7 @@ paths:
   /devices/{id}/download:
     get:
       tags:
-        - ManagementAPI
+        - Management API
       operationId: Download
       summary: Download a file from the device
       parameters:
@@ -228,7 +228,7 @@ paths:
   /devices/{id}/send-inventory:
     post:
       tags:
-        - ManagementAPI
+        - Management API
       operationId: Send Inventory
       summary: Trigger send-inventory for the Mender client running on the device
       parameters:
@@ -265,7 +265,7 @@ paths:
   /sessions/{session_id}/playback:
     get:
       tags:
-        - ManagementAPI
+        - Management API
       operationId: Playback
       summary: Establish a connection for playing back a session
       parameters:
@@ -329,7 +329,7 @@ paths:
   /devices/{id}/upload:
     put:
       tags:
-        - ManagementAPI
+        - Management API
       operationId: Upload
       summary: Upload a file to the device
       parameters:
