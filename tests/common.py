@@ -91,7 +91,7 @@ class Device:
         # Setup device api with token
         api_conf = devices_api.Configuration.get_default_copy()
         api_conf.access_token = self.jwt
-        return devices_api.DevicesAPIClient(devices_api.ApiClient(api_conf))
+        return devices_api.DeviceAPIClient(devices_api.ApiClient(api_conf))
 
 
 def make_user_token(user_id=None, plan=None, tenant_id=None):
