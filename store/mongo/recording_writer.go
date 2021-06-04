@@ -47,7 +47,12 @@ func sendRecordingMessage(data []byte, sessionID string, w io.Writer) (int, erro
 	if err != nil {
 		return 0, err
 	} else {
-		return w.Write(messagePacked)
+		n, e := w.Write(messagePacked)
+		if e != nil {
+			return n, e
+		} else {
+			return len(data), nil
+		}
 	}
 }
 
