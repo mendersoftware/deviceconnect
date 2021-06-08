@@ -64,39 +64,31 @@ bin/deviceconnect.acceptance.docker: Dockerfile.acceptance $(GOFILES)
 	docker build . -f Dockerfile.acceptance -t $(DOCKERIMAGE):$(DOCKERTESTTAG)
 	docker save $(DOCKERIMAGE):$(DOCKERTESTTAG) -o $@
 
-bin/acceptance.docker: tests/Dockerfile tests/requirements.txt
-	docker rmi tests 2>/dev/null; \
-	docker build tests -f tests/Dockerfile -t testing
-	docker save testing -o $@
-
 .PHONY: docker
 docker: bin/deviceconnect.docker
 
 .PHONY: docker-test
 docker-test: bin/deviceconnect.acceptance.docker
 
-.PHONY: docker-acceptance
-docker-acceptance: bin/acceptance.docker
-
 .PHONY: acceptance-tests
-acceptance-tests: docker-acceptance docker-test docs
+acceptance-tests: docker-test docs
 	docker-compose \
-		-f tests/docker-compose.yml \
+		-f tests/docker-compose-acceptance.yml \
 		-p acceptance \
 		up -d
-	docker attach acceptance_tester_1
+	docker attach acceptance_acceptance_1
 
 .PHONY: acceptance-tests-logs
 acceptance-tests-logs:
-	for service in $(shell docker-compose -f tests/docker-compose.yml -p acceptance ps -a --services); do \
-		docker-compose -p acceptance -f tests/docker-compose.yml \
+	for service in $(shell docker-compose -f tests/docker-compose-acceptance.yml -p acceptance ps -a --services); do \
+		docker-compose -p acceptance -f tests/docker-compose-acceptance.yml \
 				logs --no-color $$service > "tests/acceptance.$${service}.logs"; \
 	done
 
 .PHONY: acceptance-tests-down
 acceptance-tests-down:
 	docker-compose \
-		-f tests/docker-compose.yml \
+		-f tests/docker-compose-acceptance.yml \
 		-p acceptance down
 
 
