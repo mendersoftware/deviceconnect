@@ -12,10 +12,7 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-import base64
-import json
 import os
-import uuid
 import pytest
 import signal
 
