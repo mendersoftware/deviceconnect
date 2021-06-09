@@ -12,16 +12,12 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-import json
 import pytest
 import uuid
 import time
-from base64 import urlsafe_b64encode
 
 import msgpack
 
-import devices_api
-import internal_api
 import management_api
 
 from common import Device, management_api_with_params, management_api_connect

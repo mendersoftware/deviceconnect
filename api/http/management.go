@@ -302,8 +302,8 @@ func (h ManagementController) Playback(c *gin.Context) {
 		session,
 		deviceChan,
 		errChan,
-		ioutil.Discard,
-		ioutil.Discard)
+		bufio.NewWriterSize(ioutil.Discard, app.RecorderBufferSize),
+		bufio.NewWriterSize(ioutil.Discard, app.RecorderBufferSize))
 
 	go func() {
 		err = h.app.GetSessionRecording(ctx,
@@ -368,8 +368,8 @@ func (h ManagementController) websocketWriter(
 	session *model.Session,
 	deviceChan <-chan *natsio.Msg,
 	errChan <-chan error,
-	recorder io.Writer,
-	controlRecorder io.Writer,
+	recorderBuffered *bufio.Writer,
+	controlRecorderBuffered *bufio.Writer,
 ) (err error) {
 	l := log.FromContext(ctx)
 	defer writerFinalizer(conn, &err, l)
@@ -401,9 +401,7 @@ func (h ManagementController) websocketWriter(
 		)
 	})
 
-	recorderBuffered := bufio.NewWriterSize(recorder, app.RecorderBufferSize)
 	defer recorderBuffered.Flush()
-	controlRecorderBuffered := bufio.NewWriterSize(controlRecorder, app.RecorderBufferSize)
 	defer controlRecorderBuffered.Flush()
 	recordedBytes := 0
 	controlBytes := 0
@@ -682,6 +680,11 @@ func (h ManagementController) ConnectServeWS(
 	controlRecorder := h.app.GetControlRecorder(ctx, sess.ID)
 	controlRecorderBuffered := bufio.NewWriterSize(controlRecorder, app.RecorderBufferSize)
 	defer controlRecorderBuffered.Flush()
+
+	sessionRecorder := h.app.GetRecorder(ctx, sess.ID)
+	sessionRecorderBuffered := bufio.NewWriterSize(sessionRecorder, app.RecorderBufferSize)
+	defer sessionRecorderBuffered.Flush()
+
 	// websocketWriter is responsible for closing the websocket
 	//nolint:errcheck
 	go h.websocketWriter(ctx,
@@ -689,7 +692,8 @@ func (h ManagementController) ConnectServeWS(
 		sess,
 		deviceChan,
 		errChan,
-		h.app.GetRecorder(ctx, sess.ID), controlRecorder)
+		sessionRecorderBuffered,
+		controlRecorderBuffered)
 
 	return h.connectServeWSProcessMessages(ctx, conn, sess, deviceChan,
 		&remoteTerminalRunning, controlRecorderBuffered)
