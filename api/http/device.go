@@ -257,6 +257,7 @@ Loop:
 	for {
 		select {
 		case msg := <-msgChan:
+			_ = msg.Respond(nil)
 			err = conn.WriteMessage(websocket.BinaryMessage, msg.Data)
 			if err != nil {
 				l.Error(err)

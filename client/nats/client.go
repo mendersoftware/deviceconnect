@@ -15,7 +15,23 @@
 package nats
 
 import (
+	"strconv"
+	"sync/atomic"
+	"time"
+
+	"github.com/nats-io/nats.go"
 	natsio "github.com/nats-io/nats.go"
+	"github.com/pkg/errors"
+)
+
+const (
+	subjectACK = "ack"
+)
+
+var ackWait = time.Second * 5
+
+var (
+	ErrTimeout = errors.New("nats: timeout waiting for ack")
 )
 
 // Client is the nats client
@@ -31,20 +47,51 @@ func NewClient(url string, opts ...natsio.Option) (Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	cid, err := natsClient.GetClientID()
+	if err != nil {
+		return nil, err
+	}
 	return &client{
-		nats: natsClient,
+		nc:       natsClient,
+		clientID: cid,
 	}, nil
 }
 
 type client struct {
-	nats *natsio.Conn
+	nc *natsio.Conn
+	// clientID and ackNum is used to create a unique suffix for ack replies
+	clientID uint64
+	ackNum   uint64
 }
 
 func (c *client) Publish(subj string, data []byte) error {
-	return c.nats.Publish(subj, data)
+	m := nats.NewMsg(subj)
+	m.Data = data
+	acknum := atomic.AddUint64(&c.ackNum, 1)
+	m.Reply = subj + "." + subjectACK + "." +
+		strconv.FormatUint(c.clientID, 10) +
+		strconv.FormatUint(acknum, 10)
+
+	sub, err := c.nc.SubscribeSync(m.Reply)
+	if err != nil {
+		return err
+	}
+	defer sub.Unsubscribe() // nolint:errcheck
+	err = sub.AutoUnsubscribe(1)
+	if err != nil {
+		return err
+	}
+	err = c.nc.PublishMsg(m)
+	if err != nil {
+		return err
+	}
+	_, err = sub.NextMsg(ackWait)
+	if err != nil {
+		return ErrTimeout
+	}
+	return nil
 }
 
-func (c *client) ChanSubscribe(subj string,
-	channel chan *natsio.Msg) (*natsio.Subscription, error) {
-	return c.nats.ChanSubscribe(subj, channel)
+func (c *client) ChanSubscribe(subj string, ch chan *natsio.Msg) (*natsio.Subscription, error) {
+	return c.nc.ChanSubscribe(subj, ch)
 }

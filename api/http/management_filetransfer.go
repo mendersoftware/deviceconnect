@@ -330,6 +330,7 @@ func (h ManagementController) downloadFileResponse(c *gin.Context, params *fileT
 	for {
 		select {
 		case wsMessage := <-msgChan:
+			_ = wsMessage.Respond(nil)
 			// reset the timeout ticket
 			timeout.Reset(fileTransferTimeout)
 			// process the message
@@ -515,6 +516,7 @@ func (h ManagementController) uploadFileResponseHandleInboundMessages(
 	for {
 		select {
 		case wsMessage := <-msgChan:
+			_ = wsMessage.Respond(nil)
 			msg, msgBody, err := h.decodeFileTransferProtoMessage(
 				wsMessage.Data)
 			if err != nil {
@@ -574,6 +576,7 @@ func (h ManagementController) filetransferHandshake(
 	}
 	select {
 	case natsMsg := <-sessChan:
+		_ = natsMsg.Respond(nil)
 		var msg ws.ProtoMsg
 		err := msgpack.Unmarshal(natsMsg.Data, &msg)
 		if err != nil {
@@ -671,6 +674,7 @@ func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTra
 	// receive the message from the device
 	select {
 	case wsMessage := <-msgChan:
+		_ = wsMessage.Respond(nil)
 		msg, msgBody, err := h.decodeFileTransferProtoMessage(wsMessage.Data)
 		if err != nil {
 			responseError = err

@@ -416,6 +416,7 @@ Loop:
 
 		select {
 		case msg := <-deviceChan:
+			_ = msg.Respond(nil)
 			mr := &ws.ProtoMsg{}
 			err = msgpack.Unmarshal(msg.Data, mr)
 			if err != nil {
