@@ -173,6 +173,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 		l.Error(err)
 		return
 	}
+	conn.SetReadLimit(int64(app.MessageSizeLimit))
 
 	// websocketWriter is responsible for closing the websocket
 	//nolint:errcheck

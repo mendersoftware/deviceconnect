@@ -225,6 +225,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 		// upgrader.Upgrade has already responded
 		return
 	}
+	conn.SetReadLimit(int64(app.MessageSizeLimit))
 
 	//nolint:errcheck
 	h.ConnectServeWS(ctx, conn, session, deviceChan)
@@ -280,6 +281,7 @@ func (h ManagementController) Playback(c *gin.Context) {
 		l.Error(err)
 		return
 	}
+	conn.SetReadLimit(int64(app.MessageSizeLimit))
 
 	deviceChan := make(chan *natsio.Msg, channelSize)
 	errChan := make(chan error, 1)
