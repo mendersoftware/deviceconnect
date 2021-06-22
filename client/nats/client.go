@@ -69,10 +69,10 @@ func (c *client) Publish(subj string, data []byte) error {
 	m.Data = data
 	acknum := atomic.AddUint64(&c.ackNum, 1)
 	m.Reply = subj + "." + subjectACK + "." +
-		strconv.FormatUint(c.clientID, 10) +
+		strconv.FormatUint(c.clientID, 10) + "." +
 		strconv.FormatUint(acknum, 10)
-
-	sub, err := c.nc.SubscribeSync(m.Reply)
+	ch := make(chan *natsio.Msg, 1)
+	sub, err := c.nc.ChanSubscribe(m.Reply, ch)
 	if err != nil {
 		return err
 	}
@@ -85,9 +85,15 @@ func (c *client) Publish(subj string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	_, err = sub.NextMsg(ackWait)
-	if err != nil {
-		return ErrTimeout
+	// NOTE: Only create timer if we need to block
+	select {
+	case <-ch:
+	default:
+		select {
+		case <-ch:
+		case <-time.After(ackWait):
+			return ErrTimeout
+		}
 	}
 	return nil
 }
