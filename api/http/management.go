@@ -60,9 +60,6 @@ var (
 	//The name of the field in the query parameter to GET that holds the id of a session
 	PlaybackSessionIDField = "sessionId"
 
-	WebsocketReadBufferSize  = 1024
-	WebsocketWriteBufferSize = 1024
-
 	//The threshold between the shell commands received (keystrokes) above which the
 	//delay control message is saved
 	keyStrokeDelayRecordingThresholdNs = int64(1500 * 1000000)
@@ -211,9 +208,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 
 	// upgrade get request to websocket protocol
 	upgrader := websocket.Upgrader{
-		ReadBufferSize:  WebsocketReadBufferSize,
-		WriteBufferSize: WebsocketWriteBufferSize,
-		Subprotocols:    []string{"protomsg/msgpack"},
+		Subprotocols: []string{"protomsg/msgpack"},
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
@@ -227,9 +222,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
 		l.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal error",
-		})
+		// upgrader.Upgrade has already responded
 		return
 	}
 
@@ -271,9 +264,7 @@ func (h ManagementController) Playback(c *gin.Context) {
 
 	// upgrade get request to websocket protocol
 	upgrader := websocket.Upgrader{
-		ReadBufferSize:  WebsocketReadBufferSize,
-		WriteBufferSize: WebsocketWriteBufferSize,
-		Subprotocols:    []string{"protomsg/msgpack"},
+		Subprotocols: []string{"protomsg/msgpack"},
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
@@ -287,9 +278,6 @@ func (h ManagementController) Playback(c *gin.Context) {
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
 		l.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal error",
-		})
 		return
 	}
 

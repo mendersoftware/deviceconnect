@@ -150,9 +150,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 	defer sub.Unsubscribe()
 
 	upgrader := websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		Subprotocols:    []string{"protomsg/msgpack"},
+		Subprotocols: []string{"protomsg/msgpack"},
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
@@ -175,6 +173,7 @@ func (h DeviceController) Connect(c *gin.Context) {
 		l.Error(err)
 		return
 	}
+
 	// websocketWriter is responsible for closing the websocket
 	//nolint:errcheck
 	go h.connectWSWriter(ctx, conn, msgChan, errChan)
