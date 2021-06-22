@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2021 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -173,6 +173,8 @@ func (h DeviceController) Connect(c *gin.Context) {
 		l.Error(err)
 		return
 	}
+	conn.SetReadLimit(int64(app.MessageSizeLimit))
+
 	// websocketWriter is responsible for closing the websocket
 	//nolint:errcheck
 	go h.connectWSWriter(ctx, conn, msgChan, errChan)

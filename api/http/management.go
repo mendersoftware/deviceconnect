@@ -202,6 +202,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 		})
 		return
 	}
+	conn.SetReadLimit(int64(app.MessageSizeLimit))
 
 	//nolint:errcheck
 	h.ConnectServeWS(ctx, conn, session, deviceChan)
