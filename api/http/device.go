@@ -352,14 +352,16 @@ func (h DeviceController) ConnectServeWS(
 				delete(sessMap, m.Header.SessionID)
 			}
 		default:
-			// TODO: Handle protocol violation
 		}
 
 		err = h.nats.Publish(
 			model.GetSessionSubject(id.Tenant, m.Header.SessionID),
 			data,
 		)
-		if err != nil {
+		if err == nats.ErrTimeout {
+			l.Error(err)
+			delete(sessMap, m.Header.SessionID)
+		} else if err != nil {
 			return err
 		}
 	}
