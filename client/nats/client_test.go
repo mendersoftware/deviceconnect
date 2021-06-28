@@ -15,6 +15,7 @@
 package nats
 
 import (
+	"context"
 	"errors"
 	"net/url"
 	"sync/atomic"
@@ -64,6 +65,8 @@ func TestPublishSubscribe(t *testing.T) {
 	testCases := []struct {
 		Name string
 
+		NoAck    bool
+		CTX      context.Context
 		URI      string
 		SubTopic string
 		OnRecv   func(t *testing.T, ch chan *nats.Msg)
@@ -74,14 +77,29 @@ func TestPublishSubscribe(t *testing.T) {
 	}{{
 		Name: "ok",
 
+		CTX:      context.Background(),
 		SubTopic: "foo.bar",
 		OnRecv: func(t *testing.T, ch chan *nats.Msg) {
 			m := <-ch
 			m.Respond(nil)
 		},
 	}, {
+		Name: "ok, no ack",
+
+		CTX:      context.Background(),
+		SubTopic: "foo.bar",
+		NoAck:    true,
+		OnRecv: func(t *testing.T, ch chan *nats.Msg) {
+			select {
+			case <-ch:
+			case <-time.After(time.Second * 5):
+				assert.FailNow(t, "timeout waiting for message")
+			}
+		},
+	}, {
 		Name: "error invalid URI",
 
+		CTX:         context.Background(),
 		URI:         "bats://localhost",
 		ClientError: errors.New(""),
 	}, {
@@ -92,11 +110,22 @@ func TestPublishSubscribe(t *testing.T) {
 	}, {
 		Name: "error timeout waiting for ack",
 
+		CTX:      context.Background(),
 		SubTopic: "foo.bar",
 		OnRecv: func(t *testing.T, ch chan *nats.Msg) {
 			<-ch
 		},
 		PubError: ErrTimeout,
+	}, {
+		Name: "error context cancelled",
+
+		CTX: func() context.Context {
+			ctx, cancel := context.WithCancel(context.TODO())
+			cancel()
+			return ctx
+		}(),
+		SubTopic: "foo.bar",
+		PubError: context.Canceled,
 	}}
 	for i := range testCases {
 		tc := testCases[i]
@@ -131,8 +160,20 @@ func TestPublishSubscribe(t *testing.T) {
 			if !assert.NoError(t, err) {
 				return
 			}
-			go tc.OnRecv(t, ch)
-			err = conn.Publish(tc.SubTopic, nil)
+			done := make(chan struct{})
+			if tc.OnRecv != nil {
+				go func() {
+					tc.OnRecv(t, ch)
+					close(done)
+				}()
+			} else {
+				close(done)
+			}
+			if tc.NoAck {
+				err = conn.PublishNoAck(tc.SubTopic, nil)
+			} else {
+				err = conn.Publish(tc.CTX, tc.SubTopic, nil)
+			}
 			if tc.PubError != nil {
 				if assert.Error(t, err) {
 					assert.Regexp(t, tc.PubError.Error(), err.Error())
@@ -142,6 +183,7 @@ func TestPublishSubscribe(t *testing.T) {
 			if !assert.NoError(t, err) {
 				return
 			}
+			<-done
 		})
 	}
 }

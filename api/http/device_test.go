@@ -26,11 +26,12 @@ import (
 
 	"github.com/gorilla/websocket"
 	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
+	nats_mocks "github.com/mendersoftware/deviceconnect/client/nats/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/mendersoftware/go-lib-micro/ws/shell"
-	"github.com/nats-io/nats.go"
+	natsio "github.com/nats-io/nats.go"
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/stretchr/testify/assert"
@@ -123,9 +124,11 @@ func TestDeviceConnect(t *testing.T) {
 		},
 	}
 	b, _ := msgpack.Marshal(msg)
-	natsClient.Publish(model.GetDeviceSubject(
-		Identity.Tenant,
-		Identity.Subject),
+	natsClient.Publish(
+		context.Background(),
+		model.GetDeviceSubject(
+			Identity.Tenant,
+			Identity.Subject),
 		b,
 	)
 	select {
@@ -139,7 +142,7 @@ func TestDeviceConnect(t *testing.T) {
 	}
 
 	// test responding to message from management
-	rChan := make(chan *nats.Msg, 1)
+	rChan := make(chan *natsio.Msg, 1)
 	_, err = natsClient.ChanSubscribe(
 		model.GetSessionSubject(Identity.Tenant, "foobar"),
 		rChan,
@@ -154,6 +157,7 @@ func TestDeviceConnect(t *testing.T) {
 			"timeout waiting for message to propagate",
 		)
 	case rMsg := <-rChan:
+		_ = rMsg.Respond(nil)
 		assert.Equal(t, b, rMsg.Data)
 	}
 
@@ -194,6 +198,7 @@ func TestDeviceConnect(t *testing.T) {
 			"timeout waiting for message to propagate",
 		)
 	case rMsg := <-rChan:
+		_ = rMsg.Respond(nil)
 		assert.Equal(t, b, rMsg.Data)
 	}
 
@@ -215,6 +220,7 @@ func TestDeviceConnect(t *testing.T) {
 			"timeout waiting for message to propagate",
 		)
 	case rMsg := <-rChan:
+		rMsg.Respond(nil)
 		assert.Equal(t, b, rMsg.Data)
 	}
 
@@ -236,6 +242,7 @@ func TestDeviceConnect(t *testing.T) {
 			"timeout waiting for message to propagate",
 		)
 	case rMsg := <-rChan:
+		rMsg.Respond(nil)
 		assert.Equal(t, b, rMsg.Data)
 	}
 
@@ -258,6 +265,7 @@ func TestDeviceConnect(t *testing.T) {
 			"timeout waiting for message to propagate",
 		)
 	case rMsg := <-rChan:
+		rMsg.Respond(nil)
 		msg := &ws.ProtoMsg{}
 		_ = msgpack.Unmarshal(rMsg.Data, msg)
 		assert.Equal(t, ws.ProtoTypeShell, msg.Header.Proto)
@@ -310,6 +318,7 @@ func TestDeviceConnectFailures(t *testing.T) {
 		Name          string
 		Authorization string
 		WithNATS      bool
+		SubErr        error
 		HTTPStatus    int
 		HTTPError     error
 	}{
@@ -323,6 +332,8 @@ func TestDeviceConnectFailures(t *testing.T) {
 			Name:          "error, unable to subscribe",
 			Authorization: "Bearer " + JWT,
 			HTTPStatus:    http.StatusInternalServerError,
+			WithNATS:      true,
+			SubErr:        errors.New("internal error"),
 		},
 		{
 			Name: "error, user auth",
@@ -347,9 +358,11 @@ func TestDeviceConnectFailures(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			var natsClient *nats.Conn
+			natsClient := new(nats_mocks.Client)
+			defer natsClient.AssertExpectations(t)
 			if tc.WithNATS {
-				natsClient = NewNATSTestClient(t)
+				natsClient.On("ChanSubscribe", mock.AnythingOfType("string"), mock.Anything).
+					Return(new(natsio.Subscription), tc.SubErr)
 			}
 
 			router, _ := NewRouter(nil, natsClient)

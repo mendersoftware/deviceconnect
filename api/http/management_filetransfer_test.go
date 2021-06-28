@@ -188,6 +188,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -324,6 +325,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -414,6 +416,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -506,6 +509,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -629,6 +633,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -701,6 +706,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -806,6 +812,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -928,6 +935,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -998,6 +1006,7 @@ func TestManagementDownloadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -1381,6 +1390,7 @@ func TestManagementUploadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -1466,6 +1476,7 @@ func TestManagementUploadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -1542,6 +1553,7 @@ func TestManagementUploadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -1633,6 +1645,7 @@ func TestManagementUploadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -1736,6 +1749,7 @@ func TestManagementUploadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -1811,6 +1825,7 @@ func TestManagementUploadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -1869,6 +1884,7 @@ func TestManagementUploadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}
@@ -1940,6 +1956,7 @@ func TestManagementUploadFile(t *testing.T) {
 				).Return(&natsio.Subscription{}, nil)
 
 				client.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.MatchedBy(func(data []byte) bool {
 						msg := &ws.ProtoMsg{}

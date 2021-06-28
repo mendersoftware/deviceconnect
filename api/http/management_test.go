@@ -34,7 +34,7 @@ import (
 	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/mendersoftware/go-lib-micro/ws/shell"
 	"github.com/nats-io/nats-server/v2/server"
-	"github.com/nats-io/nats.go"
+	natsio "github.com/nats-io/nats.go"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -42,13 +42,14 @@ import (
 
 	"github.com/mendersoftware/deviceconnect/app"
 	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
+	"github.com/mendersoftware/deviceconnect/client/nats"
 	nats_mocks "github.com/mendersoftware/deviceconnect/client/nats/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 )
 
 var natsPort int32 = 14420
 
-func NewNATSTestClient(t *testing.T) *nats.Conn {
+func NewNATSTestClient(t *testing.T) nats.Client {
 	port := atomic.AddInt32(&natsPort, 1)
 	opts := &server.Options{
 		Port: int(port),
@@ -67,7 +68,7 @@ func NewNATSTestClient(t *testing.T) *nats.Conn {
 	if srv.Addr() == nil {
 		panic("failed to setup NATS test server")
 	}
-	client, err := nats.Connect("nats://" + srv.Addr().String())
+	client, err := nats.NewClient("nats://" + srv.Addr().String())
 	if err != nil {
 		panic(err)
 	}
@@ -312,7 +313,10 @@ func TestManagementConnect(t *testing.T) {
 
 			pingReceived := make(chan struct{}, 1)
 			conn.SetPingHandler(func(message string) error {
-				pingReceived <- struct{}{}
+				select {
+				case pingReceived <- struct{}{}:
+				default:
+				}
 				return conn.WriteControl(
 					websocket.PongMessage,
 					[]byte{},
@@ -321,7 +325,10 @@ func TestManagementConnect(t *testing.T) {
 			})
 			pongReceived := make(chan struct{}, 1)
 			conn.SetPongHandler(func(message string) error {
-				pongReceived <- struct{}{}
+				select {
+				case pongReceived <- struct{}{}:
+				default:
+				}
 				return nil
 			})
 
@@ -335,7 +342,7 @@ func TestManagementConnect(t *testing.T) {
 					receivedMsg <- data
 				}
 			}()
-			natsChan := make(chan *nats.Msg, 2)
+			natsChan := make(chan *natsio.Msg, 2)
 			sub, _ := natsClient.ChanSubscribe(
 				model.GetDeviceSubject(
 					tc.Identity.Tenant,
@@ -354,6 +361,7 @@ func TestManagementConnect(t *testing.T) {
 			assert.NoError(t, err)
 			select {
 			case natsMsg := <-natsChan:
+				_ = natsMsg.Respond(nil)
 				var rMsg ws.ProtoMsg
 				err = msgpack.Unmarshal(natsMsg.Data, &rMsg)
 				if assert.NoError(t, err) {
@@ -378,6 +386,7 @@ func TestManagementConnect(t *testing.T) {
 			msg.Header.SessionID = tc.SessionID
 			b, _ = msgpack.Marshal(msg)
 			err = natsClient.Publish(
+				context.Background(),
 				model.GetSessionSubject(tc.Identity.Tenant, tc.SessionID),
 				b,
 			)
@@ -411,15 +420,17 @@ func TestManagementConnect(t *testing.T) {
 				},
 			}
 			b, _ = msgpack.Marshal(msg)
-			natsClient.Publish(model.GetDeviceSubject(
-				tc.Identity.Tenant,
-				tc.Identity.Subject),
+			natsClient.Publish(context.Background(),
+				model.GetDeviceSubject(
+					tc.Identity.Tenant,
+					tc.Identity.Subject),
 				b,
 			)
 			_ = conn.WriteMessage(websocket.BinaryMessage, b)
 
 			select {
 			case msg := <-natsChan:
+				_ = msg.Respond(nil)
 				var stopMsg ws.ProtoMsg
 				err := msgpack.Unmarshal(msg.Data, &stopMsg)
 				if assert.NoError(t, err) {
@@ -448,15 +459,18 @@ func TestManagementConnect(t *testing.T) {
 				},
 			}
 			b, _ = msgpack.Marshal(msg)
-			natsClient.Publish(model.GetDeviceSubject(
-				tc.Identity.Tenant,
-				tc.Identity.Subject),
+			natsClient.Publish(context.Background(),
+				model.GetDeviceSubject(
+					tc.Identity.Tenant,
+					tc.Identity.Subject,
+				),
 				b,
 			)
 			_ = conn.WriteMessage(websocket.BinaryMessage, b)
 
 			select {
 			case msg := <-natsChan:
+				_ = msg.Respond(nil)
 				var stopMsg ws.ProtoMsg
 				err := msgpack.Unmarshal(msg.Data, &stopMsg)
 				if assert.NoError(t, err) {
@@ -485,15 +499,17 @@ func TestManagementConnect(t *testing.T) {
 				},
 			}
 			b, _ = msgpack.Marshal(msg)
-			natsClient.Publish(model.GetDeviceSubject(
-				tc.Identity.Tenant,
-				tc.Identity.Subject),
+			natsClient.Publish(context.Background(),
+				model.GetDeviceSubject(
+					tc.Identity.Tenant,
+					tc.Identity.Subject),
 				b,
 			)
 			_ = conn.WriteMessage(websocket.BinaryMessage, b)
 
 			select {
 			case msg := <-natsChan:
+				_ = msg.Respond(nil)
 				var stopMsg ws.ProtoMsg
 				err := msgpack.Unmarshal(msg.Data, &stopMsg)
 				if assert.NoError(t, err) {
@@ -518,6 +534,7 @@ func TestManagementConnect(t *testing.T) {
 
 			select {
 			case msg := <-natsChan:
+				_ = msg.Respond(nil)
 				var stopMsg ws.ProtoMsg
 				err := msgpack.Unmarshal(msg.Data, &stopMsg)
 				if assert.NoError(t, err) {
@@ -935,7 +952,7 @@ func TestManagementSessionLimit(t *testing.T) {
 	s := httptest.NewServer(router)
 	defer s.Close()
 
-	natsChan := make(chan *nats.Msg)
+	natsChan := make(chan *natsio.Msg)
 	sub, _ := natsClient.ChanSubscribe(
 		model.GetDeviceSubject(
 			identity.Tenant,
@@ -978,6 +995,7 @@ func TestManagementSessionLimit(t *testing.T) {
 				return
 			default:
 				err = natsClient.Publish(
+					ctx,
 					model.GetSessionSubject(identity.Tenant, sid),
 					b,
 				)
@@ -1023,6 +1041,7 @@ func TestManagementSessionLimit(t *testing.T) {
 
 	select {
 	case natsMsg := <-natsChan:
+		_ = natsMsg.Respond(nil)
 		var rMsg ws.ProtoMsg
 		err = msgpack.Unmarshal(natsMsg.Data, &rMsg)
 		assert.NoError(t, err)
@@ -1166,6 +1185,7 @@ func TestManagementCheckUpdate(t *testing.T) {
 				if tc.GetDeviceError == nil && tc.GetDevice != nil &&
 					tc.GetDevice.Status == model.DeviceStatusConnected {
 					natsClient.On("Publish",
+						contextMatcher,
 						mock.AnythingOfType("string"),
 						mock.AnythingOfType("[]uint8"),
 					).Return(tc.PublishErr)
@@ -1307,6 +1327,7 @@ func TestManagementSendInventory(t *testing.T) {
 				if tc.GetDeviceError == nil && tc.GetDevice != nil &&
 					tc.GetDevice.Status == model.DeviceStatusConnected {
 					natsClient.On("Publish",
+						contextMatcher,
 						mock.AnythingOfType("string"),
 						mock.AnythingOfType("[]uint8"),
 					).Return(tc.PublishErr)
