@@ -16,7 +16,6 @@ package http
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -175,10 +174,34 @@ func (h DeviceController) Connect(c *gin.Context) {
 	}
 	conn.SetReadLimit(int64(app.MessageSizeLimit))
 
+	// update the device status on websocket opening
+	err = h.app.UpdateDeviceStatus(
+		ctx, idata.Tenant,
+		idata.Subject, model.DeviceStatusConnected,
+	)
+	if err != nil {
+		l.Error(err)
+		return
+	}
+	defer func() {
+		// update the device status on websocket closing
+		eStatus := h.app.UpdateDeviceStatus(
+			ctx, idata.Tenant,
+			idata.Subject, model.DeviceStatusDisconnected,
+		)
+		if eStatus != nil {
+			l.Error(eStatus)
+		}
+	}()
+	sessCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	// websocketWriter is responsible for closing the websocket
 	//nolint:errcheck
-	go h.connectWSWriter(ctx, conn, msgChan, errChan)
-	err = h.ConnectServeWS(ctx, conn)
+	go func() {
+		h.connectWSWriter(sessCtx, conn, msgChan, errChan)
+		cancel()
+	}()
+	err = h.ConnectServeWS(sessCtx, sub, conn)
 	if err != nil {
 		select {
 		case errChan <- err:
@@ -200,32 +223,7 @@ func (h DeviceController) connectWSWriter(
 	errChan <-chan error,
 ) (err error) {
 	l := log.FromContext(ctx)
-	defer func() {
-		if err != nil {
-			if !websocket.IsUnexpectedCloseError(err) {
-				// If the peer didn't send a close message we must.
-				errMsg := err.Error()
-				errBody := make([]byte, len(errMsg)+2)
-				binary.BigEndian.PutUint16(errBody,
-					websocket.CloseInternalServerErr,
-				)
-				copy(errBody[2:], errMsg)
-				errClose := conn.WriteControl(
-					websocket.CloseMessage,
-					errBody,
-					time.Now().Add(writeWait),
-				)
-				if errClose != nil {
-					err = errors.Wrapf(err,
-						"error sending websocket close frame: %s",
-						errClose.Error(),
-					)
-				}
-			}
-			l.Errorf("websocket closed with error: %s", err.Error())
-		}
-		conn.Close()
-	}()
+	defer writerFinalizer(conn, &err, l)
 
 	// handle the ping-pong connection health check
 	err = conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -257,6 +255,7 @@ Loop:
 	for {
 		select {
 		case msg := <-msgChan:
+			_ = msg.Respond(nil)
 			err = conn.WriteMessage(websocket.BinaryMessage, msg.Data)
 			if err != nil {
 				l.Error(err)
@@ -269,7 +268,7 @@ Loop:
 				err = errors.New("connection timeout")
 				break Loop
 			}
-		case err := <-errChan:
+		case err = <-errChan:
 			return err
 		}
 	}
@@ -278,22 +277,14 @@ Loop:
 
 func (h DeviceController) ConnectServeWS(
 	ctx context.Context,
+	sub *natsio.Subscription,
 	conn *websocket.Conn,
 ) (err error) {
 	l := log.FromContext(ctx)
 	id := identity.FromContext(ctx)
 	sessMap := make(map[string]*model.ActiveSession)
-
-	// update the device status on websocket opening
-	err = h.app.UpdateDeviceStatus(
-		ctx, id.Tenant,
-		id.Subject, model.DeviceStatusConnected,
-	)
-	if err != nil {
-		l.Error(err)
-		return
-	}
 	defer func() {
+		_ = sub.Unsubscribe()
 		for sessionID, session := range sessMap {
 			// TODO: notify the session NATS topic about the session
 			//       being released.
@@ -310,19 +301,11 @@ func (h DeviceController) ConnectServeWS(
 					Body: []byte("device disconnected"),
 				}
 				data, _ := msgpack.Marshal(msg)
-				err = h.nats.Publish(
+				err = h.nats.PublishNoAck(
 					model.GetSessionSubject(id.Tenant, sessionID),
 					data,
 				)
 			}
-		}
-		// update the device status on websocket closing
-		eStatus := h.app.UpdateDeviceStatus(
-			ctx, id.Tenant,
-			id.Subject, model.DeviceStatusDisconnected,
-		)
-		if eStatus != nil {
-			l.Error(eStatus)
 		}
 	}()
 
@@ -338,27 +321,29 @@ func (h DeviceController) ConnectServeWS(
 			return err
 		}
 
-		sessMap[m.Header.SessionID] = &model.ActiveSession{}
 		switch m.Header.Proto {
 		case ws.ProtoTypeShell:
 			if m.Header.SessionID == "" {
 				return errors.New("api: message missing required session ID")
 			} else if m.Header.MsgType == shell.MessageTypeSpawnShell {
-				if session, ok := sessMap[m.Header.SessionID]; ok {
-					session.RemoteTerminal = true
+				sessMap[m.Header.SessionID] = &model.ActiveSession{
+					RemoteTerminal: true,
 				}
 			} else if m.Header.MsgType == shell.MessageTypeStopShell {
 				delete(sessMap, m.Header.SessionID)
 			}
 		default:
-			// TODO: Handle protocol violation
 		}
 
 		err = h.nats.Publish(
+			ctx,
 			model.GetSessionSubject(id.Tenant, m.Header.SessionID),
 			data,
 		)
-		if err != nil {
+		if err == nats.ErrTimeout {
+			l.Error(err)
+			delete(sessMap, m.Header.SessionID)
+		} else if err != nil {
 			return err
 		}
 	}

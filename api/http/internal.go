@@ -114,7 +114,7 @@ func (h InternalController) sendMenderCommand(c *gin.Context, msgType string) {
 	}
 	data, _ := msgpack.Marshal(msg)
 
-	err = h.nats.Publish(model.GetDeviceSubject(tenantID, device.ID), data)
+	err = h.nats.Publish(ctx, model.GetDeviceSubject(tenantID, device.ID), data)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),

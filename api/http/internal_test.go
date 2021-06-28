@@ -31,6 +31,10 @@ import (
 	"github.com/mendersoftware/deviceconnect/model"
 )
 
+var contextMatcher = mock.MatchedBy(func(_ context.Context) bool {
+	return true
+})
+
 func TestProvision(t *testing.T) {
 	testCases := []struct {
 		Name               string
@@ -195,9 +199,7 @@ func TestInternalCheckUpdate(t *testing.T) {
 			req, err := http.NewRequest("POST", "http://localhost"+url, nil)
 
 			app.On("GetDevice",
-				mock.MatchedBy(func(_ context.Context) bool {
-					return true
-				}),
+				contextMatcher,
 				tc.TenantID,
 				tc.DeviceID,
 			).Return(tc.GetDevice, tc.GetDeviceError)
@@ -205,6 +207,7 @@ func TestInternalCheckUpdate(t *testing.T) {
 			if tc.GetDeviceError == nil && tc.GetDevice != nil &&
 				tc.GetDevice.Status == model.DeviceStatusConnected {
 				natsClient.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.AnythingOfType("[]uint8"),
 				).Return(tc.PublishErr)
@@ -325,6 +328,7 @@ func TestInternalSendInventory(t *testing.T) {
 			if tc.GetDeviceError == nil && tc.GetDevice != nil &&
 				tc.GetDevice.Status == model.DeviceStatusConnected {
 				natsClient.On("Publish",
+					contextMatcher,
 					mock.AnythingOfType("string"),
 					mock.AnythingOfType("[]uint8"),
 				).Return(tc.PublishErr)

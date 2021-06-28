@@ -17,7 +17,9 @@
 package mocks
 
 import (
-	"github.com/nats-io/nats.go"
+	context "context"
+
+	nats "github.com/nats-io/nats.go"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -49,8 +51,22 @@ func (_m *Client) ChanSubscribe(_a0 string, _a1 chan *nats.Msg) (*nats.Subscript
 	return r0, r1
 }
 
-// Publish provides a mock function with given fields: _a0, _a1
-func (_m *Client) Publish(_a0 string, _a1 []byte) error {
+// Publish provides a mock function with given fields: _a0, _a1, _a2
+func (_m *Client) Publish(_a0 context.Context, _a1 string, _a2 []byte) error {
+	ret := _m.Called(_a0, _a1, _a2)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, []byte) error); ok {
+		r0 = rf(_a0, _a1, _a2)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// PublishNoAck provides a mock function with given fields: _a0, _a1
+func (_m *Client) PublishNoAck(_a0 string, _a1 []byte) error {
 	ret := _m.Called(_a0, _a1)
 
 	var r0 error
