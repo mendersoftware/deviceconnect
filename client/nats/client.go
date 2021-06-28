@@ -15,11 +15,11 @@
 package nats
 
 import (
+	"context"
 	"strconv"
 	"sync/atomic"
 	"time"
 
-	"github.com/nats-io/nats.go"
 	natsio "github.com/nats-io/nats.go"
 	"github.com/pkg/errors"
 )
@@ -37,7 +37,8 @@ var (
 // Client is the nats client
 //go:generate ../../utils/mockgen.sh
 type Client interface {
-	Publish(string, []byte) error
+	Publish(context.Context, string, []byte) error
+	PublishNoAck(string, []byte) error
 	ChanSubscribe(string, chan *natsio.Msg) (*natsio.Subscription, error)
 }
 
@@ -64,13 +65,13 @@ type client struct {
 	ackNum   uint64
 }
 
-func (c *client) Publish(subj string, data []byte) error {
-	m := nats.NewMsg(subj)
+func (c *client) Publish(ctx context.Context, subj string, data []byte) error {
+	m := natsio.NewMsg(subj)
 	m.Data = data
 	acknum := atomic.AddUint64(&c.ackNum, 1)
 	m.Reply = subj + "." + subjectACK + "." +
-		strconv.FormatUint(c.clientID, 10) + "." +
-		strconv.FormatUint(acknum, 10)
+		strconv.FormatUint(c.clientID, 16) + "." +
+		strconv.FormatUint(acknum, 16)
 	ch := make(chan *natsio.Msg, 1)
 	sub, err := c.nc.ChanSubscribe(m.Reply, ch)
 	if err != nil {
@@ -88,14 +89,22 @@ func (c *client) Publish(subj string, data []byte) error {
 	// NOTE: Only create timer if we need to block
 	select {
 	case <-ch:
+	case <-ctx.Done():
+		return ctx.Err()
 	default:
 		select {
 		case <-ch:
+		case <-ctx.Done():
+			return ctx.Err()
 		case <-time.After(ackWait):
 			return ErrTimeout
 		}
 	}
 	return nil
+}
+
+func (c *client) PublishNoAck(subj string, data []byte) error {
+	return c.nc.Publish(subj, data)
 }
 
 func (c *client) ChanSubscribe(subj string, ch chan *natsio.Msg) (*natsio.Subscription, error) {

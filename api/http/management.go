@@ -612,7 +612,7 @@ func sendLimitErrDevice(ctx context.Context, session *model.Session, nats nats.C
 			err,
 		)
 	}
-	err = nats.Publish(model.GetDeviceSubject(
+	err = nats.Publish(ctx, model.GetDeviceSubject(
 		session.TenantID, session.DeviceID),
 		data,
 	)
@@ -639,6 +639,7 @@ func (h ManagementController) ConnectServeWS(
 	id := identity.FromContext(ctx)
 	errChan := make(chan error, 1)
 	remoteTerminalRunning := false
+	sessCtx, cancel := context.WithCancel(ctx)
 
 	defer func() {
 		if err != nil {
@@ -663,7 +664,7 @@ func (h ManagementController) ConnectServeWS(
 				Body: []byte("user disconnected"),
 			}
 			data, _ := msgpack.Marshal(msg)
-			errPublish := h.nats.Publish(model.GetDeviceSubject(
+			errPublish := h.nats.PublishNoAck(model.GetDeviceSubject(
 				id.Tenant, sess.DeviceID),
 				data,
 			)
@@ -676,6 +677,7 @@ func (h ManagementController) ConnectServeWS(
 			}
 		}
 		close(errChan)
+		cancel()
 	}()
 
 	controlRecorder := h.app.GetControlRecorder(ctx, sess.ID)
@@ -688,15 +690,18 @@ func (h ManagementController) ConnectServeWS(
 
 	// websocketWriter is responsible for closing the websocket
 	//nolint:errcheck
-	go h.websocketWriter(ctx,
-		conn,
-		sess,
-		deviceChan,
-		errChan,
-		sessionRecorderBuffered,
-		controlRecorderBuffered)
+	go func() {
+		h.websocketWriter(sessCtx,
+			conn,
+			sess,
+			deviceChan,
+			errChan,
+			sessionRecorderBuffered,
+			controlRecorderBuffered)
+		cancel()
+	}()
 
-	return h.connectServeWSProcessMessages(ctx, conn, sess, deviceChan,
+	return h.connectServeWSProcessMessages(sessCtx, conn, sess, deviceChan,
 		&remoteTerminalRunning, controlRecorderBuffered)
 }
 
@@ -778,7 +783,7 @@ func (h ManagementController) connectServeWSProcessMessages(
 			}
 		}
 
-		err = h.nats.Publish(model.GetDeviceSubject(id.Tenant, sess.DeviceID), data)
+		err = h.nats.Publish(ctx, model.GetDeviceSubject(id.Tenant, sess.DeviceID), data)
 		if err != nil {
 			return err
 		}
@@ -877,7 +882,7 @@ func (h ManagementController) sendMenderCommand(c *gin.Context, msgType string) 
 	}
 	data, _ := msgpack.Marshal(msg)
 
-	err = h.nats.Publish(model.GetDeviceSubject(idata.Tenant, device.ID), data)
+	err = h.nats.Publish(ctx, model.GetDeviceSubject(idata.Tenant, device.ID), data)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
