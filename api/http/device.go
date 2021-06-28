@@ -16,7 +16,6 @@ package http
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -225,32 +224,7 @@ func (h DeviceController) connectWSWriter(
 	errChan <-chan error,
 ) (err error) {
 	l := log.FromContext(ctx)
-	defer func() {
-		if err != nil {
-			if !websocket.IsUnexpectedCloseError(err) {
-				// If the peer didn't send a close message we must.
-				errMsg := err.Error()
-				errBody := make([]byte, len(errMsg)+2)
-				binary.BigEndian.PutUint16(errBody,
-					websocket.CloseInternalServerErr,
-				)
-				copy(errBody[2:], errMsg)
-				errClose := conn.WriteControl(
-					websocket.CloseMessage,
-					errBody,
-					time.Now().Add(writeWait),
-				)
-				if errClose != nil {
-					err = errors.Wrapf(err,
-						"error sending websocket close frame: %s",
-						errClose.Error(),
-					)
-				}
-			}
-			l.Errorf("websocket closed with error: %s", err.Error())
-		}
-		conn.Close()
-	}()
+	defer writerFinalizer(conn, &err, l)
 
 	// handle the ping-pong connection health check
 	err = conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -295,7 +269,7 @@ Loop:
 				err = errors.New("connection timeout")
 				break Loop
 			}
-		case err := <-errChan:
+		case err = <-errChan:
 			return err
 		}
 	}

@@ -347,13 +347,21 @@ func writerFinalizer(conn *websocket.Conn, e *error, l *log.Logger) {
 				time.Now().Add(writeWait),
 			)
 			if errClose != nil {
-				err = errors.Wrapf(err,
-					"error sending websocket close frame: %s",
-					errClose.Error(),
-				)
+				l.Warnf("error sending websocket close frame: %s", errClose.Error())
 			}
 		}
 		l.Errorf("websocket closed with error: %s", err.Error())
+	} else {
+		var b [2]byte
+		binary.BigEndian.PutUint16(b[:], websocket.CloseNormalClosure)
+		errClose := conn.WriteControl(
+			websocket.CloseMessage,
+			b[:],
+			time.Now().Add(writeWait),
+		)
+		if errClose != nil {
+			l.Warnf("error sending websocket close frame: %s", errClose.Error())
+		}
 	}
 	conn.Close()
 }
@@ -477,7 +485,7 @@ Loop:
 				err = errors.New("connection timeout")
 				break Loop
 			}
-		case err := <-errChan:
+		case err = <-errChan:
 			return err
 		}
 	}
