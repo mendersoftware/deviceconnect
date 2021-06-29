@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/mendersoftware/deviceconnect/app"
 	app_mocks "github.com/mendersoftware/deviceconnect/app/mocks"
 	nats_mocks "github.com/mendersoftware/deviceconnect/client/nats/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
@@ -54,24 +55,24 @@ func TestDeviceConnect(t *testing.T) {
 		Tenant:   "000000000000000000000000",
 		IsDevice: true,
 	}
-	app := &app_mocks.App{}
+	app := new(app_mocks.App)
 	app.On("UpdateDeviceStatus",
 		mock.MatchedBy(func(_ context.Context) bool {
 			return true
 		}),
 		Identity.Tenant,
 		Identity.Subject,
-		model.DeviceStatusConnected,
-	).Return(nil)
-
-	app.On("UpdateDeviceStatus",
-		mock.MatchedBy(func(_ context.Context) bool {
-			return true
-		}),
-		Identity.Tenant,
-		Identity.Subject,
-		model.DeviceStatusDisconnected,
-	).Return(nil)
+		model.DeviceStatusConnected).
+		Return(nil).
+		Once().
+		On("UpdateDeviceStatus",
+			mock.MatchedBy(func(_ context.Context) bool {
+				return true
+			}),
+			Identity.Tenant,
+			Identity.Subject,
+			model.DeviceStatusDisconnected).
+		Return(nil)
 
 	natsClient := NewNATSTestClient(t)
 	router, _ := NewRouter(app, natsClient)
@@ -120,7 +121,7 @@ func TestDeviceConnect(t *testing.T) {
 		Header: ws.ProtoHdr{
 			Proto:     ws.ProtoTypeShell,
 			MsgType:   "cmd",
-			SessionID: "foobar",
+			SessionID: "foo",
 		},
 	}
 	b, _ := msgpack.Marshal(msg)
@@ -142,9 +143,13 @@ func TestDeviceConnect(t *testing.T) {
 	}
 
 	// test responding to message from management
-	rChan := make(chan *natsio.Msg, 1)
+	rChan := make(chan *natsio.Msg, 2)
 	_, err = natsClient.ChanSubscribe(
-		model.GetSessionSubject(Identity.Tenant, "foobar"),
+		model.GetSessionSubject(Identity.Tenant, "foo"),
+		rChan,
+	)
+	_, err = natsClient.ChanSubscribe(
+		model.GetSessionSubject(Identity.Tenant, "bar"),
 		rChan,
 	)
 	assert.NoError(t, err)
@@ -185,7 +190,7 @@ func TestDeviceConnect(t *testing.T) {
 		Header: ws.ProtoHdr{
 			Proto:     ws.ProtoTypeShell,
 			MsgType:   shell.MessageTypeSpawnShell,
-			SessionID: "foobar",
+			SessionID: "foo",
 		},
 	}
 	b, _ = msgpack.Marshal(msg)
@@ -207,7 +212,7 @@ func TestDeviceConnect(t *testing.T) {
 		Header: ws.ProtoHdr{
 			Proto:     ws.ProtoTypeShell,
 			MsgType:   shell.MessageTypeStopShell,
-			SessionID: "foobar",
+			SessionID: "foo",
 		},
 	}
 	b, _ = msgpack.Marshal(msg)
@@ -229,7 +234,7 @@ func TestDeviceConnect(t *testing.T) {
 		Header: ws.ProtoHdr{
 			Proto:     ws.ProtoTypeShell,
 			MsgType:   shell.MessageTypeSpawnShell,
-			SessionID: "foobar",
+			SessionID: "bar",
 		},
 	}
 	b, _ = msgpack.Marshal(msg)
@@ -319,6 +324,7 @@ func TestDeviceConnectFailures(t *testing.T) {
 		Authorization string
 		WithNATS      bool
 		SubErr        error
+		StatusErr     error
 		HTTPStatus    int
 		HTTPError     error
 	}{
@@ -334,6 +340,20 @@ func TestDeviceConnectFailures(t *testing.T) {
 			HTTPStatus:    http.StatusInternalServerError,
 			WithNATS:      true,
 			SubErr:        errors.New("internal error"),
+		},
+		{
+			Name:          "error, unable set connection status",
+			Authorization: "Bearer " + JWT,
+			HTTPStatus:    http.StatusInternalServerError,
+			WithNATS:      true,
+			StatusErr:     errors.New("internal error"),
+		},
+		{
+			Name:          "error, device already connected",
+			Authorization: "Bearer " + JWT,
+			HTTPStatus:    http.StatusConflict,
+			WithNATS:      true,
+			StatusErr:     app.ErrDeviceConnected,
 		},
 		{
 			Name: "error, user auth",
@@ -359,13 +379,28 @@ func TestDeviceConnectFailures(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			natsClient := new(nats_mocks.Client)
+			app := new(app_mocks.App)
 			defer natsClient.AssertExpectations(t)
+			defer app.AssertExpectations(t)
 			if tc.WithNATS {
 				natsClient.On("ChanSubscribe", mock.AnythingOfType("string"), mock.Anything).
 					Return(new(natsio.Subscription), tc.SubErr)
+				if tc.SubErr == nil {
+					call := app.On("UpdateDeviceStatus",
+						contextMatcher, mock.AnythingOfType("string"),
+						mock.AnythingOfType("string"), model.DeviceStatusConnected).
+						Return(tc.StatusErr).
+						Once()
+					if tc.StatusErr == nil {
+						call.On("UpdateDeviceStatus",
+							contextMatcher, mock.AnythingOfType("string"),
+							mock.AnythingOfType("string"), model.DeviceStatusDisconnected).
+							Return(nil)
+					}
+				}
 			}
 
-			router, _ := NewRouter(nil, natsClient)
+			router, _ := NewRouter(app, natsClient)
 			req, err := http.NewRequest("GET", "http://localhost"+APIURLDevicesConnect, nil)
 			if !assert.NoError(t, err) {
 				t.FailNow()

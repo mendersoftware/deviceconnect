@@ -89,4 +89,5 @@ func (sess Session) Validate() error {
 // ActiveSession stores the data about an active session in memory
 type ActiveSession struct {
 	RemoteTerminal bool
+	Closed         bool
 }

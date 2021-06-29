@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -59,6 +60,9 @@ var (
 
 	//The name of the field in the query parameter to GET that holds the id of a session
 	PlaybackSessionIDField = "sessionId"
+
+	WebsocketReadBufferSize  = 1024
+	WebsocketWriteBufferSize = 1024
 
 	//The threshold between the shell commands received (keystrokes) above which the
 	//delay control message is saved
@@ -208,7 +212,9 @@ func (h ManagementController) Connect(c *gin.Context) {
 
 	// upgrade get request to websocket protocol
 	upgrader := websocket.Upgrader{
-		Subprotocols: []string{"protomsg/msgpack"},
+		ReadBufferSize:  WebsocketReadBufferSize,
+		WriteBufferSize: WebsocketWriteBufferSize,
+		Subprotocols:    []string{"protomsg/msgpack"},
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
@@ -222,10 +228,11 @@ func (h ManagementController) Connect(c *gin.Context) {
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
 		l.Error(err)
-		// upgrader.Upgrade has already responded
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal error",
+		})
 		return
 	}
-	conn.SetReadLimit(int64(app.MessageSizeLimit))
 
 	//nolint:errcheck
 	h.ConnectServeWS(ctx, conn, session, deviceChan)
@@ -265,7 +272,9 @@ func (h ManagementController) Playback(c *gin.Context) {
 
 	// upgrade get request to websocket protocol
 	upgrader := websocket.Upgrader{
-		Subprotocols: []string{"protomsg/msgpack"},
+		ReadBufferSize:  WebsocketReadBufferSize,
+		WriteBufferSize: WebsocketWriteBufferSize,
+		Subprotocols:    []string{"protomsg/msgpack"},
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
@@ -279,9 +288,11 @@ func (h ManagementController) Playback(c *gin.Context) {
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
 		l.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal error",
+		})
 		return
 	}
-	conn.SetReadLimit(int64(app.MessageSizeLimit))
 
 	deviceChan := make(chan *natsio.Msg, channelSize)
 	errChan := make(chan error, 1)
@@ -325,7 +336,8 @@ func websocketPing(conn *websocket.Conn) bool {
 func writerFinalizer(conn *websocket.Conn, e *error, l *log.Logger) {
 	err := *e
 	if err != nil {
-		if !websocket.IsUnexpectedCloseError(errors.Cause(err)) {
+		if _, ok := err.(*net.OpError); !ok &&
+			!websocket.IsUnexpectedCloseError(errors.Cause(err)) {
 			errMsg := err.Error()
 			errBody := make([]byte, len(errMsg)+2)
 			binary.BigEndian.PutUint16(errBody,

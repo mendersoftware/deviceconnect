@@ -32,6 +32,7 @@ import (
 var (
 	ErrDeviceNotFound     = errors.New("device not found")
 	ErrDeviceNotConnected = errors.New("device not connected")
+	ErrDeviceConnected    = errors.New("device already connected")
 )
 
 // App interface describes app objects
@@ -128,7 +129,15 @@ func (a *app) UpdateDeviceStatus(
 	ctx context.Context,
 	tenantID, deviceID, status string,
 ) error {
-	return a.store.UpsertDeviceStatus(ctx, tenantID, deviceID, status)
+	oldStatus, err := a.store.UpsertDeviceStatus(ctx, tenantID, deviceID, status)
+	if err != nil {
+		return err
+	}
+	if status == model.DeviceStatusConnected &&
+		oldStatus == model.DeviceStatusConnected {
+		return ErrDeviceConnected
+	}
+	return nil
 }
 
 // PrepareUserSession prepares a new user session

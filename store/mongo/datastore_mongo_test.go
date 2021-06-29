@@ -139,8 +139,9 @@ func TestUpsertDeviceStatus(t *testing.T) {
 
 	clock = mockClock{}
 
-	err = ds.UpsertDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusConnected)
+	oldStatus, err := ds.UpsertDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusConnected)
 	assert.NoError(t, err)
+	assert.Equal(t, model.DeviceStatusUnknown, oldStatus)
 
 	device, err = ds.GetDevice(ctx, tenantID, deviceID)
 	assert.NoError(t, err)
@@ -149,15 +150,17 @@ func TestUpsertDeviceStatus(t *testing.T) {
 	assert.Equal(t, mockTime, device.UpdatedTs)
 
 	const anotherDeviceID = "efgh"
-	err = ds.UpsertDeviceStatus(ctx, tenantID, anotherDeviceID, model.DeviceStatusConnected)
+	oldStatus, err = ds.UpsertDeviceStatus(ctx, tenantID, anotherDeviceID, model.DeviceStatusConnected)
 	assert.NoError(t, err)
+	assert.Equal(t, model.DeviceStatusUnknown, oldStatus)
 
 	device, err = ds.GetDevice(ctx, tenantID, anotherDeviceID)
 	assert.NoError(t, err)
 	assert.Equal(t, model.DeviceStatusConnected, device.Status)
 
-	err = ds.UpsertDeviceStatus(ctx, tenantID, anotherDeviceID, model.DeviceStatusDisconnected)
+	oldStatus, err = ds.UpsertDeviceStatus(ctx, tenantID, anotherDeviceID, model.DeviceStatusDisconnected)
 	assert.NoError(t, err)
+	assert.Equal(t, model.DeviceStatusConnected, oldStatus)
 
 	device, err = ds.GetDevice(ctx, tenantID, anotherDeviceID)
 	assert.NoError(t, err)

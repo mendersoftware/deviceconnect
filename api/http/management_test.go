@@ -577,6 +577,7 @@ func TestManagementConnect(t *testing.T) {
 			assert.Error(t, err)
 			assert.True(t, websocket.IsCloseError(err,
 				websocket.CloseInternalServerErr),
+				err,
 			)
 			conn.Close()
 

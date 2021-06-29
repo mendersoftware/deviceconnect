@@ -250,16 +250,17 @@ func (db *DataStoreMongo) UpsertDeviceStatus(
 	tenantID string,
 	deviceID string,
 	status string,
-) error {
+) (oldStatus string, err error) {
 	dbname := mstore.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
-	updateOpts := &mopts.UpdateOptions{}
-	updateOpts.SetUpsert(true)
+	updateOpts := mopts.FindOneAndUpdate().
+		SetUpsert(true).
+		SetReturnDocument(mopts.Before)
 
 	now := clock.Now().UTC()
-
-	_, err := coll.UpdateOne(ctx,
+	dev := new(model.Device)
+	err = coll.FindOneAndUpdate(ctx,
 		bson.M{"_id": deviceID},
 		bson.M{
 			"$set": bson.M{
@@ -271,9 +272,14 @@ func (db *DataStoreMongo) UpsertDeviceStatus(
 			},
 		},
 		updateOpts,
-	)
-
-	return err
+	).Decode(dev)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return model.DeviceStatusUnknown, nil
+		}
+		return model.DeviceStatusUnknown, err
+	}
+	return dev.Status, nil
 }
 
 // AllocateSession allocates a new session.

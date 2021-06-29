@@ -147,6 +147,29 @@ func (h DeviceController) Connect(c *gin.Context) {
 	}
 	//nolint:errcheck
 	defer sub.Unsubscribe()
+	// update the device status on websocket opening
+	err = h.app.UpdateDeviceStatus(
+		ctx, idata.Tenant,
+		idata.Subject, model.DeviceStatusConnected,
+	)
+	if err != nil {
+		if err == app.ErrDeviceConnected {
+			rest.RenderError(c, http.StatusConflict, err)
+		} else {
+			rest.RenderError(c, http.StatusInternalServerError, err)
+		}
+		return
+	}
+	defer func() {
+		// update the device status on websocket closing
+		eStatus := h.app.UpdateDeviceStatus(
+			ctx, idata.Tenant,
+			idata.Subject, model.DeviceStatusDisconnected,
+		)
+		if eStatus != nil {
+			l.Error(eStatus)
+		}
+	}()
 
 	upgrader := websocket.Upgrader{
 		Subprotocols: []string{"protomsg/msgpack"},
@@ -173,26 +196,6 @@ func (h DeviceController) Connect(c *gin.Context) {
 		return
 	}
 	conn.SetReadLimit(int64(app.MessageSizeLimit))
-
-	// update the device status on websocket opening
-	err = h.app.UpdateDeviceStatus(
-		ctx, idata.Tenant,
-		idata.Subject, model.DeviceStatusConnected,
-	)
-	if err != nil {
-		l.Error(err)
-		return
-	}
-	defer func() {
-		// update the device status on websocket closing
-		eStatus := h.app.UpdateDeviceStatus(
-			ctx, idata.Tenant,
-			idata.Subject, model.DeviceStatusDisconnected,
-		)
-		if eStatus != nil {
-			l.Error(eStatus)
-		}
-	}()
 	sessCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// websocketWriter is responsible for closing the websocket
@@ -288,7 +291,9 @@ func (h DeviceController) ConnectServeWS(
 		for sessionID, session := range sessMap {
 			// TODO: notify the session NATS topic about the session
 			//       being released.
-			if session.RemoteTerminal {
+			if session.Closed {
+				continue
+			} else if session.RemoteTerminal {
 				msg := ws.ProtoMsg{
 					Header: ws.ProtoHdr{
 						Proto:     ws.ProtoTypeShell,
@@ -321,16 +326,21 @@ func (h DeviceController) ConnectServeWS(
 			return err
 		}
 
+		ac := sessMap[m.Header.SessionID]
+		if ac == nil {
+			ac = new(model.ActiveSession)
+			sessMap[m.Header.SessionID] = ac
+		} else if ac.Closed {
+			continue
+		}
 		switch m.Header.Proto {
 		case ws.ProtoTypeShell:
 			if m.Header.SessionID == "" {
 				return errors.New("api: message missing required session ID")
 			} else if m.Header.MsgType == shell.MessageTypeSpawnShell {
-				sessMap[m.Header.SessionID] = &model.ActiveSession{
-					RemoteTerminal: true,
-				}
+				ac.RemoteTerminal = true
 			} else if m.Header.MsgType == shell.MessageTypeStopShell {
-				delete(sessMap, m.Header.SessionID)
+				ac.Closed = true
 			}
 		default:
 		}
@@ -341,8 +351,8 @@ func (h DeviceController) ConnectServeWS(
 			data,
 		)
 		if err == nats.ErrTimeout {
-			l.Error(err)
-			delete(sessMap, m.Header.SessionID)
+			l.Error(m.Header, string(m.Body), err)
+			ac.Closed = true
 		} else if err != nil {
 			return err
 		}

@@ -212,17 +212,24 @@ func (_m *DataStore) ProvisionTenant(ctx context.Context, tenantID string) error
 }
 
 // UpsertDeviceStatus provides a mock function with given fields: ctx, tenantID, deviceID, status
-func (_m *DataStore) UpsertDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error {
+func (_m *DataStore) UpsertDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) (string, error) {
 	ret := _m.Called(ctx, tenantID, deviceID, status)
 
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
+	var r0 string
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) string); ok {
 		r0 = rf(ctx, tenantID, deviceID, status)
 	} else {
-		r0 = ret.Error(0)
+		r0 = ret.Get(0).(string)
 	}
 
-	return r0
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, string) error); ok {
+		r1 = rf(ctx, tenantID, deviceID, status)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // WriteSessionRecords provides a mock function with given fields: ctx, sessionID, w

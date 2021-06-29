@@ -181,13 +181,36 @@ func TestUpdateDeviceStatus(t *testing.T) {
 		tenantID,
 		deviceID,
 		mock.AnythingOfType("string"),
-	).Return(err)
+	).Return(model.DeviceStatusUnknown, err).Once()
 
 	app := New(store, nil, nil)
 
 	ctx := context.Background()
 	res := app.UpdateDeviceStatus(ctx, tenantID, deviceID, "anything")
 	assert.Equal(t, err, res)
+
+	err = ErrDeviceConnected
+	store.On("UpsertDeviceStatus",
+		mock.MatchedBy(func(ctx context.Context) bool {
+			return true
+		}),
+		tenantID,
+		deviceID,
+		model.DeviceStatusConnected,
+	).Return(model.DeviceStatusConnected, nil).Once()
+	res = app.UpdateDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusConnected)
+	assert.EqualError(t, res, err.Error())
+
+	store.On("UpsertDeviceStatus",
+		mock.MatchedBy(func(ctx context.Context) bool {
+			return true
+		}),
+		tenantID,
+		deviceID,
+		model.DeviceStatusConnected,
+	).Return(model.DeviceStatusDisconnected, nil).Once()
+	res = app.UpdateDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusConnected)
+	assert.NoError(t, res)
 
 	store.AssertExpectations(t)
 }
