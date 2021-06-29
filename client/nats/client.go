@@ -28,6 +28,8 @@ const (
 	subjectACK = "ack"
 )
 
+const minAckWait = time.Millisecond * 50
+
 var ackWait = time.Second * 5
 
 var (
@@ -82,6 +84,7 @@ func (c *client) Publish(ctx context.Context, subj string, data []byte) error {
 	if err != nil {
 		return err
 	}
+	start := time.Now()
 	err = c.nc.PublishMsg(m)
 	if err != nil {
 		return err
@@ -99,6 +102,11 @@ func (c *client) Publish(ctx context.Context, subj string, data []byte) error {
 		case <-time.After(ackWait):
 			return ErrTimeout
 		}
+	}
+	// ackWait[i+1] = round(0.75 * ackWait[i]) + (0.25 * 4 * RTT)
+	ackWait = (ackWait*3+2)/4 + time.Since(start)
+	if ackWait < minAckWait {
+		ackWait = minAckWait
 	}
 	return nil
 }
