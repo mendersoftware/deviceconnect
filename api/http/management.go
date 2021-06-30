@@ -227,11 +227,9 @@ func (h ManagementController) Connect(c *gin.Context) {
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
 		l.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal error",
-		})
 		return
 	}
+	conn.SetReadLimit(int64(app.MessageSizeLimit))
 
 	//nolint:errcheck
 	h.ConnectServeWS(ctx, conn, session, deviceChan)
@@ -287,11 +285,9 @@ func (h ManagementController) Playback(c *gin.Context) {
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
 		l.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal error",
-		})
 		return
 	}
+	conn.SetReadLimit(int64(app.MessageSizeLimit))
 
 	deviceChan := make(chan *natsio.Msg, channelSize)
 	errChan := make(chan error, 1)
