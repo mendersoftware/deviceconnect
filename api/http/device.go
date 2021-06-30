@@ -134,6 +134,23 @@ func (h DeviceController) Connect(c *gin.Context) {
 		return
 	}
 
+	self, err := h.app.GetDevice(ctx, idata.Tenant, idata.Subject)
+	if err != nil {
+		rest.RenderError(c,
+			http.StatusInternalServerError,
+			errors.New(http.StatusText(http.StatusInternalServerError)),
+		)
+		return
+	} else if self.Status == model.DeviceStatusConnected {
+		rest.RenderError(c,
+			http.StatusConflict, errors.Errorf(
+				"a connection already exists for device '%s'",
+				idata.Subject,
+			),
+		)
+		return
+	}
+
 	msgChan := make(chan *natsio.Msg, channelSize)
 	sub, err := h.nats.ChanSubscribe(
 		model.GetDeviceSubject(idata.Tenant, idata.Subject),

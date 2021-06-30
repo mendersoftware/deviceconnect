@@ -54,6 +54,13 @@ func TestDeviceConnect(t *testing.T) {
 		IsDevice: true,
 	}
 	app := &app_mocks.App{}
+	app.On("GetDevice",
+		mock.MatchedBy(func(_ context.Context) bool {
+			return true
+		}),
+		Identity.Tenant,
+		Identity.Subject,
+	).Return(&model.Device{Status: model.DeviceStatusDisconnected}, nil)
 	app.On("UpdateDeviceStatus",
 		mock.MatchedBy(func(_ context.Context) bool {
 			return true
@@ -309,6 +316,7 @@ func TestDeviceConnectFailures(t *testing.T) {
 	testCases := []struct {
 		Name          string
 		Authorization string
+		App           *app_mocks.App
 		WithNATS      bool
 		HTTPStatus    int
 		HTTPError     error
@@ -318,11 +326,66 @@ func TestDeviceConnectFailures(t *testing.T) {
 			Authorization: "Bearer " + JWT,
 			WithNATS:      true,
 			HTTPStatus:    http.StatusBadRequest,
+			App: func() *app_mocks.App {
+				app := new(app_mocks.App)
+				app.On("GetDevice",
+					mock.MatchedBy(func(_ context.Context) bool { return true }),
+					"000000000000000000000000",
+					"00000000-0000-0000-0000-000000000000",
+				).Return(&model.Device{
+					ID:     "00000000-0000-0000-0000-000000000000",
+					Status: model.DeviceStatusDisconnected,
+				}, nil)
+				return app
+			}(),
 		},
 		{
 			Name:          "error, unable to subscribe",
 			Authorization: "Bearer " + JWT,
 			HTTPStatus:    http.StatusInternalServerError,
+			App: func() *app_mocks.App {
+				app := new(app_mocks.App)
+				app.On("GetDevice",
+					mock.MatchedBy(func(_ context.Context) bool { return true }),
+					"000000000000000000000000",
+					"00000000-0000-0000-0000-000000000000",
+				).Return(&model.Device{
+					ID:     "00000000-0000-0000-0000-000000000000",
+					Status: model.DeviceStatusDisconnected,
+				}, nil)
+				return app
+			}(),
+		},
+		{
+			Name:          "error, device already connected",
+			Authorization: "Bearer " + JWT,
+			HTTPStatus:    http.StatusConflict,
+			App: func() *app_mocks.App {
+				app := new(app_mocks.App)
+				app.On("GetDevice",
+					mock.MatchedBy(func(_ context.Context) bool { return true }),
+					"000000000000000000000000",
+					"00000000-0000-0000-0000-000000000000",
+				).Return(&model.Device{
+					ID:     "00000000-0000-0000-0000-000000000000",
+					Status: model.DeviceStatusConnected,
+				}, nil)
+				return app
+			}(),
+		},
+		{
+			Name:          "error, internal app error",
+			Authorization: "Bearer " + JWT,
+			HTTPStatus:    http.StatusInternalServerError,
+			App: func() *app_mocks.App {
+				app := new(app_mocks.App)
+				app.On("GetDevice",
+					mock.MatchedBy(func(_ context.Context) bool { return true }),
+					"000000000000000000000000",
+					"00000000-0000-0000-0000-000000000000",
+				).Return(nil, errors.New("internal error"))
+				return app
+			}(),
 		},
 		{
 			Name: "error, user auth",
@@ -348,11 +411,15 @@ func TestDeviceConnectFailures(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			var natsClient *nats.Conn
+			if tc.App == nil {
+				tc.App = new(app_mocks.App)
+			}
+			defer tc.App.AssertExpectations(t)
 			if tc.WithNATS {
 				natsClient = NewNATSTestClient(t)
 			}
 
-			router, _ := NewRouter(nil, natsClient)
+			router, _ := NewRouter(tc.App, natsClient)
 			req, err := http.NewRequest("GET", "http://localhost"+APIURLDevicesConnect, nil)
 			if !assert.NoError(t, err) {
 				t.FailNow()
