@@ -47,7 +47,6 @@ type App interface {
 	PrepareUserSession(ctx context.Context, sess *model.Session) error
 	LogUserSession(ctx context.Context, sess *model.Session, sessionType string) error
 	FreeUserSession(ctx context.Context, sessionID string, sessionTypes []string) error
-	RemoteTerminalAllowed(ctx context.Context, tenantID, deviceID string, groups []string) (bool, error)
 	GetSessionRecording(ctx context.Context, id string, w io.Writer) (err error)
 	SaveSessionRecording(ctx context.Context, id string, sessionBytes []byte) error
 	GetRecorder(ctx context.Context, sessionID string) io.Writer
@@ -257,37 +256,6 @@ func (a *app) FreeUserSession(
 		}
 	}
 	return nil
-}
-
-func buildRBACFilter(deviceID string, groups []string) model.SearchParams {
-	searchParams := model.SearchParams{
-		Page:    1,
-		PerPage: 1,
-		Filters: []model.FilterPredicate{
-			{
-				Scope:     model.InventoryGroupScope,
-				Attribute: model.InventoryGroupAttributeName,
-				Type:      "$in",
-				Value:     groups,
-			},
-		},
-		DeviceIDs: []string{deviceID},
-	}
-	return searchParams
-}
-
-func (a *app) RemoteTerminalAllowed(
-	ctx context.Context,
-	tenantID string,
-	deviceID string,
-	groups []string) (bool, error) {
-	_, num, err := a.inventory.Search(ctx, tenantID, buildRBACFilter(deviceID, groups))
-	if err != nil {
-		return false, err
-	} else if num != 1 {
-		return false, nil
-	}
-	return true, nil
 }
 
 func (a *app) GetSessionRecording(ctx context.Context, id string, w io.Writer) (err error) {
