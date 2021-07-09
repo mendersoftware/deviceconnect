@@ -208,7 +208,6 @@ func TestManagementConnect(t *testing.T) {
 		DeviceID                   string
 		SessionID                  string
 		Identity                   identity.Identity
-		RBACHeader                 string
 		RemoteTerminalAllowedError error
 		RemoteTerminalAllowed      bool
 	}{
@@ -222,19 +221,6 @@ func TestManagementConnect(t *testing.T) {
 				IsUser:  true,
 				Plan:    "professional",
 			},
-		},
-		{
-			Name:      "ok with RBAC",
-			DeviceID:  "1234567890",
-			SessionID: "session_id",
-			Identity: identity.Identity{
-				Subject: "00000000-0000-0000-0000-000000000000",
-				Tenant:  "000000000000000000000000",
-				IsUser:  true,
-				Plan:    "enterprise",
-			},
-			RBACHeader:            "foo,bar",
-			RemoteTerminalAllowed: true,
 		},
 	}
 
@@ -286,18 +272,6 @@ func TestManagementConnect(t *testing.T) {
 				}),
 				tc.SessionID,
 			).Return(nil)
-			if len(tc.RBACHeader) > 0 {
-				app.On("RemoteTerminalAllowed",
-					mock.MatchedBy(func(_ context.Context) bool {
-						return true
-					}),
-					tc.Identity.Tenant,
-					tc.DeviceID,
-					[]string{"foo", "bar"},
-				).Return(tc.RemoteTerminalAllowed, tc.RemoteTerminalAllowedError)
-
-				headers.Set(model.RBACHeaderRemoteTerminalGroups, tc.RBACHeader)
-			}
 
 			s := httptest.NewServer(router)
 			defer s.Close()
@@ -711,7 +685,6 @@ func TestManagementConnectFailures(t *testing.T) {
 		PrepareUserSessionErr      error
 		Authorization              string
 		Identity                   identity.Identity
-		RBACHeader                 string
 		RemoteTerminalAllowedError error
 		RemoteTerminalAllowed      bool
 		HTTPStatus                 int
@@ -780,42 +753,6 @@ func TestManagementConnectFailures(t *testing.T) {
 			HTTPStatus:    http.StatusUnauthorized,
 			HTTPError:     errors.New("malformed Authorization header"),
 		},
-		{
-			Name: "ko, RBAC - not allowed",
-			Identity: identity.Identity{
-				Subject: "00000000-0000-0000-0000-000000000000",
-				Tenant:  "000000000000000000000000",
-				IsUser:  true,
-			},
-			SessionID: "1",
-			Authorization: "Bearer " + GenerateJWT(identity.Identity{
-				Subject: "00000000-0000-0000-0000-000000000000",
-				Tenant:  "000000000000000000000000",
-				IsUser:  true,
-			}),
-			RBACHeader:            "foo,bar",
-			RemoteTerminalAllowed: false,
-			HTTPStatus:            http.StatusForbidden,
-		},
-		{
-			Name:      "ko, RBAC - error",
-			SessionID: "1",
-			Identity: identity.Identity{
-				Subject: "00000000-0000-0000-0000-000000000000",
-				Tenant:  "000000000000000000000000",
-				IsUser:  true,
-			},
-			Authorization: "Bearer " + GenerateJWT(identity.Identity{
-				Subject: "00000000-0000-0000-0000-000000000000",
-				Tenant:  "000000000000000000000000",
-				IsUser:  true,
-			}),
-			RBACHeader:                 "foo,bar",
-			RemoteTerminalAllowed:      false,
-			RemoteTerminalAllowedError: errors.New("foo"),
-			HTTPStatus:                 http.StatusInternalServerError,
-			HTTPError:                  errors.New("internal error"),
-		},
 	}
 
 	for _, tc := range testCases {
@@ -852,19 +789,6 @@ func TestManagementConnectFailures(t *testing.T) {
 
 			if tc.Authorization != "" {
 				req.Header.Add("Authorization", tc.Authorization)
-			}
-
-			if len(tc.RBACHeader) > 0 {
-				app.On("RemoteTerminalAllowed",
-					mock.MatchedBy(func(_ context.Context) bool {
-						return true
-					}),
-					tc.Identity.Tenant,
-					tc.DeviceID,
-					[]string{"foo", "bar"},
-				).Return(tc.RemoteTerminalAllowed, tc.RemoteTerminalAllowedError)
-
-				req.Header.Add(model.RBACHeaderRemoteTerminalGroups, tc.RBACHeader)
 			}
 
 			w := httptest.NewRecorder()
