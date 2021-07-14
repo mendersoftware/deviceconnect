@@ -476,22 +476,6 @@ func (h ManagementController) DownloadFile(c *gin.Context) {
 		return
 	}
 
-	allowed, err := h.fileTransferAllowed(c, params.TenantID, params.Device.ID)
-	if err != nil {
-		l.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": errors.Wrap(err, "failed to check RBAC"),
-		})
-		return
-	} else if !allowed {
-		msg := "Access denied (RBAC)."
-		l.Warn(msg)
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": msg,
-		})
-		return
-	}
-
 	ctx := c.Request.Context()
 	if err := h.app.DownloadFile(ctx, params.UserID, params.Device.ID,
 		*request.Path); err != nil {
@@ -890,22 +874,6 @@ func (h ManagementController) UploadFile(c *gin.Context) {
 
 	defer request.File.Close()
 
-	allowed, err := h.fileTransferAllowed(c, params.TenantID, params.Device.ID)
-	if err != nil {
-		l.Error(err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": errors.Wrap(err, "failed to check RBAC"),
-		})
-		return
-	} else if !allowed {
-		msg := "Access denied (RBAC)."
-		l.Warn(msg)
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": msg,
-		})
-		return
-	}
-
 	ctx := c.Request.Context()
 	if err := h.app.UploadFile(ctx, params.UserID, params.Device.ID,
 		*request.Path); err != nil {
@@ -917,14 +885,4 @@ func (h ManagementController) UploadFile(c *gin.Context) {
 	}
 
 	h.uploadFileResponse(c, params, request)
-}
-
-func (h ManagementController) fileTransferAllowed(c *gin.Context, tenantID string,
-	deviceID string) (bool, error) {
-	if len(c.Request.Header.Get(model.RBACHeaderRemoteTerminalGroups)) == 0 {
-		return true, nil
-	}
-	groups := strings.Split(
-		c.Request.Header.Get(model.RBACHeaderRemoteTerminalGroups), ",")
-	return h.app.RemoteTerminalAllowed(c, tenantID, deviceID, groups)
 }

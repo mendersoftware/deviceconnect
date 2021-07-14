@@ -22,7 +22,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -139,25 +138,6 @@ func (h ManagementController) Connect(c *gin.Context) {
 	tenantID := idata.Tenant
 	userID := idata.Subject
 	deviceID := c.Param("deviceId")
-
-	if len(c.Request.Header.Get(model.RBACHeaderRemoteTerminalGroups)) > 1 {
-		groups := strings.Split(
-			c.Request.Header.Get(model.RBACHeaderRemoteTerminalGroups), ",")
-
-		allowed, err := h.app.RemoteTerminalAllowed(ctx, tenantID, deviceID, groups)
-		if err != nil {
-			l.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "internal error",
-			})
-			return
-		} else if !allowed {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "Access denied (RBAC).",
-			})
-			return
-		}
-	}
 
 	session := &model.Session{
 		TenantID:           tenantID,

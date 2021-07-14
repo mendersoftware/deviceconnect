@@ -17,7 +17,7 @@ info:
     url: https://www.apache.org/licenses/LICENSE-2.0.html
 
 servers:
-  - url: https://mender-deviceconnect:8080/api/internal/v1/deviceconnect
+  - url: http://mender-deviceconnect:8080/api/internal/v1/deviceconnect
 
 tags:
   - name: Internal API
