@@ -3,7 +3,6 @@ b4acfcfa2a0ba1a8c82ec3965fbcee886cff8394ca4214e0ddac0a36beb1e05a  LICENSE
 b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1  vendor/gopkg.in/yaml.v2/LICENSE
 d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b  vendor/gopkg.in/yaml.v3/LICENSE
 f6918bd93ffe07f4b2c61b8287c32cb3122e08aed0be50f1c7d0eddc87877a8f  vendor/gopkg.in/ini.v1/LICENSE
-cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30  vendor/github.com/aws/aws-sdk-go/LICENSE.txt
 3eb823230e5d112e1bd032ccc82ae765cf676d0d6d46a1a1daa2d658b3005b67  vendor/github.com/mendersoftware/go-lib-micro/LICENSE
 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.com/modern-go/reflect2/LICENSE
 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.com/modern-go/concurrent/LICENSE
@@ -13,7 +12,6 @@ c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.
 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.com/nats-io/nkeys/LICENSE
 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.com/nats-io/jwt/LICENSE
 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  vendor/github.com/nats-io/nats.go/LICENSE
-03cfaf331a260694d06227a589cdd2b5fcfab474697b72e250736696c313655a  vendor/github.com/jmespath/go-jmespath/LICENSE
 09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b  vendor/github.com/xdg-go/stringprep/LICENSE
 09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b  vendor/github.com/xdg-go/scram/LICENSE
 09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b  vendor/github.com/xdg-go/pbkdf2/LICENSE
@@ -53,7 +51,6 @@ caa932df46551b53643952fe03b351d55db97be73b5393b986dcf6b05d3c416a  vendor/github.
 
 # BSD-3-Clause
 8407b13e462f755c06db3db3a034dc1fdc9157af19c6ea8986e7d5aecf4126b3  vendor/gopkg.in/tomb.v2/LICENSE
-2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067  vendor/github.com/aws/aws-sdk-go/internal/sync/singleflight/LICENSE
 8778a9fc1eaffb03ab873caae251df2d224f6b5502be8777d3cd573a4dd43903  vendor/github.com/golang/protobuf/LICENSE
 f69f157b0be75da373605dbc8bbf142e8924ee82d8f44f11bcaf351335bf98cf  vendor/github.com/golang/snappy/LICENSE
 b8514c577c1c4b46cee454d5a882b15fa411e72c5bd7f801f241591789fce61a  vendor/github.com/spf13/pflag/LICENSE
