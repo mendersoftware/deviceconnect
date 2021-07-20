@@ -60,7 +60,7 @@ var (
 	PlaybackSessionIDField = "sessionId"
 
 	//The threshold between the shell commands received (keystrokes) above which the
-	//delay control message is saved
+	//delay control message is saved (1.5 seconds)
 	keyStrokeDelayRecordingThresholdNs = int64(1500 * 1000000)
 
 	//The key stroke delay is recorded in two bytes, so this is the maximal
@@ -502,14 +502,8 @@ func recordSession(ctx context.Context,
 			"(len=%d)=%d,%+v",
 			len(msg.Body), b, e)
 	}
-	(*recBytes) += len(msg.Body)
-	session.BytesRecordedMutex.Lock()
-	session.BytesRecorded = *recBytes
-	session.BytesRecordedMutex.Unlock()
-
 	timeNowUTC := time.Now().UTC().UnixNano()
 	keystrokeDelay := timeNowUTC - (*lastKeystrokeAt)
-
 	if keystrokeDelay >= keyStrokeDelayRecordingThresholdNs {
 		if keystrokeDelay > keyStrokeMaxDelayRecording {
 			keystrokeDelay = keyStrokeMaxDelayRecording
@@ -531,6 +525,11 @@ func recordSession(ctx context.Context,
 	}
 
 	(*lastKeystrokeAt) = timeNowUTC
+
+	(*recBytes) += len(msg.Body)
+	session.BytesRecordedMutex.Lock()
+	session.BytesRecorded = *recBytes
+	session.BytesRecordedMutex.Unlock()
 
 	return nil
 }
