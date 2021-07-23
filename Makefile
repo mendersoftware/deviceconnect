@@ -17,6 +17,11 @@ SRCFILES := $(filter-out _test.go,$(GOFILES))
 BINFILE := bin/deviceconnect
 COVERFILE := coverage.txt
 
+VERSION = $(shell git describe --tags --dirty --exact-match 2>/dev/null || git rev-parse --short HEAD)
+
+GO_LDFLAGS = \
+	-ldflags "-X main.Version=$(VERSION)"
+
 .PHONY: build
 build: $(BINFILE)
 
@@ -34,7 +39,7 @@ tests/%: docs/%.yml
 		--additional-properties=packageName=$*
 
 $(BINFILE): $(SRCFILES)
-	$(GO) build -o $@ .
+	$(GO) build $(GO_LDFLAGS) -o $@ .
 
 $(BINFILE).test: $(GOFILES)
 	go test -c -o $(BINFILE).test \
