@@ -18,14 +18,15 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
+	"strings"
+	"time"
+
 	"github.com/mendersoftware/deviceconnect/app"
 	"github.com/mendersoftware/go-lib-micro/log"
 	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/mendersoftware/go-lib-micro/ws/shell"
 	"github.com/vmihailenco/msgpack/v5"
-	"io"
-	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
