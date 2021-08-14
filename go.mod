@@ -5,7 +5,7 @@ go 1.14
 require (
 	github.com/gin-gonic/gin v1.7.4
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
-	github.com/google/uuid v1.2.0
+	github.com/google/uuid v1.3.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/mendersoftware/go-lib-micro v0.0.0-20210407130414-8df169b86c91
 	github.com/nats-io/nats-server/v2 v2.4.0
