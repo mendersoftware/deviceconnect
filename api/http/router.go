@@ -15,10 +15,6 @@
 package http
 
 import (
-	"net/http"
-	"time"
-
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
 	"github.com/mendersoftware/go-lib-micro/accesslog"
@@ -73,33 +69,6 @@ func NewRouter(
 			SetPathRegex(`^/api/(devices|management)/v[0-9]/`),
 	))
 	router.Use(requestid.Middleware())
-	router.Use(cors.New(cors.Config{
-		AllowAllOrigins:  true,
-		AllowCredentials: true,
-		AllowHeaders: []string{
-			"Accept",
-			"Allow",
-			"Content-Type",
-			"Origin",
-			"Authorization",
-			"Accept-Encoding",
-			"Access-Control-Request-Headers",
-			"Header-Access-Control-Request",
-		},
-		AllowMethods: []string{
-			http.MethodGet,
-			http.MethodPost,
-			http.MethodPut,
-			http.MethodDelete,
-			http.MethodOptions,
-		},
-		AllowWebSockets: true,
-		ExposeHeaders: []string{
-			"Location",
-			"Link",
-		},
-		MaxAge: time.Hour * 12,
-	}))
 
 	status := NewStatusController(app)
 	router.GET(APIURLInternalAlive, status.Alive)
