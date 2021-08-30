@@ -183,17 +183,21 @@ func (s *Server) EnableJetStream(config *JetStreamConfig) error {
 }
 
 // Function signature to generate a key encryption key.
-type keyGen func(context []byte) []byte
+type keyGen func(context []byte) ([]byte, error)
 
 // Return a key generation function or nil if encryption not enabled.
 // keyGen defined in filestore.go - keyGen func(iv, context []byte) []byte
 func (s *Server) jsKeyGen(info string) keyGen {
 	if ek := s.getOpts().JetStreamKey; ek != _EMPTY_ {
-		return func(context []byte) []byte {
+		return func(context []byte) ([]byte, error) {
 			h := hmac.New(sha256.New, []byte(ek))
-			h.Write([]byte(info))
-			h.Write(context)
-			return h.Sum(nil)
+			if _, err := h.Write([]byte(info)); err != nil {
+				return nil, err
+			}
+			if _, err := h.Write(context); err != nil {
+				return nil, err
+			}
+			return h.Sum(nil), nil
 		}
 	}
 	return nil
@@ -208,7 +212,11 @@ func (s *Server) decryptMeta(ekey, buf []byte, acc, context string) ([]byte, err
 	if prf == nil {
 		return nil, errNoEncryption
 	}
-	kek, err := chacha20poly1305.NewX(prf([]byte(context)))
+	rb, err := prf([]byte(context))
+	if err != nil {
+		return nil, err
+	}
+	kek, err := chacha20poly1305.NewX(rb)
 	if err != nil {
 		return nil, err
 	}
@@ -867,7 +875,7 @@ func (s *Server) JetStreamNumAccounts() int {
 func (s *Server) JetStreamReservedResources() (int64, int64, error) {
 	js := s.getJetStream()
 	if js == nil {
-		return -1, -1, ApiErrors[JSNotEnabledForAccountErr]
+		return -1, -1, NewJSNotEnabledForAccountError()
 	}
 	js.mu.RLock()
 	defer js.mu.RUnlock()
@@ -898,6 +906,10 @@ func (a *Account) EnableJetStream(limits *JetStreamAccountLimits) error {
 		return fmt.Errorf("jetstream account not registered")
 	}
 
+	if s.SystemAccount() == a {
+		return fmt.Errorf("jetstream can not be enabled on the system account")
+	}
+
 	s.mu.Lock()
 	sendq := s.sys.sendq
 	s.mu.Unlock()
@@ -911,16 +923,9 @@ func (a *Account) EnableJetStream(limits *JetStreamAccountLimits) error {
 	js := s.getJetStream()
 	if js == nil {
 		a.assignJetStreamLimits(limits)
-		return ApiErrors[JSNotEnabledErr]
+		return NewJSNotEnabledError()
 	}
 
-	if s.SystemAccount() == a {
-		return fmt.Errorf("jetstream can not be enabled on the system account")
-	}
-
-	if limits == nil {
-		limits = dynamicJSAccountLimits
-	}
 	a.assignJetStreamLimits(limits)
 
 	js.mu.Lock()
@@ -1227,14 +1232,14 @@ func (a *Account) lookupStream(name string) (*stream, error) {
 	a.mu.RUnlock()
 
 	if jsa == nil {
-		return nil, ApiErrors[JSNotEnabledForAccountErr]
+		return nil, NewJSNotEnabledForAccountError()
 	}
 	jsa.mu.Lock()
 	defer jsa.mu.Unlock()
 
 	mset, ok := jsa.streams[name]
 	if !ok {
-		return nil, ApiErrors[JSStreamNotFoundErr]
+		return nil, NewJSStreamNotFoundError()
 	}
 	return mset, nil
 }
@@ -1251,10 +1256,10 @@ func (a *Account) UpdateJetStreamLimits(limits *JetStreamAccountLimits) error {
 	}
 	js := s.getJetStream()
 	if js == nil {
-		return ApiErrors[JSNotEnabledErr]
+		return NewJSNotEnabledError()
 	}
 	if jsa == nil {
-		return ApiErrors[JSNotEnabledForAccountErr]
+		return NewJSNotEnabledForAccountError()
 	}
 
 	if limits == nil {
@@ -1348,7 +1353,7 @@ func (a *Account) removeJetStream() error {
 
 	js := s.getJetStream()
 	if js == nil {
-		return ApiErrors[JSNotEnabledForAccountErr]
+		return NewJSNotEnabledForAccountError()
 	}
 
 	return js.disableJetStream(js.lookupAccount(a))
@@ -1357,7 +1362,7 @@ func (a *Account) removeJetStream() error {
 // Disable JetStream for the account.
 func (js *jetStream) disableJetStream(jsa *jsAccount) error {
 	if jsa == nil || jsa.account == nil {
-		return ApiErrors[JSNotEnabledForAccountErr]
+		return NewJSNotEnabledForAccountError()
 	}
 
 	js.mu.Lock()
@@ -1489,7 +1494,7 @@ func (jsa *jsAccount) sendClusterUsageUpdate() {
 	le.PutUint64(b[16:], uint64(jsa.usage.api))
 	le.PutUint64(b[24:], uint64(jsa.usage.err))
 	if jsa.sendq != nil {
-		jsa.sendq <- &pubMsg{nil, jsa.updatesPub, _EMPTY_, nil, b, false}
+		jsa.sendq <- &pubMsg{nil, jsa.updatesPub, _EMPTY_, nil, b, noCompression, false}
 	}
 }
 
@@ -1531,11 +1536,11 @@ func (jsa *jsAccount) limitsExceeded(storeType StorageType) bool {
 // Lock should be held.
 func (jsa *jsAccount) checkLimits(config *StreamConfig) error {
 	if jsa.limits.MaxStreams > 0 && len(jsa.streams) >= jsa.limits.MaxStreams {
-		return ApiErrors[JSMaximumStreamsLimitErr]
+		return NewJSMaximumStreamsLimitError()
 	}
 	// Check MaxConsumers
 	if config.MaxConsumers > 0 && jsa.limits.MaxConsumers > 0 && config.MaxConsumers > jsa.limits.MaxConsumers {
-		return ApiErrors[JSMaximumConsumersLimitErr]
+		return NewJSMaximumConsumersLimitError()
 	}
 
 	// Check storage, memory or disk.
@@ -1559,24 +1564,24 @@ func (jsa *jsAccount) checkBytesLimits(addBytes int64, storage StorageType, repl
 		// Account limits defined.
 		if jsa.limits.MaxMemory > 0 {
 			if jsa.memReserved+totalBytes > jsa.limits.MaxMemory {
-				return ApiErrors[JSMemoryResourcesExceededErr]
+				return NewJSMemoryResourcesExceededError()
 			}
 		} else {
 			// Account is unlimited, check if this server can handle request.
 			if js.memReserved+addBytes > js.config.MaxMemory {
-				return ApiErrors[JSMemoryResourcesExceededErr]
+				return NewJSMemoryResourcesExceededError()
 			}
 		}
 	case FileStorage:
 		// Account limits defined.
 		if jsa.limits.MaxStore > 0 {
 			if jsa.storeReserved+totalBytes > jsa.limits.MaxStore {
-				return ApiErrors[JSStorageResourcesExceededErr]
+				return NewJSStorageResourcesExceededError()
 			}
 		} else {
 			// Account is unlimited, check if this server can handle request.
 			if js.storeReserved+addBytes > js.config.MaxStore {
-				return ApiErrors[JSStorageResourcesExceededErr]
+				return NewJSStorageResourcesExceededError()
 			}
 		}
 	}
@@ -1656,10 +1661,10 @@ func (js *jetStream) sufficientResources(limits *JetStreamAccountLimits) error {
 	}
 
 	if js.memReserved+limits.MaxMemory > js.config.MaxMemory {
-		return ApiErrors[JSMemoryResourcesExceededErr]
+		return NewJSMemoryResourcesExceededError()
 	}
 	if js.storeReserved+limits.MaxStore > js.config.MaxStore {
-		return ApiErrors[JSStorageResourcesExceededErr]
+		return NewJSStorageResourcesExceededError()
 	}
 	return nil
 }
@@ -1747,7 +1752,7 @@ func (a *Account) checkForJetStream() (*Server, *jsAccount, error) {
 	a.mu.RUnlock()
 
 	if s == nil || jsa == nil {
-		return nil, nil, ApiErrors[JSNotEnabledForAccountErr]
+		return nil, nil, NewJSNotEnabledForAccountError()
 	}
 
 	return s, jsa, nil
@@ -1957,7 +1962,7 @@ func (t *streamTemplate) delete() error {
 	t.mu.Unlock()
 
 	if jsa == nil {
-		return ApiErrors[JSNotEnabledForAccountErr]
+		return NewJSNotEnabledForAccountError()
 	}
 
 	jsa.mu.Lock()
@@ -2001,7 +2006,7 @@ func (t *streamTemplate) delete() error {
 func (a *Account) deleteStreamTemplate(name string) error {
 	t, err := a.lookupStreamTemplate(name)
 	if err != nil {
-		return ApiErrors[JSStreamTemplateNotFoundErr]
+		return NewJSStreamTemplateNotFoundError()
 	}
 	return t.delete()
 }
