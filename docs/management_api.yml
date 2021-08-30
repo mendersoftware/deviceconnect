@@ -81,8 +81,6 @@ paths:
           description: Accepted
         400:
           $ref: '#/components/responses/InvalidRequestError'
-        403:
-          $ref: '#/components/responses/ForbiddenError'
         404:
           description: Device not found.
           content:
@@ -146,8 +144,6 @@ paths:
             Successful response - change to websocket protocol.
         400:
           $ref: '#/components/responses/InvalidRequestError'
-        403:
-          $ref: '#/components/responses/ForbiddenError'
         404:
           description: Device not found.
           content:
@@ -208,8 +204,6 @@ paths:
                 format: binary
         400:
           $ref: '#/components/responses/InvalidRequestError'
-        403:
-          $ref: '#/components/responses/ForbiddenError'
         404:
           description: Device not found.
           content:
@@ -244,8 +238,6 @@ paths:
           description: Accepted
         400:
           $ref: '#/components/responses/InvalidRequestError'
-        403:
-          $ref: '#/components/responses/ForbiddenError'
         404:
           description: Device not found.
           content:
@@ -315,8 +307,6 @@ paths:
             Successful response - change to websocket protocol.
         400:
           $ref: '#/components/responses/InvalidRequestError'
-        403:
-          $ref: '#/components/responses/ForbiddenError'
         404:
           description: Session not found.
           content:
@@ -350,8 +340,6 @@ paths:
           description: The file was successfully uploaded
         400:
           $ref: '#/components/responses/InvalidRequestError'
-        403:
-          $ref: '#/components/responses/ForbiddenError'
         404:
           description: Device not found.
           content:
@@ -450,16 +438,4 @@ components:
             $ref: '#/components/schemas/Error'
           example:
             error: "bad request parameters"
-            request_id: "eed14d55-d996-42cd-8248-e806663810a8"
-
-    ForbiddenError:
-      description: |
-          The user is not permitted to access the remote terminal
-          for a given device.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: "Access denied (RBAC)"
             request_id: "eed14d55-d996-42cd-8248-e806663810a8"
