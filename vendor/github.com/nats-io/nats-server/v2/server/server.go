@@ -262,6 +262,9 @@ type Server struct {
 	// the server will create a fake user and add it to the list of users.
 	// Keep track of what that user name is for config reload purposes.
 	sysAccOnlyNoAuthUser string
+
+	// How often user logon fails due to the issuer account not being pinned.
+	pinnedAccFail uint64
 }
 
 // For tracking JS nodes.
@@ -1319,6 +1322,12 @@ func (s *Server) registerAccountNoLock(acc *Account) *Account {
 	s.accounts.Store(acc.Name, acc)
 	s.tmpAccounts.Delete(acc.Name)
 	s.enableAccountTracking(acc)
+
+	// Can not have server lock here.
+	s.mu.Unlock()
+	s.registerSystemImports(acc)
+	s.mu.Lock()
+
 	return nil
 }
 
@@ -1381,7 +1390,7 @@ func (s *Server) updateAccountWithClaimJWT(acc *Account, claimJWT string) error 
 		return ErrMissingAccount
 	}
 	acc.mu.RLock()
-	sameClaim := acc.claimJWT != "" && acc.claimJWT == claimJWT && !acc.incomplete
+	sameClaim := acc.claimJWT != _EMPTY_ && acc.claimJWT == claimJWT && !acc.incomplete
 	acc.mu.RUnlock()
 	if sameClaim {
 		s.Debugf("Requested account update for [%s], same claims detected", acc.Name)
@@ -1390,7 +1399,7 @@ func (s *Server) updateAccountWithClaimJWT(acc *Account, claimJWT string) error 
 	accClaims, _, err := s.verifyAccountClaims(claimJWT)
 	if err == nil && accClaims != nil {
 		acc.mu.Lock()
-		if acc.Issuer == "" {
+		if acc.Issuer == _EMPTY_ {
 			acc.Issuer = accClaims.Issuer
 		}
 		if acc.Name != accClaims.Subject {
@@ -1638,8 +1647,18 @@ func (s *Server) Start() {
 		}
 	} else {
 		// Check to see if any configured accounts have JetStream enabled.
+		sa, ga := s.SystemAccount(), s.GlobalAccount()
+		var hasSys, hasGlobal bool
+		var total int
+
 		s.accounts.Range(func(k, v interface{}) bool {
+			total++
 			acc := v.(*Account)
+			if acc == sa {
+				hasSys = true
+			} else if acc == ga {
+				hasGlobal = true
+			}
 			acc.mu.RLock()
 			hasJs := acc.jsLimits != nil
 			acc.mu.RUnlock()
@@ -1649,6 +1668,15 @@ func (s *Server) Start() {
 			}
 			return true
 		})
+		// If we only have the system account and the global account and we are not standalone,
+		// go ahead and enable JS on $G in case we are in simple mixed mode setup.
+		if total == 2 && hasSys && hasGlobal && !s.standAloneMode() {
+			ga.mu.Lock()
+			ga.jsLimits = dynamicJSAccountLimits
+			ga.mu.Unlock()
+			s.checkJetStreamExports()
+			ga.enableAllJetStreamServiceImportsAndMappings()
+		}
 	}
 
 	// Start OCSP Stapling monitoring for TLS certificates if enabled.
