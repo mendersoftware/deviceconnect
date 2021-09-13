@@ -350,7 +350,7 @@ func (a *Account) addStreamWithAssignment(config *StreamConfig, fsConfig *FileSt
 
 	// For no-ack consumers when we are interest retention.
 	if cfg.Retention != LimitsPolicy {
-		mset.amch = make(chan uint64, 8192)
+		mset.amch = make(chan uint64, 1024)
 	}
 
 	jsa.streams[cfg.Name] = mset
@@ -2465,12 +2465,12 @@ func getExpectedLastSeq(hdr []byte) uint64 {
 }
 
 // Fast lookup of expected stream sequence per subject.
-func getExpectedLastSeqPerSubject(hdr []byte) uint64 {
+func getExpectedLastSeqPerSubject(hdr []byte) (uint64, bool) {
 	bseq := getHeader(JSExpectedLastSubjSeq, hdr)
 	if len(bseq) == 0 {
-		return 0
+		return 0, false
 	}
-	return uint64(parseInt64(bseq))
+	return uint64(parseInt64(bseq)), true
 }
 
 // Lock should be held.
@@ -2600,8 +2600,9 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 	// For clustering the lower layers will pass our expected lseq. If it is present check for that here.
 	if lseq > 0 && lseq != (mset.lseq+mset.clfs) {
 		isMisMatch := true
-		// If our first message for this mirror, see if we have to adjust our starting sequence.
-		if mset.cfg.Mirror != nil {
+		// We may be able to recover here if we have no state whatsoever, or we are a mirror.
+		// See if we have to adjust our starting sequence.
+		if mset.lseq == 0 || mset.cfg.Mirror != nil {
 			var state StreamState
 			mset.store.FastState(&state)
 			if state.FirstSeq == 0 {
@@ -2685,9 +2686,13 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 			return fmt.Errorf("last msgid mismatch: %q vs %q", lmsgId, last)
 		}
 		// Expected last sequence per subject.
-		if seq := getExpectedLastSeqPerSubject(hdr); seq > 0 {
+		if seq, exists := getExpectedLastSeqPerSubject(hdr); exists {
 			// TODO(dlc) - We could make a new store func that does this all in one.
 			_, lseq, _, _, _, err := mset.store.LoadLastMsg(subject)
+			// If seq passed in is zero that signals we expect no msg to be present.
+			if err == ErrStoreMsgNotFound && seq == 0 {
+				lseq, err = 0, nil
+			}
 			if err != nil || lseq != seq {
 				mset.clfs++
 				mset.mu.Unlock()
@@ -3315,6 +3320,8 @@ func (mset *stream) checkInterest(seq uint64, obs *consumer) bool {
 
 // ackMsg is called into from a consumer when we have a WorkQueue or Interest Retention Policy.
 func (mset *stream) ackMsg(o *consumer, seq uint64) {
+	var shouldRemove bool
+
 	switch mset.cfg.Retention {
 	case LimitsPolicy:
 		return
@@ -3322,17 +3329,22 @@ func (mset *stream) ackMsg(o *consumer, seq uint64) {
 		// Normally we just remove a message when its ack'd here but if we have direct consumers
 		// from sources and/or mirrors we need to make sure they have delivered the msg.
 		mset.mu.RLock()
-		shouldRemove := mset.directs <= 0 || !mset.checkInterest(seq, o)
+		shouldRemove = mset.directs <= 0 || !mset.checkInterest(seq, o)
 		mset.mu.RUnlock()
-		if shouldRemove {
-			mset.store.RemoveMsg(seq)
-		}
 	case InterestPolicy:
 		mset.mu.RLock()
-		hasInterest := mset.checkInterest(seq, o)
+		shouldRemove = !mset.checkInterest(seq, o)
 		mset.mu.RUnlock()
-		if !hasInterest {
-			mset.store.RemoveMsg(seq)
+	}
+
+	if shouldRemove {
+		if _, err := mset.store.RemoveMsg(seq); err == ErrStoreEOF {
+			// This should be rare but I have seen it.
+			// The ack reached us before the actual msg with AckNone and InterestPolicy.
+			if n := mset.raftNode(); n != nil {
+				md := streamMsgDelete{Seq: seq, NoErase: true, Stream: mset.cfg.Name}
+				n.ForwardProposal(encodeMsgDelete(&md))
+			}
 		}
 	}
 }
