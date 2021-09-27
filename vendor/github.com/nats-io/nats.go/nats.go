@@ -46,7 +46,7 @@ import (
 
 // Default Constants
 const (
-	Version                   = "1.12.0"
+	Version                   = "1.12.3"
 	DefaultURL                = "nats://127.0.0.1:4222"
 	DefaultPort               = 4222
 	DefaultMaxReconnect       = 60
@@ -195,6 +195,26 @@ const (
 	DRAINING_SUBS
 	DRAINING_PUBS
 )
+
+func (s Status) String() string {
+	switch s {
+	case DISCONNECTED:
+		return "DISCONNECTED"
+	case CONNECTED:
+		return "CONNECTED"
+	case CLOSED:
+		return "CLOSED"
+	case RECONNECTING:
+		return "RECONNECTING"
+	case CONNECTING:
+		return "CONNECTING"
+	case DRAINING_SUBS:
+		return "DRAINING_SUBS"
+	case DRAINING_PUBS:
+		return "DRAINING_PUBS"
+	}
+	return "unknown status"
+}
 
 // ConnHandler is used for asynchronous events such as
 // disconnected and closed connections.
@@ -3566,6 +3586,7 @@ func (nc *Conn) oldRequest(subj string, hdr, data []byte, timeout time.Duration)
 const (
 	InboxPrefix    = "_INBOX."
 	inboxPrefixLen = len(InboxPrefix)
+	replySuffixLen = 8 // Gives us 62^8
 	rdigits        = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 	base           = 62
 )
@@ -3615,7 +3636,7 @@ func (nc *Conn) newRespInbox() string {
 	sb.WriteString(nc.respSubPrefix)
 
 	rn := nc.respRand.Int63()
-	for i := 0; i < nuidSize; i++ {
+	for i := 0; i < replySuffixLen; i++ {
 		sb.WriteByte(rdigits[rn%base])
 		rn /= base
 	}
@@ -3758,7 +3779,13 @@ func (nc *Conn) subscribeLocked(subj, queue string, cb MsgHandler, ch chan *Msg,
 		return nil, ErrBadSubscription
 	}
 
-	sub := &Subscription{Subject: subj, Queue: queue, mcb: cb, conn: nc, jsi: js}
+	sub := &Subscription{
+		Subject: subj,
+		Queue:   queue,
+		mcb:     cb,
+		conn:    nc,
+		jsi:     js,
+	}
 	// Set pending limits.
 	if ch != nil {
 		sub.pMsgsLimit = cap(ch)

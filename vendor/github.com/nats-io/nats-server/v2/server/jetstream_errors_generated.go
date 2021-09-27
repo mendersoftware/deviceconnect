@@ -152,6 +152,9 @@ const (
 	// JSConsumerWQRequiresExplicitAckErr workqueue stream requires explicit ack
 	JSConsumerWQRequiresExplicitAckErr ErrorIdentifier = 10098
 
+	// JSConsumerWithFlowControlNeedsHeartbeats consumer with flow control also needs heartbeats
+	JSConsumerWithFlowControlNeedsHeartbeats ErrorIdentifier = 10108
+
 	// JSInsufficientResourcesErr insufficient resources
 	JSInsufficientResourcesErr ErrorIdentifier = 10023
 
@@ -241,6 +244,9 @@ const (
 
 	// JSStreamGeneralErrorF General stream failure string ({err})
 	JSStreamGeneralErrorF ErrorIdentifier = 10051
+
+	// JSStreamHeaderExceedsMaximumErr header size exceeds maximum allowed of 64k
+	JSStreamHeaderExceedsMaximumErr ErrorIdentifier = 10097
 
 	// JSStreamInvalidConfigF Stream configuration validation error string ({err})
 	JSStreamInvalidConfigF ErrorIdentifier = 10052
@@ -372,6 +378,7 @@ var (
 		JSConsumerWQConsumerNotUniqueErr:           {Code: 400, ErrCode: 10100, Description: "filtered consumer not unique on workqueue stream"},
 		JSConsumerWQMultipleUnfilteredErr:          {Code: 400, ErrCode: 10099, Description: "multiple non-filtered consumers not allowed on workqueue stream"},
 		JSConsumerWQRequiresExplicitAckErr:         {Code: 400, ErrCode: 10098, Description: "workqueue stream requires explicit ack"},
+		JSConsumerWithFlowControlNeedsHeartbeats:   {Code: 400, ErrCode: 10108, Description: "consumer with flow control also needs heartbeats"},
 		JSInsufficientResourcesErr:                 {Code: 503, ErrCode: 10023, Description: "insufficient resources"},
 		JSInvalidJSONErr:                           {Code: 400, ErrCode: 10025, Description: "invalid JSON"},
 		JSMaximumConsumersLimitErr:                 {Code: 400, ErrCode: 10026, Description: "maximum consumers limit reached"},
@@ -402,6 +409,7 @@ var (
 		JSStreamExternalApiOverlapErrF:             {Code: 400, ErrCode: 10021, Description: "stream external api prefix {prefix} must not overlap with {subject}"},
 		JSStreamExternalDelPrefixOverlapsErrF:      {Code: 400, ErrCode: 10022, Description: "stream external delivery prefix {prefix} overlaps with stream subject {subject}"},
 		JSStreamGeneralErrorF:                      {Code: 500, ErrCode: 10051, Description: "{err}"},
+		JSStreamHeaderExceedsMaximumErr:            {Code: 400, ErrCode: 10097, Description: "header size exceeds maximum allowed of 64k"},
 		JSStreamInvalidConfigF:                     {Code: 500, ErrCode: 10052, Description: "{err}"},
 		JSStreamInvalidErr:                         {Code: 500, ErrCode: 10096, Description: "stream not valid"},
 		JSStreamInvalidExternalDeliverySubjErrF:    {Code: 400, ErrCode: 10024, Description: "stream external delivery prefix {prefix} must not contain wildcards"},
@@ -979,6 +987,16 @@ func NewJSConsumerWQRequiresExplicitAckError(opts ...ErrorOption) *ApiError {
 	return ApiErrors[JSConsumerWQRequiresExplicitAckErr]
 }
 
+// NewJSConsumerWithFlowControlNeedsHeartbeatsError creates a new JSConsumerWithFlowControlNeedsHeartbeats error: "consumer with flow control also needs heartbeats"
+func NewJSConsumerWithFlowControlNeedsHeartbeatsError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSConsumerWithFlowControlNeedsHeartbeats]
+}
+
 // NewJSInsufficientResourcesError creates a new JSInsufficientResourcesErr error: "insufficient resources"
 func NewJSInsufficientResourcesError(opts ...ErrorOption) *ApiError {
 	eopts := parseOpts(opts)
@@ -1343,6 +1361,16 @@ func NewJSStreamGeneralError(err error, opts ...ErrorOption) *ApiError {
 		ErrCode:     e.ErrCode,
 		Description: strings.NewReplacer(args...).Replace(e.Description),
 	}
+}
+
+// NewJSStreamHeaderExceedsMaximumError creates a new JSStreamHeaderExceedsMaximumErr error: "header size exceeds maximum allowed of 64k"
+func NewJSStreamHeaderExceedsMaximumError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSStreamHeaderExceedsMaximumErr]
 }
 
 // NewJSStreamInvalidConfigError creates a new JSStreamInvalidConfigF error: "{err}"
