@@ -30,6 +30,85 @@ import (
 	"github.com/nats-io/nuid"
 )
 
+// JetStream allows persistent messaging through JetStream.
+type JetStream interface {
+	// Publish publishes a message to JetStream.
+	Publish(subj string, data []byte, opts ...PubOpt) (*PubAck, error)
+
+	// PublishMsg publishes a Msg to JetStream.
+	PublishMsg(m *Msg, opts ...PubOpt) (*PubAck, error)
+
+	// PublishAsync publishes a message to JetStream and returns a PubAckFuture.
+	// The data should not be changed until the PubAckFuture has been processed.
+	PublishAsync(subj string, data []byte, opts ...PubOpt) (PubAckFuture, error)
+
+	// PublishMsgAsync publishes a Msg to JetStream and returms a PubAckFuture.
+	// The message should not be changed until the PubAckFuture has been processed.
+	PublishMsgAsync(m *Msg, opts ...PubOpt) (PubAckFuture, error)
+
+	// PublishAsyncPending returns the number of async publishes outstanding for this context.
+	PublishAsyncPending() int
+
+	// PublishAsyncComplete returns a channel that will be closed when all outstanding messages are ack'd.
+	PublishAsyncComplete() <-chan struct{}
+
+	// Subscribe creates an async Subscription for JetStream.
+	// The stream and consumer names can be provided with the nats.Bind() option.
+	// For creating an ephemeral (where the consumer name is picked by the server),
+	// you can provide the stream name with nats.BindStream().
+	// If no stream name is specified, the library will attempt to figure out which
+	// stream the subscription is for. See important notes below for more details.
+	//
+	// IMPORTANT NOTES:
+	// * If none of the options Bind() nor Durable() are specified, the library will
+	// send a request to the server to create an ephemeral JetStream consumer,
+	// which will be deleted after an Unsubscribe() or Drain(), or automatically
+	// by the server after a short period of time after the NATS subscription is
+	// gone.
+	// * If Durable() option is specified, the library will attempt to lookup a JetStream
+	// consumer with this name, and if found, will bind to it and not attempt to
+	// delete it. However, if not found, the library will send a request to create
+	// such durable JetStream consumer. The library will delete the JetStream consumer
+	// after an Unsubscribe() or Drain().
+	// * If Bind() option is provided, the library will attempt to lookup the
+	// consumer with the given name, and if successful, bind to it. If the lookup fails,
+	// then the Subscribe() call will return an error.
+	Subscribe(subj string, cb MsgHandler, opts ...SubOpt) (*Subscription, error)
+
+	// SubscribeSync creates a Subscription that can be used to process messages synchronously.
+	// See important note in Subscribe()
+	SubscribeSync(subj string, opts ...SubOpt) (*Subscription, error)
+
+	// ChanSubscribe creates channel based Subscription.
+	// See important note in Subscribe()
+	ChanSubscribe(subj string, ch chan *Msg, opts ...SubOpt) (*Subscription, error)
+
+	// ChanQueueSubscribe creates channel based Subscription with a queue group.
+	// See important note in QueueSubscribe()
+	ChanQueueSubscribe(subj, queue string, ch chan *Msg, opts ...SubOpt) (*Subscription, error)
+
+	// QueueSubscribe creates a Subscription with a queue group.
+	// If no optional durable name nor binding options are specified, the queue name will be used as a durable name.
+	// See important note in Subscribe()
+	QueueSubscribe(subj, queue string, cb MsgHandler, opts ...SubOpt) (*Subscription, error)
+
+	// QueueSubscribeSync creates a Subscription with a queue group that can be used to process messages synchronously.
+	// See important note in QueueSubscribe()
+	QueueSubscribeSync(subj, queue string, opts ...SubOpt) (*Subscription, error)
+
+	// PullSubscribe creates a Subscription that can fetch messages.
+	// See important note in Subscribe()
+	PullSubscribe(subj, durable string, opts ...SubOpt) (*Subscription, error)
+}
+
+// JetStreamContext allows JetStream messaging and stream management.
+type JetStreamContext interface {
+	JetStream
+	JetStreamManager
+	KeyValueManager
+	ObjectStoreManager
+}
+
 // Request API subjects for JetStream.
 const (
 	// defaultAPIPrefix is the default prefix for the JetStream API.
@@ -94,6 +173,14 @@ const (
 
 	// Scale for threshold of missed HBs or lack of activity.
 	hbcThresh = 2
+
+	// For ChanSubscription, we can't update sub.delivered as we do for other
+	// type of subscriptions, since the channel is user provided.
+	// With flow control in play, we will check for flow control on incoming
+	// messages (as opposed to when they are delivered), but also from a go
+	// routine. Without this, the subscription would possibly stall until
+	// a new message or heartbeat/fc are received.
+	chanSubFCCheckInterval = 250 * time.Millisecond
 )
 
 // Types of control messages, so far heartbeat and flow control
@@ -101,56 +188,6 @@ const (
 	jsCtrlHB = 1
 	jsCtrlFC = 2
 )
-
-// JetStream allows persistent messaging through JetStream.
-type JetStream interface {
-	// Publish publishes a message to JetStream.
-	Publish(subj string, data []byte, opts ...PubOpt) (*PubAck, error)
-
-	// PublishMsg publishes a Msg to JetStream.
-	PublishMsg(m *Msg, opts ...PubOpt) (*PubAck, error)
-
-	// PublishAsync publishes a message to JetStream and returns a PubAckFuture.
-	// The data should not be changed until the PubAckFuture has been processed.
-	PublishAsync(subj string, data []byte, opts ...PubOpt) (PubAckFuture, error)
-
-	// PublishMsgAsync publishes a Msg to JetStream and returms a PubAckFuture.
-	// The message should not be changed until the PubAckFuture has been processed.
-	PublishMsgAsync(m *Msg, opts ...PubOpt) (PubAckFuture, error)
-
-	// PublishAsyncPending returns the number of async publishes outstanding for this context.
-	PublishAsyncPending() int
-
-	// PublishAsyncComplete returns a channel that will be closed when all outstanding messages are ack'd.
-	PublishAsyncComplete() <-chan struct{}
-
-	// Subscribe creates an async Subscription for JetStream.
-	Subscribe(subj string, cb MsgHandler, opts ...SubOpt) (*Subscription, error)
-
-	// SubscribeSync creates a Subscription that can be used to process messages synchronously.
-	SubscribeSync(subj string, opts ...SubOpt) (*Subscription, error)
-
-	// ChanSubscribe creates channel based Subscription.
-	ChanSubscribe(subj string, ch chan *Msg, opts ...SubOpt) (*Subscription, error)
-
-	// ChanQueueSubscribe creates channel based Subscription with a queue group.
-	ChanQueueSubscribe(subj, queue string, ch chan *Msg, opts ...SubOpt) (*Subscription, error)
-
-	// QueueSubscribe creates a Subscription with a queue group.
-	QueueSubscribe(subj, queue string, cb MsgHandler, opts ...SubOpt) (*Subscription, error)
-
-	// QueueSubscribeSync creates a Subscription with a queue group that can be used to process messages synchronously.
-	QueueSubscribeSync(subj, queue string, opts ...SubOpt) (*Subscription, error)
-
-	// PullSubscribe creates a Subscription that can fetch messages.
-	PullSubscribe(subj, durable string, opts ...SubOpt) (*Subscription, error)
-}
-
-// JetStreamContext allows JetStream messaging and stream management.
-type JetStreamContext interface {
-	JetStream
-	JetStreamManager
-}
 
 // js is an internal struct from a JetStreamContext.
 type js struct {
@@ -284,6 +321,16 @@ const (
 	ExpectedLastSeqHdr     = "Nats-Expected-Last-Sequence"
 	ExpectedLastSubjSeqHdr = "Nats-Expected-Last-Subject-Sequence"
 	ExpectedLastMsgIdHdr   = "Nats-Expected-Last-Msg-Id"
+	MsgRollup              = "Nats-Rollup"
+)
+
+// MsgSize is a header that will be part of a consumer's delivered message if HeadersOnly requested.
+const MsgSize = "Nats-Msg-Size"
+
+// Rollups, can be subject only or all messages.
+const (
+	MsgRollupSubject = "sub"
+	MsgRollupAll     = "all"
 )
 
 // PublishMsg publishes a Msg to a stream from JetStream.
@@ -631,10 +678,14 @@ func (js *js) PublishMsgAsync(m *Msg, opts ...PubOpt) (PubAckFuture, error) {
 	if m.Reply != _EMPTY_ {
 		return nil, errors.New("nats: reply subject should be empty")
 	}
+	reply := m.Reply
 	m.Reply = js.newAsyncReply()
+	defer func() { m.Reply = reply }()
+
 	if m.Reply == _EMPTY_ {
 		return nil, errors.New("nats: error creating async reply handler")
 	}
+
 	id := m.Reply[aReplyPreLen:]
 	paf := &pubAckFuture{msg: m, st: time.Now()}
 	numPending, maxPending := js.registerPAF(id, paf)
@@ -647,7 +698,6 @@ func (js *js) PublishMsgAsync(m *Msg, opts ...PubOpt) (PubAckFuture, error) {
 			return nil, errors.New("nats: stalled with too many outstanding async published messages")
 		}
 	}
-
 	if err := js.nc.PublishMsg(m); err != nil {
 		js.clearPAF(id)
 		return nil, err
@@ -805,6 +855,7 @@ type ConsumerConfig struct {
 	MaxAckPending   int           `json:"max_ack_pending,omitempty"`
 	FlowControl     bool          `json:"flow_control,omitempty"`
 	Heartbeat       time.Duration `json:"idle_heartbeat,omitempty"`
+	HeadersOnly     bool          `json:"headers_only,omitempty"`
 }
 
 // ConsumerInfo is the info from a JetStream consumer.
@@ -870,6 +921,8 @@ type jsSub struct {
 	cmeta  string
 	fcr    string
 	fcd    uint64
+	fciseq uint64
+	csfct  *time.Timer
 }
 
 // Deletes the JS Consumer.
@@ -900,8 +953,7 @@ func (opt subOptFn) configureSubscribe(opts *subOpts) error {
 	return opt(opts)
 }
 
-// Subscribe will create a subscription to the appropriate stream and consumer.
-//
+// Subscribe creates an async Subscription for JetStream.
 // The stream and consumer names can be provided with the nats.Bind() option.
 // For creating an ephemeral (where the consumer name is picked by the server),
 // you can provide the stream name with nats.BindStream().
@@ -909,19 +961,19 @@ func (opt subOptFn) configureSubscribe(opts *subOpts) error {
 // stream the subscription is for. See important notes below for more details.
 //
 // IMPORTANT NOTES:
-// * If Bind() and Durable() options are not specified, the library will
+// * If none of the options Bind() nor Durable() are specified, the library will
 // send a request to the server to create an ephemeral JetStream consumer,
 // which will be deleted after an Unsubscribe() or Drain(), or automatically
 // by the server after a short period of time after the NATS subscription is
 // gone.
-// * If Durable() only is specified, the library will attempt to lookup a JetStream
-// consumer with this name and if found, will bind to it and not attempt to
+// * If Durable() option is specified, the library will attempt to lookup a JetStream
+// consumer with this name, and if found, will bind to it and not attempt to
 // delete it. However, if not found, the library will send a request to create
-// such durable JetStream consumer, but will still attempt to delete it after
-// an Unsubscribe() or Drain().
+// such durable JetStream consumer. The library will delete the JetStream consumer
+// after an Unsubscribe() or Drain().
 // * If Bind() option is provided, the library will attempt to lookup the
-// consumer with the given name, and if the lookup fails, then the Subscribe()
-// call will return an error.
+// consumer with the given name, and if successful, bind to it. If the lookup fails,
+// then the Subscribe() call will return an error.
 func (js *js) Subscribe(subj string, cb MsgHandler, opts ...SubOpt) (*Subscription, error) {
 	if cb == nil {
 		return nil, ErrBadSubscription
@@ -929,15 +981,15 @@ func (js *js) Subscribe(subj string, cb MsgHandler, opts ...SubOpt) (*Subscripti
 	return js.subscribe(subj, _EMPTY_, cb, nil, false, false, opts)
 }
 
-// SubscribeSync will create a sync subscription to the appropriate stream and consumer.
+// SubscribeSync creates a Subscription that can be used to process messages synchronously.
 // See important note in Subscribe()
 func (js *js) SubscribeSync(subj string, opts ...SubOpt) (*Subscription, error) {
 	mch := make(chan *Msg, js.nc.Opts.SubChanLen)
 	return js.subscribe(subj, _EMPTY_, nil, mch, true, false, opts)
 }
 
-// QueueSubscribe will create a subscription to the appropriate stream and consumer with queue semantics.
-// If not optional durable name or binding option is specified, the queue name will be used as a durable name.
+// QueueSubscribe creates a Subscription with a queue group.
+// If no optional durable name nor binding options are specified, the queue name will be used as a durable name.
 // See important note in Subscribe()
 func (js *js) QueueSubscribe(subj, queue string, cb MsgHandler, opts ...SubOpt) (*Subscription, error) {
 	if cb == nil {
@@ -946,28 +998,27 @@ func (js *js) QueueSubscribe(subj, queue string, cb MsgHandler, opts ...SubOpt) 
 	return js.subscribe(subj, queue, cb, nil, false, false, opts)
 }
 
-// QueueSubscribeSync will create a sync subscription to the appropriate stream and consumer with queue semantics.
-// If not optional durable name or binding option is specified, the queue name will be used as a durable name.
-// See important note in Subscribe()
+// QueueSubscribeSync creates a Subscription with a queue group that can be used to process messages synchronously.
+// See important note in QueueSubscribe()
 func (js *js) QueueSubscribeSync(subj, queue string, opts ...SubOpt) (*Subscription, error) {
 	mch := make(chan *Msg, js.nc.Opts.SubChanLen)
 	return js.subscribe(subj, queue, nil, mch, true, false, opts)
 }
 
-// ChanSubscribe will create a subscription to the appropriate stream and consumer using a channel.
+// ChanSubscribe creates channel based Subscription.
 // See important note in Subscribe()
 func (js *js) ChanSubscribe(subj string, ch chan *Msg, opts ...SubOpt) (*Subscription, error) {
 	return js.subscribe(subj, _EMPTY_, nil, ch, false, false, opts)
 }
 
-// ChanQueueSubscribe will create a subscription to the appropriate stream and consumer using a channel.
-// If not optional durable name or binding option is specified, the queue name will be used as a durable name.
-// See important note in Subscribe()
+// ChanQueueSubscribe creates channel based Subscription with a queue group.
+// See important note in QueueSubscribe()
 func (js *js) ChanQueueSubscribe(subj, queue string, ch chan *Msg, opts ...SubOpt) (*Subscription, error) {
 	return js.subscribe(subj, queue, nil, ch, false, false, opts)
 }
 
-// PullSubscribe creates a pull subscriber.
+// PullSubscribe creates a Subscription that can fetch messages.
+// See important note in Subscribe()
 func (js *js) PullSubscribe(subj, durable string, opts ...SubOpt) (*Subscription, error) {
 	mch := make(chan *Msg, js.nc.Opts.SubChanLen)
 	return js.subscribe(subj, _EMPTY_, nil, mch, true, true, append(opts, Durable(durable)))
@@ -1133,7 +1184,10 @@ func (js *js) subscribe(subj, queue string, cb MsgHandler, ch chan *Msg, isSync,
 
 		// If this is a queue subscription and no consumer nor durable name was specified,
 		// then we will use the queue name as a durable name.
-		if queue != _EMPTY_ && o.consumer == _EMPTY_ && o.cfg.Durable == _EMPTY_ {
+		if o.consumer == _EMPTY_ && o.cfg.Durable == _EMPTY_ {
+			if err := checkDurName(queue); err != nil {
+				return nil, err
+			}
 			o.cfg.Durable = queue
 		}
 	}
@@ -1384,15 +1438,27 @@ func (js *js) subscribe(subj, queue string, cb MsgHandler, ch chan *Msg, isSync,
 				}
 				if !isPullMode {
 					// We can't reuse the channel, so if one was passed, we need to create a new one.
-					if ch != nil {
+					if isSync {
 						ch = make(chan *Msg, cap(ch))
+					} else if ch != nil {
+						// User provided (ChanSubscription), simply try to drain it.
+						for done := false; !done; {
+							select {
+							case <-ch:
+							default:
+								done = true
+							}
+						}
 					}
 					jsi.deliver = deliver
+					jsi.hbi = info.Config.Heartbeat
 					// Recreate the subscription here.
 					sub, err = nc.subscribe(jsi.deliver, queue, cb, ch, isSync, jsi)
 					if err != nil {
 						return nil, err
 					}
+					hasFC = info.Config.FlowControl
+					hasHeartbeats = info.Config.Heartbeat > 0
 				}
 			} else {
 				if cinfo.Error.Code == 404 {
@@ -1417,8 +1483,42 @@ func (js *js) subscribe(subj, queue string, cb MsgHandler, ch chan *Msg, isSync,
 	if hasHeartbeats {
 		sub.scheduleHeartbeatCheck()
 	}
+	// For ChanSubscriptions, if we know that there is flow control, we will
+	// start a go routine that evaluates the number of delivered messages
+	// and process flow control.
+	if sub.Type() == ChanSubscription && hasFC {
+		sub.chanSubcheckForFlowControlResponse()
+	}
 
 	return sub, nil
+}
+
+// This long-lived routine is used per ChanSubscription to check
+// on the number of delivered messages and check for flow control response.
+func (sub *Subscription) chanSubcheckForFlowControlResponse() {
+	sub.mu.Lock()
+	// We don't use defer since if we need to send an RC reply, we need
+	// to do it outside the sub's lock. So doing explicit unlock...
+	if sub.closed {
+		sub.mu.Unlock()
+		return
+	}
+	var fcReply string
+	var nc *Conn
+
+	jsi := sub.jsi
+	if jsi.csfct == nil {
+		jsi.csfct = time.AfterFunc(chanSubFCCheckInterval, sub.chanSubcheckForFlowControlResponse)
+	} else {
+		fcReply = sub.checkForFlowControlResponse()
+		nc = sub.conn
+		// Do the reset here under the lock, it's ok...
+		jsi.csfct.Reset(chanSubFCCheckInterval)
+	}
+	sub.mu.Unlock()
+	// This call will return an error (which we don't care here)
+	// if nc is nil or fcReply is empty.
+	nc.Publish(fcReply, nil)
 }
 
 // ErrConsumerSequenceMismatch represents an error from a consumer
@@ -1463,8 +1563,11 @@ func isJSControlMessage(msg *Msg) (bool, int) {
 
 // Keeps track of the incoming message's reply subject so that the consumer's
 // state (deliver sequence, etc..) can be checked against heartbeats.
+// We will also bump the incoming data message sequence that is used in FC cases.
 // Runs under the subscription lock
 func (sub *Subscription) trackSequences(reply string) {
+	// For flow control, keep track of incoming message sequence.
+	sub.jsi.fciseq++
 	sub.jsi.cmeta = reply
 }
 
@@ -1601,13 +1704,25 @@ func (sub *Subscription) resetOrderedConsumer(sseq uint64) {
 	}()
 }
 
+// For jetstream subscriptions, returns the number of delivered messages.
+// For ChanSubscription, this value is computed based on the known number
+// of messages added to the channel minus the current size of that channel.
+// Lock held on entry
+func (sub *Subscription) getJSDelivered() uint64 {
+	if sub.typ == ChanSubscription {
+		return sub.jsi.fciseq - uint64(len(sub.mch))
+	}
+	return sub.delivered
+}
+
 // checkForFlowControlResponse will check to see if we should send a flow control response
 // based on the subscription current delivered index and the target.
 // Runs under subscription lock
 func (sub *Subscription) checkForFlowControlResponse() string {
 	// Caller has verified that there is a sub.jsi and fc
 	jsi := sub.jsi
-	if jsi.fcd == sub.delivered {
+	jsi.active = true
+	if sub.getJSDelivered() >= jsi.fcd {
 		fcr := jsi.fcr
 		jsi.fcr, jsi.fcd = _EMPTY_, 0
 		return fcr
@@ -1617,9 +1732,8 @@ func (sub *Subscription) checkForFlowControlResponse() string {
 
 // Record an inbound flow control message.
 // Runs under subscription lock
-func (sub *Subscription) scheduleFlowControlResponse(dfuture uint64, reply string) {
-	jsi := sub.jsi
-	jsi.fcr, jsi.fcd = reply, dfuture
+func (sub *Subscription) scheduleFlowControlResponse(reply string) {
+	sub.jsi.fcr, sub.jsi.fcd = reply, sub.jsi.fciseq
 }
 
 // Checks for activity from our consumer.
@@ -1795,7 +1909,18 @@ func Description(description string) SubOpt {
 	})
 }
 
+// Check that the durable name is valid, that is, that it does not contain
+// any ".", and if it does return ErrInvalidDurableName, otherwise nil.
+func checkDurName(dur string) error {
+	if strings.Contains(dur, ".") {
+		return ErrInvalidDurableName
+	}
+	return nil
+}
+
 // Durable defines the consumer name for JetStream durable subscribers.
+// This function will return ErrInvalidDurableName in the name contains
+// any dot ".".
 func Durable(consumer string) SubOpt {
 	return subOptFn(func(opts *subOpts) error {
 		if opts.cfg.Durable != _EMPTY_ {
@@ -1804,8 +1929,8 @@ func Durable(consumer string) SubOpt {
 		if opts.consumer != _EMPTY_ && opts.consumer != consumer {
 			return fmt.Errorf("nats: duplicate consumer names (%s and %s)", opts.consumer, consumer)
 		}
-		if strings.Contains(consumer, ".") {
-			return ErrInvalidDurableName
+		if err := checkDurName(consumer); err != nil {
+			return err
 		}
 
 		opts.cfg.Durable = consumer
@@ -2010,6 +2135,14 @@ func DeliverSubject(subject string) SubOpt {
 	})
 }
 
+// HeadersOnly() will instruct the consumer to only deleiver headers and no payloads.
+func HeadersOnly() SubOpt {
+	return subOptFn(func(opts *subOpts) error {
+		opts.cfg.HeadersOnly = true
+		return nil
+	})
+}
+
 func (sub *Subscription) ConsumerInfo() (*ConsumerInfo, error) {
 	sub.mu.Lock()
 	// TODO(dlc) - Better way to mark especially if we attach.
@@ -2078,6 +2211,10 @@ func checkMsg(msg *Msg, checkSts bool) (usrMsg bool, err error) {
 		// 404 indicates that there are no messages.
 		err = errNoMessages
 	case reqTimeoutSts:
+		// Older servers may send a 408 when a request in the server was expired
+		// and interest is still found, which will be the case for our
+		// implementation. Regardless, ignore 408 errors until receiving at least
+		// one message.
 		err = ErrTimeout
 	default:
 		err = fmt.Errorf("nats: %s", msg.Header.Get(descrHdr))
@@ -2089,6 +2226,9 @@ func checkMsg(msg *Msg, checkSts bool) (usrMsg bool, err error) {
 func (sub *Subscription) Fetch(batch int, opts ...PullOpt) ([]*Msg, error) {
 	if sub == nil {
 		return nil, ErrBadSubscription
+	}
+	if batch < 1 {
+		return nil, ErrInvalidArg
 	}
 
 	var o pullOpts
@@ -2116,6 +2256,8 @@ func (sub *Subscription) Fetch(batch int, opts ...PullOpt) ([]*Msg, error) {
 	js := sub.jsi.js
 	pmc := len(sub.mch) > 0
 
+	// All fetch requests have an expiration, in case of no explicit expiration
+	// then the default timeout of the JetStream context is used.
 	ttl := o.ttl
 	if ttl == 0 {
 		ttl = js.opts.wait
@@ -2129,8 +2271,19 @@ func (sub *Subscription) Fetch(batch int, opts ...PullOpt) ([]*Msg, error) {
 		err    error
 		cancel context.CancelFunc
 	)
-	if o.ctx == nil {
+	if ctx == nil {
 		ctx, cancel = context.WithTimeout(context.Background(), ttl)
+		defer cancel()
+	} else if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		// Prevent from passing the background context which will just block
+		// and cannot be canceled either.
+		if octx, ok := ctx.(ContextOpt); ok && octx.Context == context.Background() {
+			return nil, ErrNoDeadlineContext
+		}
+
+		// If the context did not have a deadline, then create a new child context
+		// that will use the default timeout from the JS context.
+		ctx, cancel = context.WithTimeout(ctx, ttl)
 		defer cancel()
 	}
 
@@ -2148,6 +2301,9 @@ func (sub *Subscription) Fetch(batch int, opts ...PullOpt) ([]*Msg, error) {
 		return nil, err
 	}
 
+	// Use the deadline of the context to base the expire times.
+	deadline, _ := ctx.Deadline()
+	ttl = time.Until(deadline)
 	checkCtxErr := func(err error) error {
 		if o.ctx == nil && err == context.DeadlineExceeded {
 			return ErrTimeout
@@ -2156,9 +2312,8 @@ func (sub *Subscription) Fetch(batch int, opts ...PullOpt) ([]*Msg, error) {
 	}
 
 	var (
-		msgs  = make([]*Msg, 0, batch)
-		msg   *Msg
-		start = time.Now()
+		msgs = make([]*Msg, 0, batch)
+		msg  *Msg
 	)
 	for pmc && len(msgs) < batch {
 		// Check next msg with booleans that say that this is an internal call
@@ -2182,19 +2337,38 @@ func (sub *Subscription) Fetch(batch int, opts ...PullOpt) ([]*Msg, error) {
 	if err == nil && len(msgs) < batch {
 		// For batch real size of 1, it does not make sense to set no_wait in
 		// the request.
-		batchSize := batch - len(msgs)
-		noWait := batchSize > 1
-		nr := &nextRequest{Batch: batchSize, NoWait: noWait}
-		req, _ := json.Marshal(nr)
+		noWait := batch-len(msgs) > 1
+		var nr nextRequest
 
-		err = nc.PublishRequest(nms, rply, req)
-		for err == nil && len(msgs) < batch {
-			ttl -= time.Since(start)
-			if ttl < 0 {
-				ttl = 0
+		sendReq := func() error {
+			// The current deadline for the context will be used
+			// to set the expires TTL for a fetch request.
+			deadline, _ = ctx.Deadline()
+			ttl = time.Until(deadline)
+
+			// Check if context has already been canceled or expired.
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
 			}
 
-			// Ask for next message and waits if there are no messages
+			// Make our request expiration a bit shorter than the current timeout.
+			expires := ttl
+			if ttl >= 20*time.Millisecond {
+				expires = ttl - 10*time.Millisecond
+			}
+
+			nr.Batch = batch - len(msgs)
+			nr.Expires = expires
+			nr.NoWait = noWait
+			req, _ := json.Marshal(nr)
+			return nc.PublishRequest(nms, rply, req)
+		}
+
+		err = sendReq()
+		for err == nil && len(msgs) < batch {
+			// Ask for next message and wait if there are no messages
 			msg, err = sub.nextMsgWithContext(ctx, true, true)
 			if err == nil {
 				var usrMsg bool
@@ -2207,27 +2381,11 @@ func (sub *Subscription) Fetch(batch int, opts ...PullOpt) ([]*Msg, error) {
 					// not collected any message, then resend request to
 					// wait this time.
 					noWait = false
-
-					ttl -= time.Since(start)
-					if ttl < 0 {
-						// At this point consider that we have timed-out
-						err = context.DeadlineExceeded
-						break
-					}
-
-					// Make our request expiration a bit shorter than the
-					// current timeout.
-					expires := ttl
-					if ttl >= 20*time.Millisecond {
-						expires = ttl - 10*time.Millisecond
-					}
-
-					nr.Batch = batch - len(msgs)
-					nr.Expires = expires
-					nr.NoWait = false
-					req, _ = json.Marshal(nr)
-
-					err = nc.PublishRequest(nms, rply, req)
+					err = sendReq()
+				} else if err == ErrTimeout && len(msgs) == 0 {
+					// If we get a 408, we will bail if we already collected some
+					// messages, otherwise ignore and go back calling nextMsg.
+					err = nil
 				}
 			}
 		}
@@ -2315,6 +2473,12 @@ func (m *Msg) ackReply(ackType []byte, sync bool, opts ...AckOpt) error {
 
 	usesCtx := o.ctx != nil
 	usesWait := o.ttl > 0
+
+	// Only allow either AckWait or Context option to set the timeout.
+	if usesWait && usesCtx {
+		return ErrContextAndTimeout
+	}
+
 	sync = sync || usesCtx || usesWait
 	ctx := o.ctx
 	wait := defaultRequestWait
