@@ -985,22 +985,22 @@ func (c *client) writeLoop() {
 
 	// Used to check that we did flush from last wake up.
 	waitOk := true
-	var close bool
+	var closed bool
 
 	// Main loop. Will wait to be signaled and then will use
 	// buffered outbound structure for efficient writev to the underlying socket.
 	for {
 		c.mu.Lock()
-		if close = c.isClosed(); !close {
+		if closed = c.isClosed(); !closed {
 			owtf := c.out.fsp > 0 && c.out.pb < maxBufSize && c.out.fsp < maxFlushPending
 			if waitOk && (c.out.pb == 0 || owtf) {
 				c.out.sg.Wait()
 				// Check that connection has not been closed while lock was released
 				// in the conditional wait.
-				close = c.isClosed()
+				closed = c.isClosed()
 			}
 		}
-		if close {
+		if closed {
 			c.flushAndClose(false)
 			c.mu.Unlock()
 
@@ -1895,7 +1895,11 @@ func (c *client) authViolation() {
 	} else {
 		c.Errorf(ErrAuthentication.Error())
 	}
-	c.sendErr("Authorization Violation")
+	if c.isMqtt() {
+		c.mqttEnqueueConnAck(mqttConnAckRCNotAuthorized, false)
+	} else {
+		c.sendErr("Authorization Violation")
+	}
 	c.closeConnection(AuthenticationViolation)
 }
 
@@ -3498,7 +3502,7 @@ func (c *client) processInboundClientMsg(msg []byte) (bool, bool) {
 	}
 
 	// Now check for reserved replies. These are used for service imports.
-	if len(c.pa.reply) > 0 && isReservedReply(c.pa.reply) {
+	if c.kind == CLIENT && len(c.pa.reply) > 0 && isReservedReply(c.pa.reply) {
 		c.replySubjectViolation(c.pa.reply)
 		return false, true
 	}

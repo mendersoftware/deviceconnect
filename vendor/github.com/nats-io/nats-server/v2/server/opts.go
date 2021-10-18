@@ -297,6 +297,10 @@ type Options struct {
 	// private fields, used for testing
 	gatewaysSolicitDelay time.Duration
 	routeProto           int
+
+	// JetStream
+	maxMemSet   bool
+	maxStoreSet bool
 }
 
 // WebsocketOpts are options for websocket
@@ -1105,11 +1109,16 @@ func (o *Options) processConfigFileLine(k string, v interface{}, errors *[]error
 			*errors = append(*errors, err)
 			return
 		}
-		if o.AccountResolverTLSConfig, err = GenTLSConfig(tc); err != nil {
+		tlsConfig, err := GenTLSConfig(tc)
+		if err != nil {
 			err := &configErr{tk, err.Error()}
 			*errors = append(*errors, err)
 			return
 		}
+		o.AccountResolverTLSConfig = tlsConfig
+		// GenTLSConfig loads the CA file into ClientCAs, but since this will
+		// be used as a client connection, we need to set RootCAs.
+		o.AccountResolverTLSConfig.RootCAs = tlsConfig.ClientCAs
 	case "resolver_preload":
 		mp, ok := v.(map[string]interface{})
 		if !ok {
@@ -1359,6 +1368,11 @@ func parseCluster(v interface{}, opts *Options, errors *[]error, warnings *[]err
 				*errors = append(*errors, err)
 				continue
 			}
+			if auth.token != _EMPTY_ {
+				err := &configErr{tk, "Cluster authorization does not support tokens"}
+				*errors = append(*errors, err)
+				continue
+			}
 			opts.Cluster.Username = auth.user
 			opts.Cluster.Password = auth.pass
 			opts.Cluster.AuthTimeout = auth.timeout
@@ -1499,6 +1513,11 @@ func parseGateway(v interface{}, o *Options, errors *[]error, warnings *[]error)
 			}
 			if auth.users != nil {
 				*errors = append(*errors, &configErr{tk, "Gateway authorization does not allow multiple users"})
+				continue
+			}
+			if auth.token != _EMPTY_ {
+				err := &configErr{tk, "Gateway authorization does not support tokens"}
+				*errors = append(*errors, err)
 				continue
 			}
 			o.Gateway.Username = auth.user
@@ -1643,14 +1662,16 @@ func parseJetStream(v interface{}, opts *Options, errors *[]error, warnings *[]e
 			switch strings.ToLower(mk) {
 			case "store", "store_dir", "storedir":
 				// StoreDir can be set at the top level as well so have to prevent ambiguous declarations.
-				if opts.StoreDir != "" {
+				if opts.StoreDir != _EMPTY_ {
 					return &configErr{tk, "Duplicate 'store_dir' configuration"}
 				}
 				opts.StoreDir = mv.(string)
 			case "max_memory_store", "max_mem_store", "max_mem":
 				opts.JetStreamMaxMemory = mv.(int64)
+				opts.maxMemSet = true
 			case "max_file_store", "max_file":
 				opts.JetStreamMaxStore = mv.(int64)
+				opts.maxStoreSet = true
 			case "domain":
 				opts.JetStreamDomain = mv.(string)
 			case "enable", "enabled":
@@ -4213,10 +4234,10 @@ func setBaselineOptions(opts *Options) {
 		}
 	}
 	// JetStream
-	if opts.JetStreamMaxMemory == 0 {
+	if opts.JetStreamMaxMemory == 0 && !opts.maxMemSet {
 		opts.JetStreamMaxMemory = -1
 	}
-	if opts.JetStreamMaxStore == 0 {
+	if opts.JetStreamMaxStore == 0 && !opts.maxStoreSet {
 		opts.JetStreamMaxStore = -1
 	}
 }
