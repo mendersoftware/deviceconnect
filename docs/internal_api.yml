@@ -7,15 +7,6 @@ info:
     Intended for use by the web GUI.
   version: "1"
 
-  contact:
-    name: Mender Support
-    email: support@mender.io
-    url: https://mender.io/contact-us
-
-  license:
-    name: Apache 2.0
-    url: https://www.apache.org/licenses/LICENSE-2.0.html
-
 servers:
   - url: http://mender-deviceconnect:8080/api/internal/v1/deviceconnect
 
