@@ -8,15 +8,6 @@ info:
 
   version: "1"
 
-  contact:
-    name: Mender Support
-    email: support@mender.io
-    url: https://mender.io/contact-us
-
-  license:
-    name: Apache 2.0
-    url: https://www.apache.org/licenses/LICENSE-2.0.html
-
 servers:
   - url: https://hosted.mender.io/api/management/v1/deviceconnect
 
