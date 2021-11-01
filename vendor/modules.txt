@@ -96,9 +96,9 @@ github.com/mitchellh/mapstructure
 github.com/modern-go/concurrent
 # github.com/modern-go/reflect2 v1.0.1
 github.com/modern-go/reflect2
-# github.com/nats-io/jwt/v2 v2.0.3
+# github.com/nats-io/jwt/v2 v2.1.0
 github.com/nats-io/jwt/v2
-# github.com/nats-io/nats-server/v2 v2.4.0
+# github.com/nats-io/nats-server/v2 v2.6.3
 ## explicit
 github.com/nats-io/nats-server/v2/conf
 github.com/nats-io/nats-server/v2/internal/ldap
@@ -106,7 +106,7 @@ github.com/nats-io/nats-server/v2/logger
 github.com/nats-io/nats-server/v2/server
 github.com/nats-io/nats-server/v2/server/pse
 github.com/nats-io/nats-server/v2/server/sysmem
-# github.com/nats-io/nats.go v1.13.0
+# github.com/nats-io/nats.go v1.13.1-0.20211018182449-f2416a8b1483
 ## explicit
 github.com/nats-io/nats.go
 github.com/nats-io/nats.go/encoders/builtin

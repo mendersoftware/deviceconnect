@@ -76,6 +76,9 @@ type ConnzOptions struct {
 	// Filter for this explicit client connection.
 	CID uint64 `json:"cid"`
 
+	// Filter for this explicit client connection based on the MQTT client ID
+	MQTTClient string `json:"mqtt_client"`
+
 	// Filter by connection state.
 	State ConnState `json:"state"`
 
@@ -140,6 +143,7 @@ type ConnInfo struct {
 	IssuerKey      string      `json:"issuer_key,omitempty"`
 	NameTag        string      `json:"name_tag,omitempty"`
 	Tags           jwt.TagList `json:"tags,omitempty"`
+	MQTTClient     string      `json:"mqtt_client,omitempty"` // This is the MQTT client id
 }
 
 // DefaultConnListSize is the default size of the connection list.
@@ -181,6 +185,7 @@ func (s *Server) Connz(opts *ConnzOptions) (*Connz, error) {
 		acc     string
 		a       *Account
 		filter  string
+		mqttCID string
 	)
 
 	if opts != nil {
@@ -201,6 +206,7 @@ func (s *Server) Connz(opts *ConnzOptions) (*Connz, error) {
 		}
 		user = opts.User
 		acc = opts.Account
+		mqttCID = opts.MQTTClient
 
 		subs = opts.Subscriptions
 		subsDet = opts.SubscriptionsDetail
@@ -357,6 +363,10 @@ func (s *Server) Connz(opts *ConnzOptions) (*Connz, error) {
 				if user != _EMPTY_ && client.opts.Username != user {
 					continue
 				}
+				// Do mqtt client ID filtering next
+				if mqttCID != _EMPTY_ && client.getMQTTClientID() != mqttCID {
+					continue
+				}
 				openClients = append(openClients, client)
 			}
 		}
@@ -430,7 +440,10 @@ func (s *Server) Connz(opts *ConnzOptions) (*Connz, error) {
 		if user != _EMPTY_ && cc.user != user {
 			continue
 		}
-
+		// Do mqtt client ID filtering next
+		if mqttCID != _EMPTY_ && cc.MQTTClient != mqttCID {
+			continue
+		}
 		// Copy if needed for any changes to the ConnInfo
 		if needCopy {
 			cx := *cc
@@ -520,6 +533,7 @@ func (s *Server) Connz(opts *ConnzOptions) (*Connz, error) {
 // client should be locked.
 func (ci *ConnInfo) fill(client *client, nc net.Conn, now time.Time) {
 	ci.Cid = client.cid
+	ci.MQTTClient = client.getMQTTClientID()
 	ci.Kind = client.kindString()
 	ci.Type = client.clientTypeString()
 	ci.Start = client.start
@@ -674,6 +688,7 @@ func (s *Server) HandleConnz(w http.ResponseWriter, r *http.Request) {
 
 	user := r.URL.Query().Get("user")
 	acc := r.URL.Query().Get("acc")
+	mqttCID := r.URL.Query().Get("mqtt_client")
 
 	connzOpts := &ConnzOptions{
 		Sort:                sortOpt,
@@ -683,6 +698,7 @@ func (s *Server) HandleConnz(w http.ResponseWriter, r *http.Request) {
 		Offset:              offset,
 		Limit:               limit,
 		CID:                 cid,
+		MQTTClient:          mqttCID,
 		State:               state,
 		User:                user,
 		Account:             acc,
@@ -1126,7 +1142,7 @@ type Varz struct {
 type JetStreamVarz struct {
 	Config *JetStreamConfig `json:"config,omitempty"`
 	Stats  *JetStreamStats  `json:"stats,omitempty"`
-	Meta   *ClusterInfo     `json:"meta,omitempty"`
+	Meta   *MetaClusterInfo `json:"meta,omitempty"`
 }
 
 // ClusterOptsVarz contains monitoring cluster information
@@ -1174,7 +1190,7 @@ type LeafNodeOptsVarz struct {
 	Remotes     []RemoteLeafOptsVarz `json:"remotes,omitempty"`
 }
 
-// Contains lists of subjects not allowed to be imported/exported
+// DenyRules Contains lists of subjects not allowed to be imported/exported
 type DenyRules struct {
 	Exports []string `json:"exports,omitempty"`
 	Imports []string `json:"imports,omitempty"`
@@ -1259,6 +1275,23 @@ func (s *Server) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
+func (s *Server) updateJszVarz(js *jetStream, v *JetStreamVarz, doConfig bool) {
+	if doConfig {
+		js.mu.RLock()
+		// We want to snapshot the config since it will then be available outside
+		// of the js lock. So make a copy first, then point to this copy.
+		cfg := js.config
+		v.Config = &cfg
+		js.mu.RUnlock()
+	}
+	v.Stats = js.usageStats()
+	if mg := js.getMetaGroup(); mg != nil {
+		if ci := s.raftNodeToClusterInfo(mg); ci != nil {
+			v.Meta = &MetaClusterInfo{Name: ci.Name, Leader: ci.Leader, Replicas: ci.Replicas, Size: mg.ClusterSize()}
+		}
+	}
+}
+
 // Varz returns a Varz struct containing the server information.
 func (s *Server) Varz(varzOpts *VarzOptions) (*Varz, error) {
 	var rss, vss int64
@@ -1268,11 +1301,15 @@ func (s *Server) Varz(varzOpts *VarzOptions) (*Varz, error) {
 	pse.ProcUsage(&pcpu, &rss, &vss)
 
 	s.mu.Lock()
+	js := s.js
 	// We need to create a new instance of Varz (with no reference
 	// whatsoever to anything stored in the server) since the user
 	// has access to the returned value.
 	v := s.createVarz(pcpu, rss)
 	s.mu.Unlock()
+	if js != nil {
+		s.updateJszVarz(js, &v.JetStream, true)
+	}
 
 	return v, nil
 }
@@ -1373,14 +1410,6 @@ func (s *Server) createVarz(pcpu float64, rss int64) *Varz {
 			}
 		}
 		varz.LeafNode.Remotes = rlna
-	}
-	if s.js != nil {
-		s.js.mu.RLock()
-		cfg := s.js.config
-		varz.JetStream = JetStreamVarz{
-			Config: &cfg,
-		}
-		s.js.mu.RUnlock()
 	}
 
 	// Finish setting it up with fields that can be updated during
@@ -1496,20 +1525,19 @@ func (s *Server) updateVarzRuntimeFields(v *Varz, forceUpdate bool, pcpu float64
 					rgw.varzUpdateURLs = false
 				}
 				rgw.RUnlock()
+			} else if g.Name == gw.name && len(gw.ownCfgURLs) > 0 {
+				// This is a remote that correspond to this very same server.
+				// We report the URLs that were configured (if any).
+				// Since we don't support changes to the gateway configuration
+				// at this time, we could do this only if g.URLs has not been already
+				// set, but let's do it regardless in case we add support for
+				// gateway config reload.
+				g.URLs = g.URLs[:0]
+				g.URLs = append(g.URLs, gw.ownCfgURLs...)
 			}
 		}
 	}
 	gw.RUnlock()
-
-	if s.js != nil {
-		// FIXME(dlc) - We have lock inversion that needs to be fixed up properly.
-		s.mu.Unlock()
-		v.JetStream.Stats = s.js.usageStats()
-		if mg := s.js.getMetaGroup(); mg != nil {
-			v.JetStream.Meta = s.raftNodeToClusterInfo(mg)
-		}
-		s.mu.Lock()
-	}
 }
 
 // HandleVarz will process HTTP requests for server information.
@@ -1531,13 +1559,32 @@ func (s *Server) HandleVarz(w http.ResponseWriter, r *http.Request) {
 
 	// Use server lock to create/update the server's varz object.
 	s.mu.Lock()
+	var created bool
+	js := s.js
 	s.httpReqStats[VarzPath]++
 	if s.varz == nil {
 		s.varz = s.createVarz(pcpu, rss)
+		created = true
 	} else {
 		s.updateVarzRuntimeFields(s.varz, false, pcpu, rss)
 	}
 	s.mu.Unlock()
+	// Since locking is jetStream -> Server, need to update jetstream
+	// varz outside of server lock.
+	if js != nil {
+		var v JetStreamVarz
+		// Work on stack variable
+		s.updateJszVarz(js, &v, created)
+		// Now update server's varz
+		s.mu.Lock()
+		sv := &s.varz.JetStream
+		if created {
+			sv.Config = v.Config
+		}
+		sv.Stats = v.Stats
+		sv.Meta = v.Meta
+		s.mu.Unlock()
+	}
 
 	// Do the marshaling outside of server lock, but under varzMu lock.
 	b, err := json.MarshalIndent(s.varz, "", "  ")
@@ -2355,19 +2402,28 @@ type AccountDetail struct {
 	Streams []StreamDetail `json:"stream_detail,omitempty"`
 }
 
-// LeafInfo has detailed information on each remote leafnode connection.
+// MetaClusterInfo shows information about the meta group.
+type MetaClusterInfo struct {
+	Name     string      `json:"name,omitempty"`
+	Leader   string      `json:"leader,omitempty"`
+	Replicas []*PeerInfo `json:"replicas,omitempty"`
+	Size     int         `json:"cluster_size"`
+}
+
+// JSInfo has detailed information on JetStream.
 type JSInfo struct {
 	ID       string          `json:"server_id"`
 	Now      time.Time       `json:"now"`
 	Disabled bool            `json:"disabled,omitempty"`
 	Config   JetStreamConfig `json:"config,omitempty"`
 	JetStreamStats
-	APICalls  int64        `json:"current_api_calls"`
-	Streams   int          `json:"total_streams,omitempty"`
-	Consumers int          `json:"total_consumers,omitempty"`
-	Messages  uint64       `json:"total_messages,omitempty"`
-	Bytes     uint64       `json:"total_message_bytes,omitempty"`
-	Meta      *ClusterInfo `json:"meta_cluster,omitempty"`
+	APICalls  int64            `json:"current_api_calls"`
+	Streams   int              `json:"total_streams,omitempty"`
+	Consumers int              `json:"total_consumers,omitempty"`
+	Messages  uint64           `json:"total_messages,omitempty"`
+	Bytes     uint64           `json:"total_message_bytes,omitempty"`
+	Meta      *MetaClusterInfo `json:"meta_cluster,omitempty"`
+
 	// aggregate raft info
 	AccountDetails []*AccountDetail `json:"account_details,omitempty"`
 }
@@ -2518,7 +2574,11 @@ func (s *Server) Jsz(opts *JSzOptions) (*JSInfo, error) {
 	s.js.mu.RUnlock()
 	jsi.APICalls = atomic.LoadInt64(&s.js.apiCalls)
 
-	jsi.Meta = s.raftNodeToClusterInfo(s.js.getMetaGroup())
+	if mg := s.js.getMetaGroup(); mg != nil {
+		if ci := s.raftNodeToClusterInfo(mg); ci != nil {
+			jsi.Meta = &MetaClusterInfo{Name: ci.Name, Leader: ci.Leader, Replicas: ci.Replicas, Size: mg.ClusterSize()}
+		}
+	}
 	jsi.JetStreamStats = *s.js.usageStats()
 
 	filterIdx := -1

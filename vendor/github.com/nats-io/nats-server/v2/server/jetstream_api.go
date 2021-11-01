@@ -16,6 +16,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -304,6 +305,7 @@ const JSApiAccountInfoResponseType = "io.nats.jetstream.api.v1.account_info_resp
 type JSApiStreamCreateResponse struct {
 	ApiResponse
 	*StreamInfo
+	DidCreate bool `json:"did_create,omitempty"`
 }
 
 const JSApiStreamCreateResponseType = "io.nats.jetstream.api.v1.stream_create_response"
@@ -598,6 +600,12 @@ type JSApiStreamTemplateNamesResponse struct {
 
 const JSApiStreamTemplateNamesResponseType = "io.nats.jetstream.api.v1.stream_template_names_response"
 
+// Default max API calls outstanding.
+const defaultMaxJSApiOut = int64(4096)
+
+// Max API calls outstanding.
+var maxJSApiOut = defaultMaxJSApiOut
+
 func (js *jetStream) apiDispatch(sub *subscription, c *client, acc *Account, subject, reply string, rmsg []byte) {
 	hdr, _ := c.msgParts(rmsg)
 	if len(getHeader(ClientInfoHdr, hdr)) == 0 {
@@ -621,7 +629,7 @@ func (js *jetStream) apiDispatch(sub *subscription, c *client, acc *Account, sub
 	jsub := rr.psubs[0]
 
 	// If this is directly from a client connection ok to do in place.
-	if c.kind == CLIENT {
+	if c.kind != ROUTER && c.kind != GATEWAY {
 		jsub.icb(sub, c, acc, subject, reply, rmsg)
 		return
 	}
@@ -629,7 +637,7 @@ func (js *jetStream) apiDispatch(sub *subscription, c *client, acc *Account, sub
 	// If we are here we have received this request over a non client connection.
 	// We need to make sure not to block. We will spin a Go routine per but also make
 	// sure we do not have too many outstanding.
-	if apiOut := atomic.AddInt64(&js.apiCalls, 1); apiOut > 1024 {
+	if apiOut := atomic.AddInt64(&js.apiCalls, 1); apiOut > maxJSApiOut {
 		atomic.AddInt64(&js.apiCalls, -1)
 		ci, acc, _, msg, err := s.getRequestInfo(c, rmsg)
 		if err == nil {
@@ -1132,6 +1140,7 @@ func (s *Server) jsStreamCreateRequest(sub *subscription, c *client, a *Account,
 		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}
+
 	streamName := streamNameFromSubject(subject)
 	if streamName != cfg.Name {
 		resp.Error = NewJSStreamMismatchError()
@@ -1274,6 +1283,7 @@ func (s *Server) jsStreamCreateRequest(sub *subscription, c *client, a *Account,
 		return
 	}
 	resp.StreamInfo = &StreamInfo{Created: mset.createdTime(), State: mset.state(), Config: mset.config()}
+	resp.DidCreate = true
 	s.sendAPIResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(resp))
 }
 
@@ -1670,6 +1680,7 @@ func (s *Server) jsStreamInfoRequest(sub *subscription, c *client, a *Account, s
 		Created: mset.createdTime(),
 		State:   mset.stateWithDetail(details),
 		Config:  config,
+		Domain:  s.getOpts().JetStreamDomain,
 		Cluster: js.clusterInfo(mset.raftGroup()),
 	}
 	if mset.isMirror() {
@@ -2293,6 +2304,16 @@ func (s *Server) jsMsgDeleteRequest(sub *subscription, c *client, _ *Account, su
 		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}
+	if mset.cfg.Sealed {
+		resp.Error = NewJSStreamSealedError()
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
+	}
+	if mset.cfg.DenyDelete {
+		resp.Error = NewJSStreamMsgDeleteFailedError(errors.New("message delete not permitted"))
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
+	}
 
 	if s.JetStreamIsClustered() {
 		s.jsClusteredMsgDeleteRequest(ci, acc, mset, stream, subject, reply, &req, rmsg)
@@ -2412,13 +2433,14 @@ func (s *Server) jsMsgGetRequest(sub *subscription, c *client, _ *Account, subje
 
 	var subj string
 	var hdr []byte
+	var data []byte
 	var ts int64
 	seq := req.Seq
 
 	if req.Seq > 0 {
-		subj, hdr, msg, ts, err = mset.store.LoadMsg(req.Seq)
+		subj, hdr, data, ts, err = mset.store.LoadMsg(req.Seq)
 	} else {
-		subj, seq, hdr, msg, ts, err = mset.store.LoadLastMsg(req.LastFor)
+		subj, seq, hdr, data, ts, err = mset.store.LoadLastMsg(req.LastFor)
 	}
 	if err != nil {
 		resp.Error = NewJSNoMessageFoundError()
@@ -2429,7 +2451,7 @@ func (s *Server) jsMsgGetRequest(sub *subscription, c *client, _ *Account, subje
 		Subject:  subj,
 		Sequence: seq,
 		Header:   hdr,
-		Data:     msg,
+		Data:     data,
 		Time:     time.Unix(0, ts).UTC(),
 	}
 	s.sendAPIResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(resp))
@@ -2527,6 +2549,16 @@ func (s *Server) jsStreamPurgeRequest(sub *subscription, c *client, _ *Account, 
 	mset, err := acc.lookupStream(stream)
 	if err != nil {
 		resp.Error = NewJSStreamNotFoundError(Unless(err))
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
+	}
+	if mset.cfg.Sealed {
+		resp.Error = NewJSStreamSealedError()
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
+	}
+	if mset.cfg.DenyPurge {
+		resp.Error = NewJSStreamPurgeFailedError(errors.New("stream purge not permitted"))
 		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}
@@ -3045,6 +3077,16 @@ func (s *Server) jsConsumerCreate(sub *subscription, c *client, a *Account, subj
 		return
 	}
 
+	// We reject if flow control is set without heartbeats.
+	if req.Config.FlowControl && req.Config.Heartbeat == 0 {
+		resp.Error = NewJSConsumerWithFlowControlNeedsHeartbeatsError()
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
+	}
+
+	// Make sure we have sane defaults.
+	setConsumerConfigDefaults(&req.Config)
+
 	// Determine if we should proceed here when we are in clustered mode.
 	if s.JetStreamIsClustered() {
 		if req.Config.Direct {
@@ -3364,6 +3406,12 @@ func (s *Server) jsConsumerInfoRequest(sub *subscription, c *client, _ *Account,
 
 	var resp = JSApiConsumerInfoResponse{ApiResponse: ApiResponse{Type: JSApiConsumerInfoResponseType}}
 
+	if !isEmptyRequest(msg) {
+		resp.Error = NewJSNotEmptyRequestError()
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
+	}
+
 	// If we are in clustered mode we need to be the stream leader to proceed.
 	if s.JetStreamIsClustered() {
 		// Check to make sure the consumer is assigned.
@@ -3374,10 +3422,6 @@ func (s *Server) jsConsumerInfoRequest(sub *subscription, c *client, _ *Account,
 
 		js.mu.RLock()
 		isLeader, sa, ca := cc.isLeader(), js.streamAssignment(acc.Name, streamName), js.consumerAssignment(acc.Name, streamName, consumerName)
-		// Ignore pending consumers for now.
-		if ca != nil && ca.pending {
-			ca = nil
-		}
 		ourID := cc.meta.ID()
 		js.mu.RUnlock()
 
@@ -3421,26 +3465,44 @@ func (s *Server) jsConsumerInfoRequest(sub *subscription, c *client, _ *Account,
 				resp.Error = NewJSClusterNotAvailError()
 				// Delaying an error response gives the leader a chance to respond before us
 				s.sendDelayedAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp), ca.Group)
-			} else if ca != nil {
-				if rg := ca.Group; rg != nil && rg.node != nil && rg.isMember(ourID) {
-					// Check here if we are a member and this is just a new consumer that does not have a leader yet.
-					if rg.node.GroupLeader() == _EMPTY_ && !rg.node.HadPreviousLeader() {
-						resp.Error = NewJSConsumerNotFoundError()
-						s.sendDelayedAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp), nil)
-					}
-				}
+				return
 			}
-			return
+			if ca == nil {
+				return
+			}
+			// We have a consumer assignment.
+			js.mu.RLock()
+			var node RaftNode
+			if rg := ca.Group; rg != nil && rg.node != nil && rg.isMember(ourID) {
+				node = rg.node
+			}
+			js.mu.RUnlock()
+			// Check if we should ignore all together.
+			if node == nil {
+				// We have been assigned and are pending.
+				if ca.pending {
+					// Send our config and defaults for state and no cluster info.
+					resp.ConsumerInfo = &ConsumerInfo{
+						Stream:  ca.Stream,
+						Name:    ca.Name,
+						Created: ca.Created,
+						Config:  ca.Config,
+					}
+					s.sendAPIResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(resp))
+				}
+				return
+			}
+			if node != nil && (node.GroupLeader() != _EMPTY_ || node.HadPreviousLeader()) {
+				return
+			}
+			// If we are here we are a member and this is just a new consumer that does not have a leader yet.
+			// Will fall through and return what we have. All consumers can respond but this should be very rare
+			// but makes more sense to clients when they try to create, get a consumer exists, and then do consumer info.
 		}
 	}
 
 	if !acc.JetStreamEnabled() {
 		resp.Error = NewJSNotEnabledForAccountError()
-		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-		return
-	}
-	if !isEmptyRequest(msg) {
-		resp.Error = NewJSNotEmptyRequestError()
 		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}

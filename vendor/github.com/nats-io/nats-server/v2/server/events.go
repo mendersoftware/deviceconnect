@@ -188,6 +188,7 @@ type ClientInfo struct {
 	Tags       jwt.TagList   `json:"tags,omitempty"`
 	Kind       string        `json:"kind,omitempty"`
 	ClientType string        `json:"client_type,omitempty"`
+	MQTTClient string        `json:"client_id,omitempty"` // This is the MQTT client ID
 }
 
 // ServerStats hold various statistics that we will periodically send out.
@@ -239,8 +240,10 @@ type pubMsg struct {
 	sub  string
 	rply string
 	si   *ServerInfo
+	hdr  map[string]string
 	msg  interface{}
 	oct  compressionType
+	echo bool
 	last bool
 }
 
@@ -358,9 +361,13 @@ RESET:
 					b = bb.Bytes()
 					contentHeader = "snappy"
 				case unsupportedCompression:
-					b = c.setHeader(contentEncodingHeader, "identity", b)
 					contentHeader = "identity"
 				}
+			}
+			// Optional Echo
+			replaceEcho := c.echo != pm.echo
+			if replaceEcho {
+				c.echo = !c.echo
 			}
 			c.mu.Unlock()
 
@@ -372,6 +379,13 @@ RESET:
 				b = c.setHeader(contentEncodingHeader, contentHeader, b)
 			}
 
+			// Optional header processing.
+			if pm.hdr != nil {
+				for k, v := range pm.hdr {
+					b = c.setHeader(k, v, b)
+				}
+			}
+			// Tracing
 			if trace {
 				c.traceInOp(fmt.Sprintf("PUB %s %s %d", c.pa.subject, c.pa.reply, c.pa.size), nil)
 				c.traceMsg(b)
@@ -379,6 +393,13 @@ RESET:
 
 			// Process like a normal inbound msg.
 			c.processInboundClientMsg(b)
+
+			// Put echo back if needed.
+			if replaceEcho {
+				c.mu.Lock()
+				c.echo = !c.echo
+				c.mu.Unlock()
+			}
 
 			// See if we are doing graceful shutdown.
 			if !pm.last {
@@ -414,11 +435,16 @@ func (s *Server) sendShutdownEvent() {
 	s.mu.Unlock()
 	// Send to the internal queue and mark as last.
 	si := &ServerInfo{}
-	sendq <- &pubMsg{nil, subj, _EMPTY_, si, si, noCompression, true}
+	sendq <- &pubMsg{nil, subj, _EMPTY_, si, nil, si, noCompression, false, true}
 }
 
 // Used to send an internal message to an arbitrary account.
 func (s *Server) sendInternalAccountMsg(a *Account, subject string, msg interface{}) error {
+	return s.sendInternalAccountMsgWithReply(a, subject, _EMPTY_, nil, msg, false)
+}
+
+// Used to send an internal message with an optional reply to an arbitrary account.
+func (s *Server) sendInternalAccountMsgWithReply(a *Account, subject, reply string, hdr map[string]string, msg interface{}, echo bool) error {
 	s.mu.Lock()
 	if s.sys == nil || s.sys.sendq == nil {
 		s.mu.Unlock()
@@ -436,7 +462,7 @@ func (s *Server) sendInternalAccountMsg(a *Account, subject string, msg interfac
 		a.mu.Unlock()
 	}
 
-	sendq <- &pubMsg{c, subject, _EMPTY_, nil, msg, noCompression, false}
+	sendq <- &pubMsg{c, subject, reply, nil, hdr, msg, noCompression, echo, false}
 	return nil
 }
 
@@ -457,7 +483,7 @@ func (s *Server) sendInternalMsg(subj, rply string, si *ServerInfo, msg interfac
 	sendq := s.sys.sendq
 	// Don't hold lock while placing on the channel.
 	s.mu.Unlock()
-	sendq <- &pubMsg{nil, subj, rply, si, msg, noCompression, false}
+	sendq <- &pubMsg{nil, subj, rply, si, nil, msg, noCompression, false, false}
 	s.mu.Lock()
 }
 
@@ -471,7 +497,7 @@ func (s *Server) sendInternalResponse(subj string, response *ServerAPIResponse) 
 	sendq := s.sys.sendq
 	// Don't hold lock while placing on the channel.
 	s.mu.Unlock()
-	sendq <- &pubMsg{nil, subj, _EMPTY_, response.Server, response, response.compress, false}
+	sendq <- &pubMsg{nil, subj, _EMPTY_, response.Server, nil, response, response.compress, false, false}
 }
 
 // Used to send internal messages from other system clients to avoid no echo issues.
@@ -491,7 +517,7 @@ func (c *client) sendInternalMsg(subj, rply string, si *ServerInfo, msg interfac
 	// Don't hold lock while placing on the channel.
 	s.mu.Unlock()
 
-	sendq <- &pubMsg{c, subj, rply, si, msg, noCompression, false}
+	sendq <- &pubMsg{c, subj, rply, si, nil, msg, noCompression, false, false}
 }
 
 // Locked version of checking if events system running. Also checks server.
@@ -523,12 +549,11 @@ func (s *Server) eventsEnabled() bool {
 // from a system events perspective.
 func (s *Server) TrackedRemoteServers() int {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !s.running || !s.eventsEnabled() {
 		return -1
 	}
-	ns := len(s.sys.servers)
-	s.mu.Unlock()
-	return ns
+	return len(s.sys.servers)
 }
 
 // Check for orphan servers who may have gone away without notification.
@@ -646,12 +671,15 @@ func (s *Server) sendStatsz(subj string) {
 		jStat.Stats = js.usageStats()
 		if mg := js.getMetaGroup(); mg != nil {
 			if mg.Leader() {
-				jStat.Meta = s.raftNodeToClusterInfo(mg)
+				if ci := s.raftNodeToClusterInfo(mg); ci != nil {
+					jStat.Meta = &MetaClusterInfo{Name: ci.Name, Leader: ci.Leader, Replicas: ci.Replicas, Size: mg.ClusterSize()}
+				}
 			} else {
 				// non leader only include a shortened version without peers
-				jStat.Meta = &ClusterInfo{
-					Name:   s.ClusterName(),
+				jStat.Meta = &MetaClusterInfo{
+					Name:   mg.Group(),
 					Leader: s.serverNameForNode(mg.GroupLeader()),
+					Size:   mg.ClusterSize(),
 				}
 			}
 		}
@@ -962,7 +990,7 @@ func (s *Server) addSystemAccountExports(sacc *Account) {
 }
 
 // accountClaimUpdate will receive claim updates for accounts.
-func (s *Server) accountClaimUpdate(sub *subscription, _ *client, _ *Account, subject, resp string, msg []byte) {
+func (s *Server) accountClaimUpdate(sub *subscription, c *client, _ *Account, subject, resp string, rmsg []byte) {
 	if !s.EventsEnabled() {
 		return
 	}
@@ -976,7 +1004,10 @@ func (s *Server) accountClaimUpdate(sub *subscription, _ *client, _ *Account, su
 		s.Debugf("Received account claims update on bad subject %q", subject)
 		return
 	}
-	if claim, err := jwt.DecodeAccountClaims(string(msg)); err != nil {
+	if _, msg := c.msgParts(rmsg); len(msg) == 0 {
+		err := errors.New("request body is empty")
+		respondToUpdate(s, resp, pubKey, "jwt update error", err)
+	} else if claim, err := jwt.DecodeAccountClaims(string(msg)); err != nil {
 		respondToUpdate(s, resp, pubKey, "jwt update resulted in error", err)
 	} else if claim.Subject != pubKey {
 		err := errors.New("subject does not match jwt content")
@@ -1016,7 +1047,7 @@ func (s *Server) sameDomain(domain string) bool {
 }
 
 // remoteServerShutdownEvent is called when we get an event from another server shutting down.
-func (s *Server) remoteServerShutdown(sub *subscription, _ *client, _ *Account, subject, reply string, msg []byte) {
+func (s *Server) remoteServerShutdown(sub *subscription, c *client, _ *Account, subject, reply string, rmsg []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.eventsEnabled() {
@@ -1027,6 +1058,8 @@ func (s *Server) remoteServerShutdown(sub *subscription, _ *client, _ *Account, 
 		s.Debugf("Received remote server shutdown on bad subject %q", subject)
 		return
 	}
+
+	_, msg := c.msgParts(rmsg)
 	if len(msg) == 0 {
 		s.Errorf("Remote server sent invalid (empty) shutdown message to %q", subject)
 		return
@@ -1052,9 +1085,12 @@ func (s *Server) remoteServerShutdown(sub *subscription, _ *client, _ *Account, 
 }
 
 // remoteServerUpdate listens for statsz updates from other servers.
-func (s *Server) remoteServerUpdate(sub *subscription, _ *client, _ *Account, subject, reply string, msg []byte) {
+func (s *Server) remoteServerUpdate(sub *subscription, c *client, _ *Account, subject, reply string, rmsg []byte) {
 	var ssm ServerStatsMsg
-	if err := json.Unmarshal(msg, &ssm); err != nil {
+	if _, msg := c.msgParts(rmsg); len(msg) == 0 {
+		s.Debugf("Received empty server info for remote server update")
+		return
+	} else if err := json.Unmarshal(msg, &ssm); err != nil {
 		s.Debugf("Received bad server info for remote server update")
 		return
 	}
@@ -1062,6 +1098,7 @@ func (s *Server) remoteServerUpdate(sub *subscription, _ *client, _ *Account, su
 	if !s.sameDomain(si.Domain) {
 		return
 	}
+
 	node := string(getHash(si.Name))
 	s.nodeToInfo.Store(node, nodeInfo{si.Name, si.Cluster, si.Domain, si.ID, false, si.JetStream})
 }
@@ -1340,12 +1377,12 @@ type ServerAPIConnzResponse struct {
 }
 
 // statszReq is a request for us to respond with current statsz.
-func (s *Server) statszReq(sub *subscription, _ *client, _ *Account, subject, reply string, msg []byte) {
+func (s *Server) statszReq(sub *subscription, c *client, _ *Account, subject, reply string, rmsg []byte) {
 	if !s.EventsEnabled() || reply == _EMPTY_ {
 		return
 	}
 	opts := StatszEventOptions{}
-	if len(msg) != 0 {
+	if _, msg := c.msgParts(rmsg); len(msg) != 0 {
 		if err := json.Unmarshal(msg, &opts); err != nil {
 			response := &ServerAPIResponse{
 				Server: &ServerInfo{},
@@ -1416,12 +1453,15 @@ func (s *Server) zReq(c *client, reply string, rmsg []byte, fOpts *EventFilterOp
 }
 
 // remoteConnsUpdate gets called when we receive a remote update from another server.
-func (s *Server) remoteConnsUpdate(sub *subscription, _ *client, _ *Account, subject, reply string, msg []byte) {
+func (s *Server) remoteConnsUpdate(sub *subscription, c *client, _ *Account, subject, reply string, rmsg []byte) {
 	if !s.eventsRunning() {
 		return
 	}
-	m := AccountNumConns{}
-	if err := json.Unmarshal(msg, &m); err != nil {
+	var m AccountNumConns
+	if _, msg := c.msgParts(rmsg); len(msg) == 0 {
+		s.sys.client.Errorf("No message body provided")
+		return
+	} else if err := json.Unmarshal(msg, &m); err != nil {
 		s.sys.client.Errorf("Error unmarshalling account connection event message: %v", err)
 		return
 	}
@@ -1566,7 +1606,7 @@ func (s *Server) sendAccConnsUpdate(a *Account, subj ...string) {
 		}
 	}
 	for _, sub := range subj {
-		msg := &pubMsg{nil, sub, _EMPTY_, &m.Server, &m, noCompression, false}
+		msg := &pubMsg{nil, sub, _EMPTY_, &m.Server, nil, &m, noCompression, false, false}
 		select {
 		case sendQ <- msg:
 		default:
@@ -1635,6 +1675,7 @@ func (s *Server) accountConnectEvent(c *client) {
 			NameTag:    c.nameTag,
 			Kind:       c.kindString(),
 			ClientType: c.clientTypeString(),
+			MQTTClient: c.getMQTTClientID(),
 		},
 	}
 	c.mu.Unlock()
@@ -1686,6 +1727,7 @@ func (s *Server) accountDisconnectEvent(c *client, now time.Time, reason string)
 			NameTag:    c.nameTag,
 			Kind:       c.kindString(),
 			ClientType: c.clientTypeString(),
+			MQTTClient: c.getMQTTClientID(),
 		},
 		Sent: DataStats{
 			Msgs:  atomic.LoadInt64(&c.inMsgs),
@@ -1737,6 +1779,7 @@ func (s *Server) sendAuthErrorEvent(c *client) {
 			NameTag:    c.nameTag,
 			Kind:       c.kindString(),
 			ClientType: c.clientTypeString(),
+			MQTTClient: c.getMQTTClientID(),
 		},
 		Sent: DataStats{
 			Msgs:  c.inMsgs,
@@ -2081,12 +2124,15 @@ func (s *Server) debugSubscribers(sub *subscription, c *client, _ *Account, subj
 
 // Request for our local subscription count. This will come from a remote origin server
 // that received the initial request.
-func (s *Server) nsubsRequest(sub *subscription, _ *client, _ *Account, subject, reply string, msg []byte) {
+func (s *Server) nsubsRequest(sub *subscription, c *client, _ *Account, subject, reply string, rmsg []byte) {
 	if !s.eventsRunning() {
 		return
 	}
 	m := accNumSubsReq{}
-	if err := json.Unmarshal(msg, &m); err != nil {
+	if _, msg := c.msgParts(rmsg); len(msg) == 0 {
+		s.sys.client.Errorf("request requires a body")
+		return
+	} else if err := json.Unmarshal(msg, &m); err != nil {
 		s.sys.client.Errorf("Error unmarshalling account nsubs request message: %v", err)
 		return
 	}
