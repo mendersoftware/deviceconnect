@@ -22,14 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mendersoftware/deviceconnect/app"
-	"github.com/mendersoftware/go-lib-micro/log"
-	"github.com/mendersoftware/go-lib-micro/ws"
-	"github.com/mendersoftware/go-lib-micro/ws/shell"
-	"github.com/vmihailenco/msgpack/v5"
-
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/vmihailenco/msgpack/v5"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	mopts "go.mongodb.org/mongo-driver/mongo/options"
@@ -37,9 +32,13 @@ import (
 
 	"github.com/mendersoftware/go-lib-micro/config"
 	"github.com/mendersoftware/go-lib-micro/identity"
+	"github.com/mendersoftware/go-lib-micro/log"
 	"github.com/mendersoftware/go-lib-micro/mongo/migrate"
 	mstore "github.com/mendersoftware/go-lib-micro/store"
+	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/shell"
 
+	"github.com/mendersoftware/deviceconnect/app"
 	dconfig "github.com/mendersoftware/deviceconnect/config"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
