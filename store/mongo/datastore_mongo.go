@@ -37,7 +37,7 @@ import (
 	"github.com/mendersoftware/go-lib-micro/config"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/mongo/migrate"
-	mstore "github.com/mendersoftware/go-lib-micro/store"
+	mstore "github.com/mendersoftware/go-lib-micro/store/v2"
 
 	dconfig "github.com/mendersoftware/deviceconnect/config"
 	"github.com/mendersoftware/deviceconnect/model"
@@ -200,7 +200,7 @@ func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID, deviceI
 	updateOpts := &mopts.UpdateOptions{}
 	updateOpts.SetUpsert(true)
 	_, err := coll.UpdateOne(ctx,
-		bson.M{"_id": deviceID},
+		mstore.WithTenantID(ctx, bson.M{"_id": deviceID}),
 		bson.M{
 			"$setOnInsert": bson.M{
 				dbFieldStatus:    model.DeviceStatusUnknown,
@@ -218,7 +218,7 @@ func (db *DataStoreMongo) DeleteDevice(ctx context.Context, tenantID, deviceID s
 	dbname := mstore.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
-	_, err := coll.DeleteOne(ctx, bson.M{"_id": deviceID})
+	_, err := coll.DeleteOne(ctx, mstore.WithTenantID(ctx, bson.M{"_id": deviceID}))
 	return err
 }
 
@@ -231,7 +231,7 @@ func (db *DataStoreMongo) GetDevice(
 	dbname := mstore.DbNameForTenant(tenantID, DbName)
 	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
 
-	cur := coll.FindOne(ctx, bson.M{"_id": deviceID})
+	cur := coll.FindOne(ctx, mstore.WithTenantID(ctx, bson.M{"_id": deviceID}))
 
 	device := &model.Device{}
 	if err := cur.Decode(&device); err != nil {
@@ -260,7 +260,7 @@ func (db *DataStoreMongo) UpsertDeviceStatus(
 	now := clock.Now().UTC()
 
 	_, err := coll.UpdateOne(ctx,
-		bson.M{"_id": deviceID},
+		mstore.WithTenantID(ctx, bson.M{"_id": deviceID}),
 		bson.M{
 			"$set": bson.M{
 				dbFieldStatus:    status,
@@ -286,7 +286,7 @@ func (db *DataStoreMongo) AllocateSession(ctx context.Context, sess *model.Sessi
 	dbname := mstore.DbNameForTenant(sess.TenantID, DbName)
 	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
 
-	_, err := coll.InsertOne(ctx, sess)
+	_, err := coll.InsertOne(ctx, mstore.WithTenantID(ctx, sess))
 	if err != nil {
 		return errors.Wrap(err, "store: failed to allocate session")
 	}
@@ -330,7 +330,7 @@ func (db *DataStoreMongo) GetSession(
 
 	session := &model.Session{}
 	err := collSess.
-		FindOne(ctx, bson.M{"_id": sessionID}).
+		FindOne(ctx, mstore.WithTenantID(ctx, bson.M{"_id": sessionID})).
 		Decode(session)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
