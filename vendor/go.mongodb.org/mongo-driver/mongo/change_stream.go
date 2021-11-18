@@ -61,7 +61,8 @@ var (
 )
 
 // ChangeStream is used to iterate over a stream of events. Each event can be decoded into a Go type via the Decode
-// method or accessed as raw BSON via the Current field. For more information about change streams, see
+// method or accessed as raw BSON via the Current field. This type is not goroutine safe and must not be used
+// concurrently by multiple goroutines. For more information about change streams, see
 // https://docs.mongodb.com/manual/changeStreams/.
 type ChangeStream struct {
 	// Current is the BSON bytes of the current event. This property is only valid until the next call to Next or
@@ -107,7 +108,11 @@ func newChangeStream(ctx context.Context, config changeStreamConfig, pipeline in
 		registry:   config.registry,
 		streamType: config.streamType,
 		options:    options.MergeChangeStreamOptions(opts...),
-		selector:   description.ReadPrefSelector(config.readPreference),
+		selector: description.CompositeSelector([]description.ServerSelector{
+			description.ReadPrefSelector(config.readPreference),
+			description.LatencySelector(config.client.localThreshold),
+		}),
+		cursorOptions: config.client.createBaseCursorOptions(),
 	}
 
 	cs.sess = sessionFromContext(ctx)
@@ -126,11 +131,8 @@ func newChangeStream(ctx context.Context, config changeStreamConfig, pipeline in
 		ReadPreference(config.readPreference).ReadConcern(config.readConcern).
 		Deployment(cs.client.deployment).ClusterClock(cs.client.clock).
 		CommandMonitor(cs.client.monitor).Session(cs.sess).ServerSelector(cs.selector).Retry(driver.RetryNone).
-		Crypt(config.crypt)
+		ServerAPI(cs.client.serverAPI).Crypt(config.crypt)
 
-	if config.crypt != nil {
-		cs.cursorOptions.Crypt = config.crypt
-	}
 	if cs.options.Collation != nil {
 		cs.aggregate.Collation(bsoncore.Document(cs.options.Collation.ToDocument()))
 	}
@@ -141,7 +143,6 @@ func newChangeStream(ctx context.Context, config changeStreamConfig, pipeline in
 	if cs.options.MaxAwaitTime != nil {
 		cs.cursorOptions.MaxTimeMS = int64(time.Duration(*cs.options.MaxAwaitTime) / time.Millisecond)
 	}
-	cs.cursorOptions.CommandMonitor = cs.client.monitor
 
 	switch cs.streamType {
 	case ClientStream:
