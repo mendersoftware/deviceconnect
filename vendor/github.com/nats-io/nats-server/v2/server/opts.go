@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -196,6 +197,7 @@ type Options struct {
 	Logtime               bool          `json:"-"`
 	MaxConn               int           `json:"max_connections"`
 	MaxSubs               int           `json:"max_subscriptions,omitempty"`
+	MaxSubTokens          uint8         `json:"-"`
 	Nkeys                 []*NkeyUser   `json:"-"`
 	Users                 []*User       `json:"-"`
 	Accounts              []*Account    `json:"-"`
@@ -297,6 +299,10 @@ type Options struct {
 	// private fields, used for testing
 	gatewaysSolicitDelay time.Duration
 	routeProto           int
+
+	// JetStream
+	maxMemSet   bool
+	maxStoreSet bool
 }
 
 // WebsocketOpts are options for websocket
@@ -856,6 +862,18 @@ func (o *Options) processConfigFileLine(k string, v interface{}, errors *[]error
 		o.MaxTracedMsgLen = int(v.(int64))
 	case "max_subscriptions", "max_subs":
 		o.MaxSubs = int(v.(int64))
+	case "max_sub_tokens", "max_subscription_tokens":
+		if n := v.(int64); n > math.MaxUint8 {
+			err := &configErr{tk, fmt.Sprintf("%s value is too big", k)}
+			*errors = append(*errors, err)
+			return
+		} else if n <= 0 {
+			err := &configErr{tk, fmt.Sprintf("%s value can not be negative", k)}
+			*errors = append(*errors, err)
+			return
+		} else {
+			o.MaxSubTokens = uint8(n)
+		}
 	case "ping_interval":
 		o.PingInterval = parseDuration("ping_interval", tk, v, errors, warnings)
 	case "ping_max":
@@ -1105,11 +1123,16 @@ func (o *Options) processConfigFileLine(k string, v interface{}, errors *[]error
 			*errors = append(*errors, err)
 			return
 		}
-		if o.AccountResolverTLSConfig, err = GenTLSConfig(tc); err != nil {
+		tlsConfig, err := GenTLSConfig(tc)
+		if err != nil {
 			err := &configErr{tk, err.Error()}
 			*errors = append(*errors, err)
 			return
 		}
+		o.AccountResolverTLSConfig = tlsConfig
+		// GenTLSConfig loads the CA file into ClientCAs, but since this will
+		// be used as a client connection, we need to set RootCAs.
+		o.AccountResolverTLSConfig.RootCAs = tlsConfig.ClientCAs
 	case "resolver_preload":
 		mp, ok := v.(map[string]interface{})
 		if !ok {
@@ -1359,6 +1382,11 @@ func parseCluster(v interface{}, opts *Options, errors *[]error, warnings *[]err
 				*errors = append(*errors, err)
 				continue
 			}
+			if auth.token != _EMPTY_ {
+				err := &configErr{tk, "Cluster authorization does not support tokens"}
+				*errors = append(*errors, err)
+				continue
+			}
 			opts.Cluster.Username = auth.user
 			opts.Cluster.Password = auth.pass
 			opts.Cluster.AuthTimeout = auth.timeout
@@ -1458,6 +1486,8 @@ func parseURL(u string, typ string) (*url.URL, error) {
 	urlStr := strings.TrimSpace(u)
 	url, err := url.Parse(urlStr)
 	if err != nil {
+		// Security note: if it's not well-formed but still reached us, then we're going to log as-is which might include password information here.
+		// If the URL parses, we don't log the credentials ever, but if it doesn't even parse we don't have a sane way to redact.
 		return nil, fmt.Errorf("error parsing %s url [%q]", typ, urlStr)
 	}
 	return url, nil
@@ -1499,6 +1529,11 @@ func parseGateway(v interface{}, o *Options, errors *[]error, warnings *[]error)
 			}
 			if auth.users != nil {
 				*errors = append(*errors, &configErr{tk, "Gateway authorization does not allow multiple users"})
+				continue
+			}
+			if auth.token != _EMPTY_ {
+				err := &configErr{tk, "Gateway authorization does not support tokens"}
+				*errors = append(*errors, err)
 				continue
 			}
 			o.Gateway.Username = auth.user
@@ -1643,14 +1678,16 @@ func parseJetStream(v interface{}, opts *Options, errors *[]error, warnings *[]e
 			switch strings.ToLower(mk) {
 			case "store", "store_dir", "storedir":
 				// StoreDir can be set at the top level as well so have to prevent ambiguous declarations.
-				if opts.StoreDir != "" {
+				if opts.StoreDir != _EMPTY_ {
 					return &configErr{tk, "Duplicate 'store_dir' configuration"}
 				}
 				opts.StoreDir = mv.(string)
 			case "max_memory_store", "max_mem_store", "max_mem":
 				opts.JetStreamMaxMemory = mv.(int64)
+				opts.maxMemSet = true
 			case "max_file_store", "max_file":
 				opts.JetStreamMaxStore = mv.(int64)
+				opts.maxStoreSet = true
 			case "domain":
 				opts.JetStreamDomain = mv.(string)
 			case "enable", "enabled":
@@ -1951,7 +1988,7 @@ func parseRemoteLeafNodes(v interface{}, errors *[]error, warnings *[]error) ([]
 				if tc.Timeout > 0 {
 					remote.TLSTimeout = tc.Timeout
 				} else {
-					remote.TLSTimeout = float64(DEFAULT_LEAF_TLS_TIMEOUT)
+					remote.TLSTimeout = float64(DEFAULT_LEAF_TLS_TIMEOUT) / float64(time.Second)
 				}
 				remote.tlsConfigOpts = tc
 			case "hub":
@@ -4213,10 +4250,10 @@ func setBaselineOptions(opts *Options) {
 		}
 	}
 	// JetStream
-	if opts.JetStreamMaxMemory == 0 {
+	if opts.JetStreamMaxMemory == 0 && !opts.maxMemSet {
 		opts.JetStreamMaxMemory = -1
 	}
-	if opts.JetStreamMaxStore == 0 {
+	if opts.JetStreamMaxStore == 0 && !opts.maxStoreSet {
 		opts.JetStreamMaxStore = -1
 	}
 }

@@ -268,6 +268,8 @@ type client struct {
 
 	tags    jwt.TagList
 	nameTag string
+
+	tlsTo *time.Timer
 }
 
 type rrTracking struct {
@@ -985,22 +987,22 @@ func (c *client) writeLoop() {
 
 	// Used to check that we did flush from last wake up.
 	waitOk := true
-	var close bool
+	var closed bool
 
 	// Main loop. Will wait to be signaled and then will use
 	// buffered outbound structure for efficient writev to the underlying socket.
 	for {
 		c.mu.Lock()
-		if close = c.isClosed(); !close {
+		if closed = c.isClosed(); !closed {
 			owtf := c.out.fsp > 0 && c.out.pb < maxBufSize && c.out.fsp < maxFlushPending
 			if waitOk && (c.out.pb == 0 || owtf) {
 				c.out.sg.Wait()
 				// Check that connection has not been closed while lock was released
 				// in the conditional wait.
-				close = c.isClosed()
+				closed = c.isClosed()
 			}
 		}
-		if close {
+		if closed {
 			c.flushAndClose(false)
 			c.mu.Unlock()
 
@@ -1550,7 +1552,8 @@ func (c *client) flushSignal() {
 func (c *client) traceMsg(msg []byte) {
 	maxTrace := c.srv.getOpts().MaxTracedMsgLen
 	if maxTrace > 0 && (len(msg)-LEN_CR_LF) > maxTrace {
-		c.Tracef("<<- MSG_PAYLOAD: [\"%s...\"]", msg[:maxTrace])
+		tm := fmt.Sprintf("%q", msg[:maxTrace])
+		c.Tracef("<<- MSG_PAYLOAD: [\"%s...\"]", tm[1:maxTrace+1])
 	} else {
 		c.Tracef("<<- MSG_PAYLOAD: [%q]", msg[:len(msg)-LEN_CR_LF])
 	}
@@ -1895,7 +1898,11 @@ func (c *client) authViolation() {
 	} else {
 		c.Errorf(ErrAuthentication.Error())
 	}
-	c.sendErr("Authorization Violation")
+	if c.isMqtt() {
+		c.mqttEnqueueConnAck(mqttConnAckRCNotAuthorized, false)
+	} else {
+		c.sendErr("Authorization Violation")
+	}
 	c.closeConnection(AuthenticationViolation)
 }
 
@@ -2410,6 +2417,14 @@ func (c *client) processSubEx(subject, queue, bsid []byte, cb msgHandler, noForw
 			c.mu.Unlock()
 			c.subPermissionViolation(sub)
 			return nil, ErrSubscribePermissionViolation
+		}
+
+		if opts := srv.getOpts(); opts != nil && opts.MaxSubTokens > 0 {
+			if len(bytes.Split(sub.subject, []byte(tsep))) > int(opts.MaxSubTokens) {
+				c.mu.Unlock()
+				c.maxTokensViolation(sub)
+				return nil, ErrTooManySubTokens
+			}
 		}
 	}
 
@@ -3498,7 +3513,7 @@ func (c *client) processInboundClientMsg(msg []byte) (bool, bool) {
 	}
 
 	// Now check for reserved replies. These are used for service imports.
-	if len(c.pa.reply) > 0 && isReservedReply(c.pa.reply) {
+	if c.kind == CLIENT && len(c.pa.reply) > 0 && isReservedReply(c.pa.reply) {
 		c.replySubjectViolation(c.pa.reply)
 		return false, true
 	}
@@ -4378,6 +4393,14 @@ func (c *client) replySubjectViolation(reply []byte) {
 	c.Errorf("Publish Violation - %s, Reply %q", c.getAuthUser(), reply)
 }
 
+func (c *client) maxTokensViolation(sub *subscription) {
+	errTxt := fmt.Sprintf("Permissions Violation for Subscription to %q, too many tokens", sub.subject)
+	logTxt := fmt.Sprintf("Subscription Violation Too Many Tokens - %s, Subject %q, SID %s",
+		c.getAuthUser(), sub.subject, sub.sid)
+	c.sendErr(errTxt)
+	c.Errorf(logTxt)
+}
+
 func (c *client) processPingTimer() {
 	c.mu.Lock()
 	c.ping.tmr = nil
@@ -4458,6 +4481,14 @@ func (c *client) clearPingTimer() {
 	}
 	c.ping.tmr.Stop()
 	c.ping.tmr = nil
+}
+
+func (c *client) clearTlsToTimer() {
+	if c.tlsTo == nil {
+		return
+	}
+	c.tlsTo.Stop()
+	c.tlsTo = nil
 }
 
 // Lock should be held
@@ -4637,6 +4668,7 @@ func (c *client) closeConnection(reason ClosedState) {
 	c.flags.set(closeConnection)
 	c.clearAuthTimer()
 	c.clearPingTimer()
+	c.clearTlsToTimer()
 	c.markConnAsClosed(reason)
 
 	// Unblock anyone who is potentially stalled waiting on us.
@@ -4810,10 +4842,10 @@ func (c *client) reconnect() {
 			srv.Debugf("Not attempting reconnect for solicited route, already connected to \"%s\"", rid)
 			return
 		} else if rid == srv.info.ID {
-			srv.Debugf("Detected route to self, ignoring %q", rurl)
+			srv.Debugf("Detected route to self, ignoring %q", rurl.Redacted())
 			return
 		} else if rtype != Implicit || retryImplicit {
-			srv.Debugf("Attempting reconnect for solicited route \"%s\"", rurl)
+			srv.Debugf("Attempting reconnect for solicited route \"%s\"", rurl.Redacted())
 			// Keep track of this go-routine so we can wait for it on
 			// server shutdown.
 			srv.startGoRoutine(func() { srv.reConnectToRoute(rurl, rtype) })
@@ -5054,7 +5086,7 @@ func (c *client) doTLSHandshake(typ string, solicit bool, url *url.URL, tlsConfi
 
 	// Setup the timeout
 	ttl := secondsToDuration(timeout)
-	time.AfterFunc(ttl, func() { tlsTimeout(c, conn) })
+	c.tlsTo = time.AfterFunc(ttl, func() { tlsTimeout(c, conn) })
 	conn.SetReadDeadline(time.Now().Add(ttl))
 
 	c.mu.Unlock()
