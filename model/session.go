@@ -68,7 +68,7 @@ type Session struct {
 	DeviceID           string      `json:"device_id" bson:"device_id"`
 	Types              []string    `json:"-" bson:"-"`
 	StartTS            time.Time   `json:"start_ts" bson:"start_ts"`
-	TenantID           string      `json:"tenant_id" bson:"-"`
+	TenantID           string      `json:"tenant_id" bson:"tenant_id"`
 	BytesRecordedMutex *sync.Mutex `json:"-" bson:"-"`
 	BytesRecorded      int         `json:"bytes_transferred" bson:"bytes_transferred"`
 }
