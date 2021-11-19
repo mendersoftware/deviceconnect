@@ -20,6 +20,7 @@ linters:
     - errcheck
     - gocyclo
     - gofmt
+    - goimports
     - gosimple
     - govet
     - ineffassign
@@ -32,10 +33,15 @@ linters:
 
 linters-settings:
   gocyclo:
-    min-complexity: 20 # default is 30.
+    # default is 30.
+    min-complexity: 20
+
+  goimports:
+    local-prefixes:
+      "github.com/mendersoftware/deviceconnect"
 
   lll:
     # max line length, lines longer will be reported. Default is 120.
     line-length: 100
     # tab width in spaces. Default to 1.
-    tab-width: 8
+    tab-width: 4

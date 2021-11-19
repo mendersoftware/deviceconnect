@@ -15,10 +15,11 @@
 package mongo
 
 import (
+	"io"
+
 	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/mendersoftware/go-lib-micro/ws/shell"
 	"github.com/vmihailenco/msgpack/v5"
-	"io"
 )
 
 type RecordingWriter struct {
