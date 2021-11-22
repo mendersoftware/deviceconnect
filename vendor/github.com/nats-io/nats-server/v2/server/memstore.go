@@ -681,10 +681,10 @@ func (ms *memStore) removeSeqPerSubject(subj string, seq uint64) {
 		return
 	}
 	// TODO(dlc) - Might want to optimize this.
-	for tseq := seq + 1; tseq < ss.Last; tseq++ {
+	for tseq := seq + 1; tseq <= ss.Last; tseq++ {
 		if sm := ms.msgs[tseq]; sm != nil && sm.subj == subj {
 			ss.First = tseq
-			return
+			break
 		}
 	}
 }
@@ -839,6 +839,9 @@ func (os *consumerMemStore) StreamDelete() error {
 }
 
 func (os *consumerMemStore) State() (*ConsumerState, error) { return nil, nil }
+
+// Type returns the type of the underlying store.
+func (os *consumerMemStore) Type() StorageType { return MemoryStorage }
 
 // Templates
 type templateMemStore struct{}

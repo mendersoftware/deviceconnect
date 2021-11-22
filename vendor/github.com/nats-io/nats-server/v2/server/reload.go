@@ -883,7 +883,7 @@ func imposeOrder(value interface{}) error {
 		})
 	case WebsocketOpts:
 		sort.Strings(value.AllowedOrigins)
-	case string, bool, int, int32, int64, time.Duration, float64, nil, LeafNodeOpts, ClusterOpts, *tls.Config, PinnedCertSet,
+	case string, bool, uint8, int, int32, int64, time.Duration, float64, nil, LeafNodeOpts, ClusterOpts, *tls.Config, PinnedCertSet,
 		*URLAccResolver, *MemAccResolver, *DirAccResolver, *CacheDirAccResolver, Authentication, MQTTOpts, jwt.TagList,
 		*OCSPConfig:
 		// explicitly skipped types
@@ -1614,7 +1614,6 @@ func (s *Server) reloadAuthorization() {
 
 	// We will double check all JetStream configs on a reload.
 	if checkJetStream {
-		s.getJetStream().clearResources()
 		if err := s.enableJetStreamAccounts(); err != nil {
 			s.Errorf(err.Error())
 		}
