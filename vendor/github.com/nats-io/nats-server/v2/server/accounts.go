@@ -392,7 +392,7 @@ func (a *Account) GetName() string {
 // all known servers.
 func (a *Account) NumConnections() int {
 	a.mu.RLock()
-	nc := len(a.clients) + int(a.nrclients)
+	nc := len(a.clients) - int(a.sysclients) + int(a.nrclients)
 	a.mu.RUnlock()
 	return nc
 }
@@ -844,7 +844,7 @@ func (a *Account) addClient(c *client) int {
 	}
 	added := n != len(a.clients)
 	if added {
-		if c.kind == SYSTEM {
+		if c.kind != CLIENT && c.kind != LEAF {
 			a.sysclients++
 		} else if c.kind == LEAF {
 			a.nleafs++
@@ -886,7 +886,7 @@ func (a *Account) removeClient(c *client) int {
 	delete(a.clients, c)
 	removed := n != len(a.clients)
 	if removed {
-		if c.kind == SYSTEM {
+		if c.kind != CLIENT && c.kind != LEAF {
 			a.sysclients--
 		} else if c.kind == LEAF {
 			a.nleafs--
@@ -1175,7 +1175,11 @@ func (m1 *ServiceLatency) NATSTotalTime() time.Duration {
 // m1 TotalLatency is correct, so use that.
 // Will use those to back into NATS latency.
 func (m1 *ServiceLatency) merge(m2 *ServiceLatency) {
-	m1.SystemLatency = m1.ServiceLatency - (m2.ServiceLatency + m2.Responder.RTT)
+	rtt := time.Duration(0)
+	if m2.Responder != nil {
+		rtt = m2.Responder.RTT
+	}
+	m1.SystemLatency = m1.ServiceLatency - (m2.ServiceLatency + rtt)
 	m1.ServiceLatency = m2.ServiceLatency
 	m1.Responder = m2.Responder
 	sanitizeLatencyMetric(m1)
@@ -3473,11 +3477,11 @@ func (ur *URLAccResolver) Fetch(name string) (string, error) {
 	url := ur.url + name
 	resp, err := ur.c.Get(url)
 	if err != nil {
-		return _EMPTY_, fmt.Errorf("could not fetch <%q>: %v", url, err)
+		return _EMPTY_, fmt.Errorf("could not fetch <%q>: %v", redactURLString(url), err)
 	} else if resp == nil {
-		return _EMPTY_, fmt.Errorf("could not fetch <%q>: no response", url)
+		return _EMPTY_, fmt.Errorf("could not fetch <%q>: no response", redactURLString(url))
 	} else if resp.StatusCode != http.StatusOK {
-		return _EMPTY_, fmt.Errorf("could not fetch <%q>: %v", url, resp.Status)
+		return _EMPTY_, fmt.Errorf("could not fetch <%q>: %v", redactURLString(url), resp.Status)
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)

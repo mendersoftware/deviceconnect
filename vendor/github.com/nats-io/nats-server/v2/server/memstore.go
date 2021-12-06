@@ -126,13 +126,13 @@ func (ms *memStore) storeRawMsg(subj string, hdr, msg []byte, seq uint64, ts int
 		ms.state.FirstTime = now
 	}
 
-	// Make copies - https://github.com/go101/go101/wiki
+	// Make copies
 	// TODO(dlc) - Maybe be smarter here.
 	if len(msg) > 0 {
-		msg = append(msg[:0:0], msg...)
+		msg = copyBytes(msg)
 	}
 	if len(hdr) > 0 {
-		hdr = append(hdr[:0:0], hdr...)
+		hdr = copyBytes(hdr)
 	}
 
 	ms.msgs[seq] = &storedMsg{subj, hdr, msg, seq, ts}
@@ -681,10 +681,10 @@ func (ms *memStore) removeSeqPerSubject(subj string, seq uint64) {
 		return
 	}
 	// TODO(dlc) - Might want to optimize this.
-	for tseq := seq + 1; tseq < ss.Last; tseq++ {
+	for tseq := seq + 1; tseq <= ss.Last; tseq++ {
 		if sm := ms.msgs[tseq]; sm != nil && sm.subj == subj {
 			ss.First = tseq
-			return
+			break
 		}
 	}
 }
@@ -737,13 +737,19 @@ func (ms *memStore) Type() StorageType {
 }
 
 // FastState will fill in state with only the following.
-// Msgs, Bytes, FirstSeq, LastSeq
+// Msgs, Bytes, First and Last Sequence and Time and NumDeleted.
 func (ms *memStore) FastState(state *StreamState) {
 	ms.mu.RLock()
 	state.Msgs = ms.state.Msgs
 	state.Bytes = ms.state.Bytes
 	state.FirstSeq = ms.state.FirstSeq
+	state.FirstTime = ms.state.FirstTime
 	state.LastSeq = ms.state.LastSeq
+	state.LastTime = ms.state.LastTime
+	if state.LastSeq > state.FirstSeq {
+		state.NumDeleted = int((state.LastSeq - state.FirstSeq) - state.Msgs + 1)
+	}
+	state.Consumers = ms.consumers
 	ms.mu.RUnlock()
 }
 
@@ -839,6 +845,9 @@ func (os *consumerMemStore) StreamDelete() error {
 }
 
 func (os *consumerMemStore) State() (*ConsumerState, error) { return nil, nil }
+
+// Type returns the type of the underlying store.
+func (os *consumerMemStore) Type() StorageType { return MemoryStorage }
 
 // Templates
 type templateMemStore struct{}

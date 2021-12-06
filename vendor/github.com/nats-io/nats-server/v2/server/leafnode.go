@@ -170,14 +170,35 @@ func (s *Server) addInJSDenyAll(r *leafNodeCfg) {
 	s.Noticef("Sharing system account but utilizing separate JetStream Domains")
 	s.Noticef("Adding deny of %+v for leafnode configuration that bridges system account", denyAll)
 
-	r.DenyExports = append(r.DenyExports, denyAll...)
-	r.DenyImports = append(r.DenyImports, denyAll...)
+	hasDeny := func(deny string, l []string) bool {
+		for _, le := range l {
+			if le == deny {
+				return true
+			}
+		}
+		return false
+	}
+
+	var exportAdded, importAdded bool
+	for _, deny := range denyAll {
+		if !hasDeny(deny, r.DenyExports) {
+			r.DenyExports = append(r.DenyExports, deny)
+			exportAdded = true
+		}
+		if !hasDeny(deny, r.DenyImports) {
+			r.DenyImports = append(r.DenyImports, deny)
+			importAdded = true
+		}
+	}
+	if !exportAdded && !importAdded {
+		return
+	}
 
 	perms := &Permissions{}
-	if len(r.DenyExports) > 0 {
+	if exportAdded {
 		perms.Publish = &SubjectPermission{Deny: r.DenyExports}
 	}
-	if len(r.DenyImports) > 0 {
+	if importAdded {
 		perms.Subscribe = &SubjectPermission{Deny: r.DenyImports}
 	}
 	r.perms = perms
@@ -299,7 +320,7 @@ func validateLeafNode(o *Options) error {
 				}
 			}
 			if !ok {
-				return fmt.Errorf("remote leaf node configuration cannot have a mix of websocket and non-websocket urls: %q", rcfg.URLs)
+				return fmt.Errorf("remote leaf node configuration cannot have a mix of websocket and non-websocket urls: %q", redactURLList(rcfg.URLs))
 			}
 		}
 	}
@@ -1055,11 +1076,15 @@ func (c *client) processLeafnodeInfo(info *Info) {
 					// account also has JetStream enabled.
 					if accHasJS {
 						s.addInJSDenyExport(remote)
+						// If we specified a domain do not import by default.
+						if hasJSDomain {
+							s.addInJSDenyImport(remote)
+						}
 					}
 				}
 				// If we have a specified JetStream domain we will want to add a mapping to
 				// allow access cross domain for each non-system account.
-				if hasJSDomain && acc.jetStreamConfigured() {
+				if hasJSDomain && accHasJS {
 					src := fmt.Sprintf(jsDomainAPI, opts.JetStreamDomain)
 					if err := acc.AddMapping(src, jsAllAPI); err != nil {
 						c.Debugf("Error adding JetStream domain mapping: %v", err)
@@ -1162,6 +1187,7 @@ func (c *client) doUpdateLNURLs(cfg *leafNodeCfg, scheme string, URLs []string) 
 	for _, surl := range URLs {
 		url, err := url.Parse(fmt.Sprintf("%s://%s", scheme, surl))
 		if err != nil {
+			// As per below, the URLs we receive should not have contained URL info, so this should be safe to log.
 			c.Errorf("Error parsing url %q: %v", surl, err)
 			continue
 		}
@@ -2501,7 +2527,15 @@ func (s *Server) leafNodeFinishConnectProcess(c *client) {
 	c.mu.Unlock()
 
 	// Make sure we register with the account here.
-	c.registerWithAccount(acc)
+	if err := c.registerWithAccount(acc); err != nil {
+		if err == ErrTooManyAccountConnections {
+			c.maxAccountConnExceeded()
+			return
+		}
+		c.Errorf("Registering leaf with account %s resulted in error: %v", acc.Name, err)
+		c.closeConnection(ProtocolViolation)
+		return
+	}
 	s.addLeafNodeConnection(c, _EMPTY_, _EMPTY_, false)
 	s.initLeafNodeSmapAndSendSubs(c)
 	if sendSysConnectEvent {

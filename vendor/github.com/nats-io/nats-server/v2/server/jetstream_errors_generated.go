@@ -95,6 +95,9 @@ const (
 	// JSConsumerHBRequiresPushErr consumer idle heartbeat requires a push based consumer
 	JSConsumerHBRequiresPushErr ErrorIdentifier = 10088
 
+	// JSConsumerInvalidDeliverSubject invalid push consumer deliver subject
+	JSConsumerInvalidDeliverSubject ErrorIdentifier = 10112
+
 	// JSConsumerInvalidPolicyErrF Generic delivery policy error ({err})
 	JSConsumerInvalidPolicyErrF ErrorIdentifier = 10094
 
@@ -151,6 +154,9 @@ const (
 
 	// JSConsumerWQRequiresExplicitAckErr workqueue stream requires explicit ack
 	JSConsumerWQRequiresExplicitAckErr ErrorIdentifier = 10098
+
+	// JSConsumerWithFlowControlNeedsHeartbeats consumer with flow control also needs heartbeats
+	JSConsumerWithFlowControlNeedsHeartbeats ErrorIdentifier = 10108
 
 	// JSInsufficientResourcesErr insufficient resources
 	JSInsufficientResourcesErr ErrorIdentifier = 10023
@@ -242,6 +248,9 @@ const (
 	// JSStreamGeneralErrorF General stream failure string ({err})
 	JSStreamGeneralErrorF ErrorIdentifier = 10051
 
+	// JSStreamHeaderExceedsMaximumErr header size exceeds maximum allowed of 64k
+	JSStreamHeaderExceedsMaximumErr ErrorIdentifier = 10097
+
 	// JSStreamInvalidConfigF Stream configuration validation error string ({err})
 	JSStreamInvalidConfigF ErrorIdentifier = 10052
 
@@ -275,6 +284,9 @@ const (
 	// JSStreamNotMatchErr expected stream does not match
 	JSStreamNotMatchErr ErrorIdentifier = 10060
 
+	// JSStreamPurgeFailedF Generic stream purge failure error string ({err})
+	JSStreamPurgeFailedF ErrorIdentifier = 10110
+
 	// JSStreamReplicasNotSupportedErr replicas > 1 not supported in non-clustered mode
 	JSStreamReplicasNotSupportedErr ErrorIdentifier = 10074
 
@@ -283,6 +295,12 @@ const (
 
 	// JSStreamRestoreErrF restore failed: {err}
 	JSStreamRestoreErrF ErrorIdentifier = 10062
+
+	// JSStreamRollupFailedF Generic stream rollup failure error string ({err})
+	JSStreamRollupFailedF ErrorIdentifier = 10111
+
+	// JSStreamSealedErr invalid operation on sealed stream
+	JSStreamSealedErr ErrorIdentifier = 10109
 
 	// JSStreamSequenceNotMatchErr expected stream sequence does not match
 	JSStreamSequenceNotMatchErr ErrorIdentifier = 10063
@@ -353,6 +371,7 @@ var (
 		JSConsumerFCRequiresPushErr:                {Code: 400, ErrCode: 10089, Description: "consumer flow control requires a push based consumer"},
 		JSConsumerFilterNotSubsetErr:               {Code: 400, ErrCode: 10093, Description: "consumer filter subject is not a valid subset of the interest subjects"},
 		JSConsumerHBRequiresPushErr:                {Code: 400, ErrCode: 10088, Description: "consumer idle heartbeat requires a push based consumer"},
+		JSConsumerInvalidDeliverSubject:            {Code: 400, ErrCode: 10112, Description: "invalid push consumer deliver subject"},
 		JSConsumerInvalidPolicyErrF:                {Code: 400, ErrCode: 10094, Description: "{err}"},
 		JSConsumerInvalidSamplingErrF:              {Code: 400, ErrCode: 10095, Description: "failed to parse consumer sampling configuration: {err}"},
 		JSConsumerMaxPendingAckPolicyRequiredErr:   {Code: 400, ErrCode: 10082, Description: "consumer requires ack policy for max ack pending"},
@@ -372,6 +391,7 @@ var (
 		JSConsumerWQConsumerNotUniqueErr:           {Code: 400, ErrCode: 10100, Description: "filtered consumer not unique on workqueue stream"},
 		JSConsumerWQMultipleUnfilteredErr:          {Code: 400, ErrCode: 10099, Description: "multiple non-filtered consumers not allowed on workqueue stream"},
 		JSConsumerWQRequiresExplicitAckErr:         {Code: 400, ErrCode: 10098, Description: "workqueue stream requires explicit ack"},
+		JSConsumerWithFlowControlNeedsHeartbeats:   {Code: 400, ErrCode: 10108, Description: "consumer with flow control also needs heartbeats"},
 		JSInsufficientResourcesErr:                 {Code: 503, ErrCode: 10023, Description: "insufficient resources"},
 		JSInvalidJSONErr:                           {Code: 400, ErrCode: 10025, Description: "invalid JSON"},
 		JSMaximumConsumersLimitErr:                 {Code: 400, ErrCode: 10026, Description: "maximum consumers limit reached"},
@@ -402,6 +422,7 @@ var (
 		JSStreamExternalApiOverlapErrF:             {Code: 400, ErrCode: 10021, Description: "stream external api prefix {prefix} must not overlap with {subject}"},
 		JSStreamExternalDelPrefixOverlapsErrF:      {Code: 400, ErrCode: 10022, Description: "stream external delivery prefix {prefix} overlaps with stream subject {subject}"},
 		JSStreamGeneralErrorF:                      {Code: 500, ErrCode: 10051, Description: "{err}"},
+		JSStreamHeaderExceedsMaximumErr:            {Code: 400, ErrCode: 10097, Description: "header size exceeds maximum allowed of 64k"},
 		JSStreamInvalidConfigF:                     {Code: 500, ErrCode: 10052, Description: "{err}"},
 		JSStreamInvalidErr:                         {Code: 500, ErrCode: 10096, Description: "stream not valid"},
 		JSStreamInvalidExternalDeliverySubjErrF:    {Code: 400, ErrCode: 10024, Description: "stream external delivery prefix {prefix} must not contain wildcards"},
@@ -413,9 +434,12 @@ var (
 		JSStreamNameExistErr:                       {Code: 400, ErrCode: 10058, Description: "stream name already in use"},
 		JSStreamNotFoundErr:                        {Code: 404, ErrCode: 10059, Description: "stream not found"},
 		JSStreamNotMatchErr:                        {Code: 400, ErrCode: 10060, Description: "expected stream does not match"},
+		JSStreamPurgeFailedF:                       {Code: 500, ErrCode: 10110, Description: "{err}"},
 		JSStreamReplicasNotSupportedErr:            {Code: 500, ErrCode: 10074, Description: "replicas > 1 not supported in non-clustered mode"},
 		JSStreamReplicasNotUpdatableErr:            {Code: 400, ErrCode: 10061, Description: "Replicas configuration can not be updated"},
 		JSStreamRestoreErrF:                        {Code: 500, ErrCode: 10062, Description: "restore failed: {err}"},
+		JSStreamRollupFailedF:                      {Code: 500, ErrCode: 10111, Description: "{err}"},
+		JSStreamSealedErr:                          {Code: 400, ErrCode: 10109, Description: "invalid operation on sealed stream"},
 		JSStreamSequenceNotMatchErr:                {Code: 503, ErrCode: 10063, Description: "expected stream sequence does not match"},
 		JSStreamSnapshotErrF:                       {Code: 500, ErrCode: 10064, Description: "snapshot failed: {err}"},
 		JSStreamStoreFailedF:                       {Code: 503, ErrCode: 10077, Description: "{err}"},
@@ -765,6 +789,16 @@ func NewJSConsumerHBRequiresPushError(opts ...ErrorOption) *ApiError {
 	return ApiErrors[JSConsumerHBRequiresPushErr]
 }
 
+// NewJSConsumerInvalidDeliverSubjectError creates a new JSConsumerInvalidDeliverSubject error: "invalid push consumer deliver subject"
+func NewJSConsumerInvalidDeliverSubjectError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSConsumerInvalidDeliverSubject]
+}
+
 // NewJSConsumerInvalidPolicyError creates a new JSConsumerInvalidPolicyErrF error: "{err}"
 func NewJSConsumerInvalidPolicyError(err error, opts ...ErrorOption) *ApiError {
 	eopts := parseOpts(opts)
@@ -977,6 +1011,16 @@ func NewJSConsumerWQRequiresExplicitAckError(opts ...ErrorOption) *ApiError {
 	}
 
 	return ApiErrors[JSConsumerWQRequiresExplicitAckErr]
+}
+
+// NewJSConsumerWithFlowControlNeedsHeartbeatsError creates a new JSConsumerWithFlowControlNeedsHeartbeats error: "consumer with flow control also needs heartbeats"
+func NewJSConsumerWithFlowControlNeedsHeartbeatsError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSConsumerWithFlowControlNeedsHeartbeats]
 }
 
 // NewJSInsufficientResourcesError creates a new JSInsufficientResourcesErr error: "insufficient resources"
@@ -1345,6 +1389,16 @@ func NewJSStreamGeneralError(err error, opts ...ErrorOption) *ApiError {
 	}
 }
 
+// NewJSStreamHeaderExceedsMaximumError creates a new JSStreamHeaderExceedsMaximumErr error: "header size exceeds maximum allowed of 64k"
+func NewJSStreamHeaderExceedsMaximumError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSStreamHeaderExceedsMaximumErr]
+}
+
 // NewJSStreamInvalidConfigError creates a new JSStreamInvalidConfigF error: "{err}"
 func NewJSStreamInvalidConfigError(err error, opts ...ErrorOption) *ApiError {
 	eopts := parseOpts(opts)
@@ -1479,6 +1533,22 @@ func NewJSStreamNotMatchError(opts ...ErrorOption) *ApiError {
 	return ApiErrors[JSStreamNotMatchErr]
 }
 
+// NewJSStreamPurgeFailedError creates a new JSStreamPurgeFailedF error: "{err}"
+func NewJSStreamPurgeFailedError(err error, opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	e := ApiErrors[JSStreamPurgeFailedF]
+	args := e.toReplacerArgs([]interface{}{"{err}", err})
+	return &ApiError{
+		Code:        e.Code,
+		ErrCode:     e.ErrCode,
+		Description: strings.NewReplacer(args...).Replace(e.Description),
+	}
+}
+
 // NewJSStreamReplicasNotSupportedError creates a new JSStreamReplicasNotSupportedErr error: "replicas > 1 not supported in non-clustered mode"
 func NewJSStreamReplicasNotSupportedError(opts ...ErrorOption) *ApiError {
 	eopts := parseOpts(opts)
@@ -1513,6 +1583,32 @@ func NewJSStreamRestoreError(err error, opts ...ErrorOption) *ApiError {
 		ErrCode:     e.ErrCode,
 		Description: strings.NewReplacer(args...).Replace(e.Description),
 	}
+}
+
+// NewJSStreamRollupFailedError creates a new JSStreamRollupFailedF error: "{err}"
+func NewJSStreamRollupFailedError(err error, opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	e := ApiErrors[JSStreamRollupFailedF]
+	args := e.toReplacerArgs([]interface{}{"{err}", err})
+	return &ApiError{
+		Code:        e.Code,
+		ErrCode:     e.ErrCode,
+		Description: strings.NewReplacer(args...).Replace(e.Description),
+	}
+}
+
+// NewJSStreamSealedError creates a new JSStreamSealedErr error: "invalid operation on sealed stream"
+func NewJSStreamSealedError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSStreamSealedErr]
 }
 
 // NewJSStreamSequenceNotMatchError creates a new JSStreamSequenceNotMatchErr error: "expected stream sequence does not match"
