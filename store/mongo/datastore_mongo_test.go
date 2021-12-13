@@ -35,7 +35,7 @@ import (
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
 	"github.com/mendersoftware/go-lib-micro/identity"
-	mstore "github.com/mendersoftware/go-lib-micro/store"
+	mstore "github.com/mendersoftware/go-lib-micro/store/v2"
 )
 
 type mockClock struct{}
@@ -417,7 +417,8 @@ func TestGetSession(t *testing.T) {
 				tc.Session.TenantID, DbName,
 			))
 			collSess := database.Collection(SessionsCollectionName)
-			_, err := collSess.InsertOne(nil, tc.Session)
+			ctx := context.Background()
+			_, err := collSess.InsertOne(nil, mstore.WithTenantID(ctx, tc.Session))
 			if err != nil {
 				panic(errors.Wrap(err,
 					"[TEST ERR] Failed to prepare test case",
@@ -499,9 +500,7 @@ func TestGetSessionRecording(t *testing.T) {
 			ds := &DataStoreMongo{client: db.Client()}
 			defer ds.DropDatabase()
 
-			database := db.Client().Database(mstore.DbNameForTenant(
-				"000000000000000000000000", DbName,
-			))
+			database := db.Client().Database(DbName)
 			collRecordings := database.Collection(RecordingsCollectionName)
 			collControl := database.Collection(ControlCollectionName)
 			rec, err := base64.StdEncoding.DecodeString(tc.RecordingData)
@@ -510,23 +509,23 @@ func TestGetSessionRecording(t *testing.T) {
 			if len(tc.ControlData) > 0 {
 				ctrl, err := base64.StdEncoding.DecodeString(tc.ControlData)
 				assert.NoError(t, err)
-				_, err = collControl.InsertOne(nil, &model.ControlData{
+				_, err = collControl.InsertOne(nil, mstore.WithTenantID(tc.Ctx, &model.ControlData{
 					ID:        uuid.New(),
 					SessionID: tc.SessionID,
 					Control:   ctrl,
 					CreatedTs: time.Now().UTC(),
 					ExpireTs:  time.Now().UTC(),
-				})
+				}))
 				assert.NoError(t, err)
 			}
 
-			_, err = collRecordings.InsertOne(nil, &model.Recording{
+			_, err = collRecordings.InsertOne(nil, mstore.WithTenantID(tc.Ctx, &model.Recording{
 				ID:        uuid.New(),
 				SessionID: tc.SessionID,
 				Recording: rec,
 				CreatedTs: time.Now().UTC(),
 				ExpireTs:  time.Now().UTC(),
-			})
+			}))
 			assert.NoError(t, err)
 
 			readRecordingChannel := make(chan []byte, 1)
@@ -642,9 +641,7 @@ func TestSetSessionRecording(t *testing.T) {
 			}
 			defer ds.DropDatabase()
 
-			database := db.Client().Database(mstore.DbNameForTenant(
-				"000000000000000000000001", DbName,
-			))
+			database := db.Client().Database(DbName)
 			collSess := database.Collection(RecordingsCollectionName)
 
 			indexModels := []mongo.IndexModel{
@@ -653,7 +650,7 @@ func TestSetSessionRecording(t *testing.T) {
 					Keys: bson.D{{Key: "expire_ts", Value: 1}},
 					Options: mopts.Index().
 						SetBackground(true).
-						SetExpireAfterSeconds(0).
+						SetExpireAfterSeconds(int32(tc.Expiration.Seconds())).
 						SetName(IndexNameLogsExpire),
 				},
 			}
@@ -664,14 +661,16 @@ func TestSetSessionRecording(t *testing.T) {
 			ds.InsertSessionRecording(tc.Ctx, tc.SessionID, tc.RecordingData)
 
 			if tc.Expire {
-				time.Sleep(4 * tc.Expiration)
+				t.Logf("set expiration to: %ds, sleeping 60s (default check interval).",
+					int32(tc.Expiration.Seconds()))
+				time.Sleep(60 * time.Second)
 			}
 
 			var r model.Recording
 			res := collSess.FindOne(nil,
-				bson.M{
+				mstore.WithTenantID(tc.Ctx, bson.M{
 					dbFieldSessionID: tc.SessionID,
-				},
+				}),
 			)
 			assert.NotNil(t, res)
 

@@ -22,14 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mendersoftware/deviceconnect/app"
-	"github.com/mendersoftware/go-lib-micro/log"
-	"github.com/mendersoftware/go-lib-micro/ws"
-	"github.com/mendersoftware/go-lib-micro/ws/shell"
-	"github.com/vmihailenco/msgpack/v5"
-
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/vmihailenco/msgpack/v5"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	mopts "go.mongodb.org/mongo-driver/mongo/options"
@@ -37,9 +32,14 @@ import (
 
 	"github.com/mendersoftware/go-lib-micro/config"
 	"github.com/mendersoftware/go-lib-micro/identity"
+	"github.com/mendersoftware/go-lib-micro/log"
+	mdoc "github.com/mendersoftware/go-lib-micro/mongo/doc"
 	"github.com/mendersoftware/go-lib-micro/mongo/migrate"
-	mstore "github.com/mendersoftware/go-lib-micro/store"
+	mstore "github.com/mendersoftware/go-lib-micro/store/v2"
+	"github.com/mendersoftware/go-lib-micro/ws"
+	"github.com/mendersoftware/go-lib-micro/ws/shell"
 
+	"github.com/mendersoftware/deviceconnect/app"
 	dconfig "github.com/mendersoftware/deviceconnect/config"
 	"github.com/mendersoftware/deviceconnect/model"
 	"github.com/mendersoftware/deviceconnect/store"
@@ -66,7 +66,9 @@ const (
 	// ControlCollectionName name of the collection of session control data
 	ControlCollectionName = "control"
 
+	dbFieldID        = "_id"
 	dbFieldSessionID = "session_id"
+	dbFieldDeviceID  = "device_id"
 	dbFieldStatus    = "status"
 	dbFieldCreatedTs = "created_ts"
 	dbFieldUpdatedTs = "updated_ts"
@@ -187,26 +189,25 @@ func (db *DataStoreMongo) Ping(ctx context.Context) error {
 
 // ProvisionTenant provisions a new tenant
 func (db *DataStoreMongo) ProvisionTenant(ctx context.Context, tenantID string) error {
-	dbname := mstore.DbNameForTenant(tenantID, DbName)
-	return Migrate(ctx, dbname, DbVersion, db.client, true)
+	return Migrate(ctx, DbName, DbVersion, db.client, true)
 }
 
 // ProvisionDevice provisions a new device
 func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID, deviceID string) error {
-	dbname := mstore.DbNameForTenant(tenantID, DbName)
-	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
+	coll := db.client.Database(DbName).Collection(DevicesCollectionName)
 
 	now := clock.Now().UTC()
 
 	updateOpts := &mopts.UpdateOptions{}
 	updateOpts.SetUpsert(true)
 	_, err := coll.UpdateOne(ctx,
-		bson.M{"_id": deviceID},
+		bson.M{dbFieldID: deviceID, mstore.FieldTenantID: tenantID},
 		bson.M{
 			"$setOnInsert": bson.M{
-				dbFieldStatus:    model.DeviceStatusUnknown,
-				dbFieldCreatedTs: &now,
-				dbFieldUpdatedTs: &now,
+				dbFieldStatus:        model.DeviceStatusUnknown,
+				dbFieldCreatedTs:     &now,
+				dbFieldUpdatedTs:     &now,
+				mstore.FieldTenantID: tenantID,
 			},
 		},
 		updateOpts,
@@ -216,10 +217,9 @@ func (db *DataStoreMongo) ProvisionDevice(ctx context.Context, tenantID, deviceI
 
 // DeleteDevice deletes a device
 func (db *DataStoreMongo) DeleteDevice(ctx context.Context, tenantID, deviceID string) error {
-	dbname := mstore.DbNameForTenant(tenantID, DbName)
-	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
+	coll := db.client.Database(DbName).Collection(DevicesCollectionName)
 
-	_, err := coll.DeleteOne(ctx, bson.M{"_id": deviceID})
+	_, err := coll.DeleteOne(ctx, bson.M{dbFieldID: deviceID, mstore.FieldTenantID: tenantID})
 	return err
 }
 
@@ -229,10 +229,9 @@ func (db *DataStoreMongo) GetDevice(
 	tenantID string,
 	deviceID string,
 ) (*model.Device, error) {
-	dbname := mstore.DbNameForTenant(tenantID, DbName)
-	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
+	coll := db.client.Database(DbName).Collection(DevicesCollectionName)
 
-	cur := coll.FindOne(ctx, bson.M{"_id": deviceID})
+	cur := coll.FindOne(ctx, bson.M{dbFieldID: deviceID, mstore.FieldTenantID: tenantID})
 
 	device := &model.Device{}
 	if err := cur.Decode(&device); err != nil {
@@ -252,8 +251,7 @@ func (db *DataStoreMongo) UpsertDeviceStatus(
 	deviceID string,
 	status string,
 ) error {
-	dbname := mstore.DbNameForTenant(tenantID, DbName)
-	coll := db.client.Database(dbname).Collection(DevicesCollectionName)
+	coll := db.client.Database(DbName).Collection(DevicesCollectionName)
 
 	updateOpts := &mopts.UpdateOptions{}
 	updateOpts.SetUpsert(true)
@@ -261,14 +259,15 @@ func (db *DataStoreMongo) UpsertDeviceStatus(
 	now := clock.Now().UTC()
 
 	_, err := coll.UpdateOne(ctx,
-		bson.M{"_id": deviceID},
+		bson.M{dbFieldID: deviceID, mstore.FieldTenantID: tenantID},
 		bson.M{
 			"$set": bson.M{
 				dbFieldStatus:    status,
 				dbFieldUpdatedTs: &now,
 			},
 			"$setOnInsert": bson.M{
-				dbFieldCreatedTs: &now,
+				dbFieldCreatedTs:     &now,
+				mstore.FieldTenantID: tenantID,
 			},
 		},
 		updateOpts,
@@ -284,10 +283,9 @@ func (db *DataStoreMongo) AllocateSession(ctx context.Context, sess *model.Sessi
 		return errors.Wrap(err, "store: cannot allocate invalid Session")
 	}
 
-	dbname := mstore.DbNameForTenant(sess.TenantID, DbName)
-	coll := db.client.Database(dbname).Collection(SessionsCollectionName)
-
-	_, err := coll.InsertOne(ctx, sess)
+	coll := db.client.Database(DbName).Collection(SessionsCollectionName)
+	tenantElem := bson.E{Key: mstore.FieldTenantID, Value: sess.TenantID}
+	_, err := coll.InsertOne(ctx, mdoc.DocumentFromStruct(*sess, tenantElem))
 	if err != nil {
 		return errors.Wrap(err, "store: failed to allocate session")
 	}
@@ -299,13 +297,12 @@ func (db *DataStoreMongo) AllocateSession(ctx context.Context, sess *model.Sessi
 func (db *DataStoreMongo) DeleteSession(
 	ctx context.Context, sessionID string,
 ) (*model.Session, error) {
-	dbname := mstore.DbFromContext(ctx, DbName)
-	collSess := db.client.Database(dbname).
+	collSess := db.client.Database(DbName).
 		Collection(SessionsCollectionName)
 
 	sess := new(model.Session)
 	err := collSess.FindOneAndDelete(
-		ctx, bson.D{{Key: "_id", Value: sessionID}},
+		ctx, mstore.WithTenantID(ctx, bson.D{{Key: dbFieldID, Value: sessionID}}),
 	).Decode(sess)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -326,12 +323,12 @@ func (db *DataStoreMongo) GetSession(
 	sessionID string,
 ) (*model.Session, error) {
 	collSess := db.client.
-		Database(mstore.DbFromContext(ctx, DbName)).
+		Database(DbName).
 		Collection(SessionsCollectionName)
 
 	session := &model.Session{}
 	err := collSess.
-		FindOne(ctx, bson.M{"_id": sessionID}).
+		FindOne(ctx, mstore.WithTenantID(ctx, bson.M{dbFieldID: sessionID})).
 		Decode(session)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -386,10 +383,9 @@ func (db *DataStoreMongo) WriteSessionRecords(ctx context.Context,
 	sessionID string,
 	w io.Writer) error {
 	l := log.FromContext(ctx)
-	dbname := mstore.DbFromContext(ctx, DbName)
-	collRecording := db.client.Database(dbname).
+	collRecording := db.client.Database(DbName).
 		Collection(RecordingsCollectionName)
-	collControl := db.client.Database(dbname).
+	collControl := db.client.Database(DbName).
 		Collection(ControlCollectionName)
 
 	findOptions := mopts.Find()
@@ -398,9 +394,9 @@ func (db *DataStoreMongo) WriteSessionRecords(ctx context.Context,
 	}
 	findOptions.SetSort(sortField)
 	recordingsCursor, err := collRecording.Find(ctx,
-		bson.M{
+		mstore.WithTenantID(ctx, bson.M{
 			dbFieldSessionID: sessionID,
-		},
+		}),
 		findOptions,
 	)
 	if err != nil {
@@ -409,9 +405,9 @@ func (db *DataStoreMongo) WriteSessionRecords(ctx context.Context,
 	defer recordingsCursor.Close(ctx)
 
 	controlCursor, err := collControl.Find(ctx,
-		bson.M{
+		mstore.WithTenantID(ctx, bson.M{
 			dbFieldSessionID: sessionID,
-		},
+		}),
 		findOptions,
 	)
 	if err != nil {
@@ -533,9 +529,7 @@ func (db *DataStoreMongo) WriteSessionRecords(ctx context.Context,
 func (db *DataStoreMongo) InsertSessionRecording(ctx context.Context,
 	sessionID string,
 	sessionBytes []byte) error {
-	dbname := mstore.DbFromContext(ctx, DbName)
-	coll := db.client.Database(dbname).
-		Collection(RecordingsCollectionName)
+	coll := db.client.Database(DbName).Collection(RecordingsCollectionName)
 
 	now := clock.Now().UTC()
 	recording := model.Recording{
@@ -546,7 +540,7 @@ func (db *DataStoreMongo) InsertSessionRecording(ctx context.Context,
 		ExpireTs:  now.Add(db.recordingExpire),
 	}
 	_, err := coll.InsertOne(ctx,
-		&recording,
+		mstore.WithTenantID(ctx, &recording),
 	)
 	return err
 }
@@ -555,8 +549,7 @@ func (db *DataStoreMongo) InsertSessionRecording(ctx context.Context,
 func (db *DataStoreMongo) InsertControlRecording(ctx context.Context,
 	sessionID string,
 	sessionBytes []byte) error {
-	dbname := mstore.DbFromContext(ctx, DbName)
-	coll := db.client.Database(dbname).
+	coll := db.client.Database(DbName).
 		Collection(ControlCollectionName)
 
 	now := clock.Now().UTC()
@@ -568,7 +561,7 @@ func (db *DataStoreMongo) InsertControlRecording(ctx context.Context,
 		ExpireTs:  now.Add(db.recordingExpire),
 	}
 	_, err := coll.InsertOne(ctx,
-		&recording,
+		mstore.WithTenantID(ctx, &recording),
 	)
 	return err
 }
