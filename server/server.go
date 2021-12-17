@@ -23,7 +23,6 @@ import (
 
 	"github.com/mendersoftware/go-lib-micro/config"
 	"github.com/mendersoftware/go-lib-micro/log"
-	natsio "github.com/nats-io/nats.go"
 	"golang.org/x/sys/unix"
 
 	api "github.com/mendersoftware/deviceconnect/api/http"
@@ -35,13 +34,6 @@ import (
 	"github.com/mendersoftware/deviceconnect/store"
 )
 
-const (
-	// Set reconnect buffer size in bytes (10 MB)
-	reconnectBufSize = 10 * 1024 * 1024
-	// Set reconnect interval to 1 second
-	reconnectWaitTime = 1 * time.Second
-)
-
 // InitAndRun initializes the server and runs it
 func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 	ctx := context.Background()
@@ -49,9 +41,8 @@ func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 	log.Setup(conf.GetBool(dconfig.SettingDebugLog))
 	l := log.FromContext(ctx)
 
-	natsClient, err := nats.NewClient(config.Config.GetString(dconfig.SettingNatsURI),
-		natsio.ReconnectBufSize(reconnectBufSize),
-		natsio.ReconnectWait(reconnectWaitTime),
+	natsClient, err := nats.NewClientWithDefaults(
+		config.Config.GetString(dconfig.SettingNatsURI),
 	)
 	if err != nil {
 		return err

@@ -15,7 +15,20 @@
 package nats
 
 import (
+	"context"
+	"time"
+
+	"github.com/nats-io/nats.go"
 	natsio "github.com/nats-io/nats.go"
+
+	"github.com/mendersoftware/go-lib-micro/log"
+)
+
+const (
+	// Set reconnect buffer size in bytes (10 MB)
+	reconnectBufSize = 10 * 1024 * 1024
+	// Set reconnect interval to 1 second
+	reconnectWaitTime = 1 * time.Second
 )
 
 // Client is the nats client
@@ -34,6 +47,38 @@ func NewClient(url string, opts ...natsio.Option) (Client, error) {
 	return &client{
 		nats: natsClient,
 	}, nil
+}
+
+// NewClient returns a new nats client with default options
+func NewClientWithDefaults(url string) (Client, error) {
+	ctx := context.Background()
+	l := log.FromContext(ctx)
+
+	natsClient, err := NewClient(url,
+		func(o *nats.Options) error {
+			o.AllowReconnect = true
+			o.MaxReconnect = -1
+			o.ReconnectBufSize = reconnectBufSize
+			o.ReconnectWait = reconnectWaitTime
+			o.RetryOnFailedConnect = true
+			o.ClosedCB = func(_ *nats.Conn) {
+				l.Info("nats client closed the connection")
+			}
+			o.DisconnectedErrCB = func(_ *nats.Conn, e error) {
+				if e != nil {
+					l.Warnf("nats client disconnected, err: %v", e)
+				}
+			}
+			o.ReconnectedCB = func(_ *nats.Conn) {
+				l.Warn("nats client reconnected")
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return natsClient, nil
 }
 
 type client struct {
