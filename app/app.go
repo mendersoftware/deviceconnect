@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -39,7 +39,6 @@ var (
 //go:generate ../utils/mockgen.sh
 type App interface {
 	HealthCheck(ctx context.Context) error
-	ProvisionTenant(ctx context.Context, tenant *model.Tenant) error
 	ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error
 	GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error)
 	DeleteDevice(ctx context.Context, tenantID, deviceID string) error
@@ -86,11 +85,6 @@ func New(ds store.DataStore, inv inventory.Client, wf workflows.Client, config .
 // HealthCheck performs a health check and returns an error if it fails
 func (a *app) HealthCheck(ctx context.Context) error {
 	return a.store.Ping(ctx)
-}
-
-// ProvisionTenant provisions a new tenant
-func (a *app) ProvisionTenant(ctx context.Context, tenant *model.Tenant) error {
-	return a.store.ProvisionTenant(ctx, tenant.TenantID)
 }
 
 // ProvisionDevice provisions a new tenant

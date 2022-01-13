@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -47,27 +47,6 @@ func TestHealthCheck(t *testing.T) {
 
 	ctx := context.Background()
 	res := app.HealthCheck(ctx)
-	assert.Equal(t, err, res)
-
-	store.AssertExpectations(t)
-}
-
-func TestProvisionTenant(t *testing.T) {
-	err := errors.New("error")
-	const tenantID = "1234"
-
-	store := &store_mocks.DataStore{}
-	store.On("ProvisionTenant",
-		mock.MatchedBy(func(ctx context.Context) bool {
-			return true
-		}),
-		tenantID,
-	).Return(err)
-
-	app := New(store, nil, nil)
-
-	ctx := context.Background()
-	res := app.ProvisionTenant(ctx, &model.Tenant{TenantID: tenantID})
 	assert.Equal(t, err, res)
 
 	store.AssertExpectations(t)

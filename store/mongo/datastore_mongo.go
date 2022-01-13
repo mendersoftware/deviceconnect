@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -185,11 +185,6 @@ func NewDataStoreWithClient(client *mongo.Client, expire time.Duration) store.Da
 func (db *DataStoreMongo) Ping(ctx context.Context) error {
 	res := db.client.Database(DbName).RunCommand(ctx, bson.M{"ping": 1})
 	return res.Err()
-}
-
-// ProvisionTenant provisions a new tenant
-func (db *DataStoreMongo) ProvisionTenant(ctx context.Context, tenantID string) error {
-	return Migrate(ctx, DbName, DbVersion, db.client, true)
 }
 
 // ProvisionDevice provisions a new device
