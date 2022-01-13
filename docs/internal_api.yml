@@ -52,25 +52,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /tenants:
-    post:
-      tags:
-        - Internal API
-      operationId: Provision tenant
-      summary: Initialize internal state for a new tenant
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NewTenant'
-      responses:
-        201:
-          description: Tenant initialized successfully.
-        400:
-          $ref: '#/components/responses/InvalidRequestError'
-        500:
-          $ref: '#/components/responses/InternalServerError'
-
   /tenants/{tenantId}/devices:
     post:
       tags:

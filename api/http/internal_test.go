@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -30,75 +30,6 @@ import (
 	nats_mocks "github.com/mendersoftware/deviceconnect/client/nats/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 )
-
-func TestProvision(t *testing.T) {
-	testCases := []struct {
-		Name               string
-		TenantID           string
-		Tenant             string
-		ProvisionTenantErr error
-		HTTPStatus         int
-	}{
-		{
-			Name:       "ok",
-			TenantID:   "1234",
-			Tenant:     `{"tenant_id": "1234"}`,
-			HTTPStatus: http.StatusCreated,
-		},
-		{
-			Name:       "ko, empty payload",
-			Tenant:     ``,
-			HTTPStatus: http.StatusBadRequest,
-		},
-		{
-			Name:       "ko, bad payload",
-			Tenant:     `...`,
-			HTTPStatus: http.StatusBadRequest,
-		},
-		{
-			Name:       "ko, empty tenant ID",
-			Tenant:     `{"tenant_id": ""}`,
-			HTTPStatus: http.StatusBadRequest,
-		},
-		{
-			Name:               "ko, error",
-			TenantID:           "1234",
-			Tenant:             `{"tenant_id": "1234"}`,
-			ProvisionTenantErr: errors.New("error"),
-			HTTPStatus:         http.StatusInternalServerError,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.Name, func(t *testing.T) {
-			deviceConnectApp := &app_mocks.App{}
-			if tc.TenantID != "" {
-				deviceConnectApp.On("ProvisionTenant",
-					mock.MatchedBy(func(_ context.Context) bool {
-						return true
-					}),
-					&model.Tenant{TenantID: tc.TenantID},
-				).Return(tc.ProvisionTenantErr)
-			}
-
-			router, _ := NewRouter(deviceConnectApp, nil)
-
-			req, err := http.NewRequest("POST", APIURLInternalTenants, strings.NewReader(tc.Tenant))
-			if !assert.NoError(t, err) {
-				t.FailNow()
-			}
-
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-			assert.Equal(t, tc.HTTPStatus, w.Code)
-			if tc.HTTPStatus == http.StatusNoContent {
-				assert.Nil(t, w.Body.Bytes())
-			}
-
-			deviceConnectApp.AssertExpectations(t)
-		})
-	}
-}
 
 func TestInternalCheckUpdate(t *testing.T) {
 	testCases := []struct {

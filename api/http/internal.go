@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -15,13 +15,11 @@
 package http
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/mendersoftware/go-lib-micro/ws/menderclient"
-	"github.com/pkg/errors"
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/mendersoftware/deviceconnect/app"
@@ -38,40 +36,6 @@ type InternalController struct {
 // NewInternalController returns a new InternalController
 func NewInternalController(app app.App, nc nats.Client) *InternalController {
 	return &InternalController{app: app, nats: nc}
-}
-
-// Provision responds to POST /tenants
-func (h InternalController) Provision(c *gin.Context) {
-	rawData, err := c.GetRawData()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "bad request",
-		})
-		return
-	}
-
-	tenant := &model.Tenant{}
-	if err = json.Unmarshal(rawData, tenant); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": errors.Wrap(err, "invalid payload").Error(),
-		})
-		return
-	} else if tenant.TenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "tenant_id is empty",
-		})
-		return
-	}
-
-	ctx := c.Request.Context()
-	if err = h.app.ProvisionTenant(ctx, tenant); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": errors.Wrap(err, "error provisioning the tenant").Error(),
-		})
-		return
-	}
-
-	c.Writer.WriteHeader(http.StatusCreated)
 }
 
 func (h InternalController) CheckUpdate(c *gin.Context) {

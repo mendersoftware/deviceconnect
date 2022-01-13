@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -204,20 +204,6 @@ func (_m *DataStore) ProvisionDevice(ctx context.Context, tenantID string, devic
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
 		r0 = rf(ctx, tenantID, deviceID)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
-// ProvisionTenant provides a mock function with given fields: ctx, tenantID
-func (_m *DataStore) ProvisionTenant(ctx context.Context, tenantID string) error {
-	ret := _m.Called(ctx, tenantID)
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string) error); ok {
-		r0 = rf(ctx, tenantID)
 	} else {
 		r0 = ret.Error(0)
 	}

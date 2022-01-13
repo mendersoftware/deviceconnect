@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -19,11 +19,12 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/base64"
+	"testing"
+	"time"
+
 	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/mendersoftware/go-lib-micro/ws/shell"
 	"github.com/vmihailenco/msgpack/v5"
-	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -57,19 +58,6 @@ func TestPing(t *testing.T) {
 
 	ds := NewDataStoreWithClient(db.Client(), time.Minute)
 	err := ds.Ping(ctx)
-	assert.NoError(t, err)
-}
-
-func TestProvisionTenant(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping TestPing in short mode.")
-	}
-	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
-	defer cancel()
-
-	ds := DataStoreMongo{client: db.Client()}
-	defer ds.DropDatabase()
-	err := ds.ProvisionTenant(ctx, "1234")
 	assert.NoError(t, err)
 }
 
