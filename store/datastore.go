@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ import (
 //go:generate ../utils/mockgen.sh
 type DataStore interface {
 	Ping(ctx context.Context) error
-	ProvisionTenant(ctx context.Context, tenantID string) error
 	ProvisionDevice(ctx context.Context, tenantID string, deviceID string) error
 	DeleteDevice(ctx context.Context, tenantID, deviceID string) error
 	GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error)

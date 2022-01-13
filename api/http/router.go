@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -35,7 +35,6 @@ const (
 
 	APIURLInternalAlive     = APIURLInternal + "/alive"
 	APIURLInternalHealth    = APIURLInternal + "/health"
-	APIURLInternalTenants   = APIURLInternal + "/tenants"
 	APIURLInternalDevices   = APIURLInternal + "/tenants/:tenantId/devices"
 	APIURLInternalDevicesID = APIURLInternal +
 		"/tenants/:tenantId/devices/:deviceId"
@@ -75,7 +74,6 @@ func NewRouter(
 	router.GET(APIURLInternalHealth, status.Health)
 
 	internal := NewInternalController(app, natsClient)
-	router.POST(APIURLInternalTenants, internal.Provision)
 	router.POST(APIURLInternalDevicesIDCheckUpdate, internal.CheckUpdate)
 	router.POST(APIURLInternalDevicesIDSendInventory, internal.SendInventory)
 

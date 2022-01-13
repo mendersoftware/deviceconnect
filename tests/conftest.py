@@ -1,4 +1,4 @@
-# Copyright 2021 Northern.tech AS
+# Copyright 2022 Northern.tech AS
 #
 #    Licensed under the Apache License, Version 2.0 (the "License");
 #    you may not use this file except in compliance with the License.
@@ -83,8 +83,6 @@ def tenant(tenant_id=None):
     """
     if tenant_id is None:
         tenant_id = str(bson.objectid.ObjectId())
-    client = internal_api.InternalAPIClient()
-    client.provision_tenant(new_tenant=internal_api.NewTenant(tenant_id=tenant_id))
     yield tenant_id
 
 

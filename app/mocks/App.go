@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -190,20 +190,6 @@ func (_m *App) ProvisionDevice(ctx context.Context, tenantID string, device *mod
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, string, *model.Device) error); ok {
 		r0 = rf(ctx, tenantID, device)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
-// ProvisionTenant provides a mock function with given fields: ctx, tenant
-func (_m *App) ProvisionTenant(ctx context.Context, tenant *model.Tenant) error {
-	ret := _m.Called(ctx, tenant)
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, *model.Tenant) error); ok {
-		r0 = rf(ctx, tenant)
 	} else {
 		r0 = ret.Error(0)
 	}
