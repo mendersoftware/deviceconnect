@@ -1,4 +1,4 @@
-// Copyright 2013-2020 The NATS Authors
+// Copyright 2013-2022 The NATS Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -1422,7 +1422,8 @@ func (s *Server) addRoute(c *client, info *Info) (bool, bool) {
 		s.remotes[id] = c
 		// check to be consistent and future proof. but will be same domain
 		if s.sameDomain(info.Domain) {
-			s.nodeToInfo.Store(c.route.hash, nodeInfo{c.route.remoteName, s.info.Cluster, info.Domain, id, false, info.JetStream})
+			s.nodeToInfo.Store(c.route.hash,
+				nodeInfo{c.route.remoteName, s.info.Version, s.info.Cluster, info.Domain, id, nil, nil, false, info.JetStream})
 		}
 		c.mu.Lock()
 		c.route.connectURLs = info.ClientConnectURLs
@@ -1461,8 +1462,8 @@ func (s *Server) addRoute(c *client, info *Info) (bool, bool) {
 		// Since this duplicate route is going to be removed, make sure we clear
 		// c.route.leafnodeURL, otherwise, when processing the disconnect, this
 		// would cause the leafnode URL for that remote server to be removed
-		// from our list.
-		c.route.leafnodeURL = _EMPTY_
+		// from our list. Same for gateway...
+		c.route.leafnodeURL, c.route.gatewayURL = _EMPTY_, _EMPTY_
 		// Same for the route hash otherwise it would be removed from s.routesByHash.
 		c.route.hash, c.route.idHash = _EMPTY_, _EMPTY_
 		c.mu.Unlock()
