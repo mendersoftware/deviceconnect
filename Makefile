@@ -37,9 +37,8 @@ $(BINFILE): $(SRCFILES)
 	$(GO) build -o $@ .
 
 $(BINFILE).test: $(GOFILES)
-	go test -c -o $(BINFILE).test \
-		-cover -covermode atomic \
-		-coverpkg $(PACKAGES)
+	go test -c -o $(BINFILE).test -tags main \
+		-cover -covermode atomic -coverpkg $(PACKAGES)
 
 $(COVERFILE): $(GOFILES)
 	$(GO) test -cover -covermode=atomic -coverprofile=$@ ${TEST_FLAGS} ./...
@@ -70,26 +69,28 @@ docker: bin/deviceconnect.docker
 .PHONY: docker-test
 docker-test: bin/deviceconnect.acceptance.docker
 
-.PHONY: acceptance-tests
-acceptance-tests: docker-test docs
+.PHONY: acceptance-tests-run
+acceptance-tests-run: docker-test docs
 	docker-compose \
-		-f tests/docker-compose-acceptance.yml \
 		-p acceptance \
-		up -d
-	docker attach acceptance_acceptance_1
+		-f tests/docker-compose.yml \
+		run tester
 
 .PHONY: acceptance-tests-logs
-acceptance-tests-logs:
-	for service in $(shell docker-compose -f tests/docker-compose-acceptance.yml -p acceptance ps -a --services); do \
-		docker-compose -p acceptance -f tests/docker-compose-acceptance.yml \
+acceptance-tests-logs: acceptance-tests-run
+	for service in $(shell docker-compose -f tests/docker-compose.yml -p acceptance ps -a --services); do \
+		docker-compose -p acceptance -f tests/docker-compose.yml \
 				logs --no-color $$service > "tests/acceptance.$${service}.logs"; \
 	done
 
 .PHONY: acceptance-tests-down
 acceptance-tests-down:
 	docker-compose \
-		-f tests/docker-compose-acceptance.yml \
-		-p acceptance down
+		-f tests/docker-compose.yml \
+		-p acceptance down --remove-orphans
+
+.PHONY: acceptance-tests
+acceptance-tests: acceptance-tests-logs acceptance-tests-down
 
 
 .PHONY: fmt
