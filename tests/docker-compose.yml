@@ -1,17 +1,26 @@
 version: '2.1'
 services:
 
-    acceptance:
-        image: mendersoftware/mender-test-containers:acceptance-testing
+    tester:
+        build:
+          context: "."
+          dockerfile: Dockerfile
+        image: mendersoftware/mender-test-containers:acceptance-testing-deviceconnect
         networks:
             - mender
         volumes:
             - ".:/testing"
+            - "/var/run/docker.sock:/var/run/docker.sock"
         depends_on:
             - mender-deviceconnect
+            - mender-mongo
+            - mender-nats
             - mmock
 
     mender-deviceconnect:
+      build:
+        dockerfile: "Dockerfile.acceptance"
+        context: ".."
       image: mendersoftware/deviceconnect:prtest
       networks:
         mender:
@@ -19,6 +28,7 @@ services:
             - mender-deviceconnect
       volumes:
         - ".:/testing"
+      working_dir: /testing
       depends_on:
         - mender-mongo
         - mender-nats

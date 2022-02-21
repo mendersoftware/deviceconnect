@@ -13,11 +13,9 @@ FROM alpine:3.15.0
 RUN apk add --no-cache ca-certificates xz
 RUN mkdir -p /etc/deviceconnect
 COPY ./config.yaml /etc/deviceconnect
-COPY --from=builder /go/src/github.com/mendersoftware/deviceconnect/bin/deviceconnect.test /usr/bin
-ENTRYPOINT ["/usr/bin/deviceconnect.test", \
-        "-test.coverprofile=/testing/coverage-acceptance.txt", \
-        "-acceptance-testing", \
-        "--", "--config=/etc/deviceconnect/config.yaml", \
+COPY --from=builder /go/src/github.com/mendersoftware/deviceconnect/bin/deviceconnect.test /usr/bin/deviceconnect
+ENTRYPOINT ["/usr/bin/deviceconnect", \
+        "--config=/etc/deviceconnect/config.yaml", \
         "server", "--automigrate"]
 
 EXPOSE 8080
