@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -24,8 +24,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,7 +33,6 @@ import (
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/mendersoftware/go-lib-micro/ws/shell"
-	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -45,34 +44,6 @@ import (
 	nats_mocks "github.com/mendersoftware/deviceconnect/client/nats/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 )
-
-var natsPort int32 = 14420
-
-func NewNATSTestClient(t *testing.T) *nats.Conn {
-	port := atomic.AddInt32(&natsPort, 1)
-	opts := &server.Options{
-		Port: int(port),
-	}
-	srv, err := server.NewServer(opts)
-	if err != nil {
-		panic(err)
-	}
-	go srv.Start()
-	t.Cleanup(srv.Shutdown)
-
-	// Spinlock until go routine is listening
-	for i := 0; srv.Addr() == nil && i < 1000; i++ {
-		time.Sleep(time.Millisecond)
-	}
-	if srv.Addr() == nil {
-		panic("failed to setup NATS test server")
-	}
-	client, err := nats.Connect("nats://" + srv.Addr().String())
-	if err != nil {
-		panic(err)
-	}
-	return client
-}
 
 func GenerateJWT(id identity.Identity) string {
 	JWT := base64.RawURLEncoding.EncodeToString(
@@ -195,6 +166,11 @@ func TestManagementGetDevice(t *testing.T) {
 }
 
 func TestManagementConnect(t *testing.T) {
+	var natsURI string
+	if natsURI = os.Getenv("DEVICECONNECT_NATS_URI"); natsURI == "" {
+		t.Skip("Requires env variable DEVICECONNECT_NATS_URI")
+		return
+	}
 	prevPongWait := pongWait
 	prevWriteWait := writeWait
 	defer func() {
@@ -228,7 +204,10 @@ func TestManagementConnect(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			app := &app_mocks.App{}
 			defer app.AssertExpectations(t)
-			natsClient := NewNATSTestClient(t)
+			natsClient, err := nats.Connect(natsURI)
+			if err != nil {
+				panic(err)
+			}
 			router, _ := NewRouter(app, natsClient)
 
 			headers := http.Header{}
@@ -543,6 +522,11 @@ func TestManagementConnect(t *testing.T) {
 }
 
 func TestManagementPlayback(t *testing.T) {
+	var natsURI string
+	if natsURI = os.Getenv("DEVICECONNECT_NATS_URI"); natsURI == "" {
+		t.Skip("Requires env variable DEVICECONNECT_NATS_URI")
+		return
+	}
 	testCases := []struct {
 		Name            string
 		SessionID       string
@@ -593,7 +577,10 @@ func TestManagementPlayback(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			app := &app_mocks.App{}
 			defer app.AssertExpectations(t)
-			natsClient := NewNATSTestClient(t)
+			natsClient, err := nats.Connect(natsURI)
+			if err != nil {
+				panic(err)
+			}
 			router, _ := NewRouter(app, natsClient)
 
 			headers := http.Header{}
@@ -678,6 +665,11 @@ func TestManagementPlayback(t *testing.T) {
 }
 
 func TestManagementConnectFailures(t *testing.T) {
+	var natsURI string
+	if natsURI = os.Getenv("DEVICECONNECT_NATS_URI"); natsURI == "" {
+		t.Skip("Requires env variable DEVICECONNECT_NATS_URI")
+		return
+	}
 	testCases := []struct {
 		Name                       string
 		DeviceID                   string
@@ -779,7 +771,10 @@ func TestManagementConnectFailures(t *testing.T) {
 				}
 			}
 
-			natsClient := NewNATSTestClient(t)
+			natsClient, err := nats.Connect(natsURI)
+			if err != nil {
+				panic(err)
+			}
 			router, _ := NewRouter(app, natsClient)
 			url := strings.Replace(APIURLManagementDeviceConnect, ":deviceId", tc.DeviceID, 1)
 			req, err := http.NewRequest("GET", "http://localhost"+url, nil)
@@ -807,11 +802,19 @@ func TestManagementConnectFailures(t *testing.T) {
 }
 
 func TestManagementSessionLimit(t *testing.T) {
+	var natsURI string
+	if natsURI = os.Getenv("DEVICECONNECT_NATS_URI"); natsURI == "" {
+		t.Skip("Requires env variable DEVICECONNECT_NATS_URI")
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	mapp := &app_mocks.App{}
-	natsClient := NewNATSTestClient(t)
+	natsClient, err := nats.Connect(natsURI)
+	if err != nil {
+		panic(err)
+	}
 	router, _ := NewRouter(mapp, natsClient)
 
 	sid := "test_session_id"

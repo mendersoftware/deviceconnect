@@ -8,7 +8,6 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/mendersoftware/go-lib-micro v0.0.0-20220304124258-d8414885f1c3
-	github.com/nats-io/nats-server/v2 v2.4.0
 	github.com/nats-io/nats.go v1.13.0
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.7.0

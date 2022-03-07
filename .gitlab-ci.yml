@@ -33,8 +33,11 @@ test:unit:
   services:
     - name: mongo:4.4
       alias: mender-mongo
+    - name: nats:2.7.3-scratch
+      alias: mender-nats
   variables:
     DEVICECONNECT_MONGO_URL: "mongodb://mender-mongo"
+    DEVICECONNECT_NATS_URI: "nats://mender-nats"
 
 test:acceptance:
   stage: test

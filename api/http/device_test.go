@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,15 @@ import (
 )
 
 func TestDeviceConnect(t *testing.T) {
+	var natsURI string
+	if natsURI = os.Getenv("DEVICECONNECT_NATS_URI"); natsURI == "" {
+		t.Skip("Requires env variable DEVICECONNECT_NATS_URI")
+		return
+	}
+	natsClient, err := nats.Connect(natsURI)
+	if err != nil {
+		panic(err)
+	}
 	// temporarily speed things up a bit
 	prevPongWait := pongWait
 	prevWriteWait := writeWait
@@ -72,7 +82,6 @@ func TestDeviceConnect(t *testing.T) {
 		model.DeviceStatusDisconnected,
 	).Return(nil)
 
-	natsClient := NewNATSTestClient(t)
 	router, _ := NewRouter(app, natsClient)
 	s := httptest.NewServer(router)
 	defer s.Close()
@@ -301,6 +310,11 @@ func TestDeviceConnect(t *testing.T) {
 }
 
 func TestDeviceConnectFailures(t *testing.T) {
+	var natsURI string
+	if natsURI = os.Getenv("DEVICECONNECT_NATS_URI"); natsURI == "" {
+		t.Skip("Requires env variable DEVICECONNECT_NATS_URI")
+		return
+	}
 	JWT := GenerateJWT(identity.Identity{
 		Subject:  "00000000-0000-0000-0000-000000000000",
 		Tenant:   "000000000000000000000000",
@@ -347,9 +361,15 @@ func TestDeviceConnectFailures(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			var natsClient *nats.Conn
+			var (
+				err        error
+				natsClient *nats.Conn
+			)
 			if tc.WithNATS {
-				natsClient = NewNATSTestClient(t)
+				natsClient, err = nats.Connect(natsURI)
+				if err != nil {
+					panic(err)
+				}
 			}
 
 			router, _ := NewRouter(nil, natsClient)
