@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -30,6 +31,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
+	"github.com/mendersoftware/go-lib-micro/requestid"
 	"github.com/mendersoftware/go-lib-micro/rest.utils"
 	"github.com/mendersoftware/go-lib-micro/ws"
 	"github.com/mendersoftware/go-lib-micro/ws/menderclient"
@@ -73,6 +75,21 @@ const channelSize = 25 // TODO make configurable
 const (
 	PropertyUserID = "user_id"
 )
+
+var wsUpgrader = websocket.Upgrader{
+	Subprotocols: []string{"protomsg/msgpack"},
+	CheckOrigin:  allowAllOrigins,
+	Error: func(
+		w http.ResponseWriter, r *http.Request, s int, e error,
+	) {
+		w.WriteHeader(s)
+		enc := json.NewEncoder(w)
+		_ = enc.Encode(rest.Error{
+			Err:       e.Error(),
+			RequestID: requestid.FromContext(r.Context())},
+		)
+	},
+}
 
 // ManagementController container for end-points
 type ManagementController struct {
@@ -187,18 +204,7 @@ func (h ManagementController) Connect(c *gin.Context) {
 	defer sub.Unsubscribe()
 
 	// upgrade get request to websocket protocol
-	upgrader := websocket.Upgrader{
-		Subprotocols: []string{"protomsg/msgpack"},
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-		Error: func(
-			w http.ResponseWriter, r *http.Request, s int, e error) {
-			rest.RenderError(c, s, e)
-		},
-	}
-
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
 		l.Error(err)
@@ -244,18 +250,7 @@ func (h ManagementController) Playback(c *gin.Context) {
 	l.Infof("Playing back the session session_id=%s", sessionID)
 
 	// upgrade get request to websocket protocol
-	upgrader := websocket.Upgrader{
-		Subprotocols: []string{"protomsg/msgpack"},
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-		Error: func(
-			w http.ResponseWriter, r *http.Request, s int, e error) {
-			rest.RenderError(c, s, e)
-		},
-	}
-
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		err = errors.Wrap(err, "unable to upgrade the request to websocket protocol")
 		l.Error(err)

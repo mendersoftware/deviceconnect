@@ -62,3 +62,7 @@ mongo_dbname: deviceconnect
 ## Overwrite with environment variable DEVICECONNECT_ENABLE_AUDIT
 #
 # enable_audit: false
+
+# ws:
+#   List of CORS allowed origins. The URLs are matched using exact match.
+#   allowed_origins: []

@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -84,6 +84,11 @@ const (
 	// retained in the database.
 	SettingRecordingExpireSec     = "recording_expire_seconds"
 	SettingRecordingExpireDefault = 30 * 24 * 60 * 60
+
+	// SettingWSAllowedOrigin configures the allowed origins to use the websocket APIs.
+	// An empty list will disable cors checks
+	SettingWSAllowedOrigins        = "ws.allowed_origins"
+	SettingWSAllowedOriginsDefault = ""
 )
 
 var (
@@ -101,5 +106,6 @@ var (
 		{Key: SettingWorkflowsURL, Value: SettingWorkflowsURLDefault},
 		{Key: SettingEnableAuditLogs, Value: SettingEnableAuditLogsDefault},
 		{Key: SettingRecordingExpireSec, Value: SettingRecordingExpireDefault},
+		{Key: SettingWSAllowedOrigins, Value: SettingWSAllowedOriginsDefault},
 	}
 )

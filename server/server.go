@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -40,6 +40,11 @@ func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 
 	log.Setup(conf.GetBool(dconfig.SettingDebugLog))
 	l := log.FromContext(ctx)
+
+	allowedOrigin := conf.GetStringSlice(dconfig.SettingWSAllowedOrigins)
+	if allowedOrigin != nil {
+		api.SetAcceptedOrigins(allowedOrigin)
+	}
 
 	natsClient, err := nats.NewClientWithDefaults(
 		config.Config.GetString(dconfig.SettingNatsURI),
