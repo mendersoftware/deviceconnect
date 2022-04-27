@@ -50,6 +50,8 @@ const (
 	APIURLManagementDeviceSendInventory = APIURLManagement + "/devices/:deviceId/send-inventory"
 	APIURLManagementDeviceUpload        = APIURLManagement + "/devices/:deviceId/upload"
 	APIURLManagementPlayback            = APIURLManagement + "/sessions/:sessionId/playback"
+
+	HdrKeyOrigin = "Origin"
 )
 
 // NewRouter returns the gin router
