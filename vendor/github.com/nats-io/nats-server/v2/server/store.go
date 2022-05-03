@@ -156,6 +156,7 @@ type ConsumerStore interface {
 	UpdateAcks(dseq, sseq uint64) error
 	Update(*ConsumerState) error
 	State() (*ConsumerState, error)
+	Type() StorageType
 	Stop() error
 	Delete() error
 	StreamDelete() error
@@ -437,4 +438,11 @@ func (p DeliverPolicy) MarshalJSON() ([]byte, error) {
 
 func isOutOfSpaceErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "no space left")
+}
+
+// For when our upper layer catchup detects its missing messages from the beginning of the stream.
+var errFirstSequenceMismatch = errors.New("first sequence mismatch")
+
+func isClusterResetErr(err error) bool {
+	return err == errLastSeqMismatch || err == ErrStoreEOF || err == errFirstSequenceMismatch
 }
