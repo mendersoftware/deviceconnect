@@ -95,6 +95,9 @@ const (
 	// JSConsumerHBRequiresPushErr consumer idle heartbeat requires a push based consumer
 	JSConsumerHBRequiresPushErr ErrorIdentifier = 10088
 
+	// JSConsumerInvalidDeliverSubject invalid push consumer deliver subject
+	JSConsumerInvalidDeliverSubject ErrorIdentifier = 10112
+
 	// JSConsumerInvalidPolicyErrF Generic delivery policy error ({err})
 	JSConsumerInvalidPolicyErrF ErrorIdentifier = 10094
 
@@ -103,6 +106,12 @@ const (
 
 	// JSConsumerMaxPendingAckPolicyRequiredErr consumer requires ack policy for max ack pending
 	JSConsumerMaxPendingAckPolicyRequiredErr ErrorIdentifier = 10082
+
+	// JSConsumerMaxRequestBatchNegativeErr consumer max request batch needs to be > 0
+	JSConsumerMaxRequestBatchNegativeErr ErrorIdentifier = 10114
+
+	// JSConsumerMaxRequestExpiresToSmall consumer max request expires needs to be >= 1ms
+	JSConsumerMaxRequestExpiresToSmall ErrorIdentifier = 10115
 
 	// JSConsumerMaxWaitingNegativeErr consumer max waiting needs to be positive
 	JSConsumerMaxWaitingNegativeErr ErrorIdentifier = 10087
@@ -122,7 +131,7 @@ const (
 	// JSConsumerPullNotDurableErr consumer in pull mode requires a durable name
 	JSConsumerPullNotDurableErr ErrorIdentifier = 10085
 
-	// JSConsumerPullRequiresAckErr consumer in pull mode requires explicit ack policy
+	// JSConsumerPullRequiresAckErr consumer in pull mode requires ack policy
 	JSConsumerPullRequiresAckErr ErrorIdentifier = 10084
 
 	// JSConsumerPullWithRateLimitErr consumer in pull mode can not have rate limit set
@@ -151,6 +160,9 @@ const (
 
 	// JSConsumerWQRequiresExplicitAckErr workqueue stream requires explicit ack
 	JSConsumerWQRequiresExplicitAckErr ErrorIdentifier = 10098
+
+	// JSConsumerWithFlowControlNeedsHeartbeats consumer with flow control also needs heartbeats
+	JSConsumerWithFlowControlNeedsHeartbeats ErrorIdentifier = 10108
 
 	// JSInsufficientResourcesErr insufficient resources
 	JSInsufficientResourcesErr ErrorIdentifier = 10023
@@ -242,6 +254,9 @@ const (
 	// JSStreamGeneralErrorF General stream failure string ({err})
 	JSStreamGeneralErrorF ErrorIdentifier = 10051
 
+	// JSStreamHeaderExceedsMaximumErr header size exceeds maximum allowed of 64k
+	JSStreamHeaderExceedsMaximumErr ErrorIdentifier = 10097
+
 	// JSStreamInvalidConfigF Stream configuration validation error string ({err})
 	JSStreamInvalidConfigF ErrorIdentifier = 10052
 
@@ -253,6 +268,9 @@ const (
 
 	// JSStreamLimitsErrF General stream limits exceeded error string ({err})
 	JSStreamLimitsErrF ErrorIdentifier = 10053
+
+	// JSStreamMaxBytesRequired account requires a stream config to have max bytes set
+	JSStreamMaxBytesRequired ErrorIdentifier = 10113
 
 	// JSStreamMessageExceedsMaximumErr message size exceeds maximum allowed
 	JSStreamMessageExceedsMaximumErr ErrorIdentifier = 10054
@@ -275,6 +293,9 @@ const (
 	// JSStreamNotMatchErr expected stream does not match
 	JSStreamNotMatchErr ErrorIdentifier = 10060
 
+	// JSStreamPurgeFailedF Generic stream purge failure error string ({err})
+	JSStreamPurgeFailedF ErrorIdentifier = 10110
+
 	// JSStreamReplicasNotSupportedErr replicas > 1 not supported in non-clustered mode
 	JSStreamReplicasNotSupportedErr ErrorIdentifier = 10074
 
@@ -283,6 +304,12 @@ const (
 
 	// JSStreamRestoreErrF restore failed: {err}
 	JSStreamRestoreErrF ErrorIdentifier = 10062
+
+	// JSStreamRollupFailedF Generic stream rollup failure error string ({err})
+	JSStreamRollupFailedF ErrorIdentifier = 10111
+
+	// JSStreamSealedErr invalid operation on sealed stream
+	JSStreamSealedErr ErrorIdentifier = 10109
 
 	// JSStreamSequenceNotMatchErr expected stream sequence does not match
 	JSStreamSequenceNotMatchErr ErrorIdentifier = 10063
@@ -353,16 +380,19 @@ var (
 		JSConsumerFCRequiresPushErr:                {Code: 400, ErrCode: 10089, Description: "consumer flow control requires a push based consumer"},
 		JSConsumerFilterNotSubsetErr:               {Code: 400, ErrCode: 10093, Description: "consumer filter subject is not a valid subset of the interest subjects"},
 		JSConsumerHBRequiresPushErr:                {Code: 400, ErrCode: 10088, Description: "consumer idle heartbeat requires a push based consumer"},
+		JSConsumerInvalidDeliverSubject:            {Code: 400, ErrCode: 10112, Description: "invalid push consumer deliver subject"},
 		JSConsumerInvalidPolicyErrF:                {Code: 400, ErrCode: 10094, Description: "{err}"},
 		JSConsumerInvalidSamplingErrF:              {Code: 400, ErrCode: 10095, Description: "failed to parse consumer sampling configuration: {err}"},
 		JSConsumerMaxPendingAckPolicyRequiredErr:   {Code: 400, ErrCode: 10082, Description: "consumer requires ack policy for max ack pending"},
+		JSConsumerMaxRequestBatchNegativeErr:       {Code: 400, ErrCode: 10114, Description: "consumer max request batch needs to be > 0"},
+		JSConsumerMaxRequestExpiresToSmall:         {Code: 400, ErrCode: 10115, Description: "consumer max request expires needs to be >= 1ms"},
 		JSConsumerMaxWaitingNegativeErr:            {Code: 400, ErrCode: 10087, Description: "consumer max waiting needs to be positive"},
 		JSConsumerNameExistErr:                     {Code: 400, ErrCode: 10013, Description: "consumer name already in use"},
 		JSConsumerNameTooLongErrF:                  {Code: 400, ErrCode: 10102, Description: "consumer name is too long, maximum allowed is {max}"},
 		JSConsumerNotFoundErr:                      {Code: 404, ErrCode: 10014, Description: "consumer not found"},
 		JSConsumerOnMappedErr:                      {Code: 400, ErrCode: 10092, Description: "consumer direct on a mapped consumer"},
 		JSConsumerPullNotDurableErr:                {Code: 400, ErrCode: 10085, Description: "consumer in pull mode requires a durable name"},
-		JSConsumerPullRequiresAckErr:               {Code: 400, ErrCode: 10084, Description: "consumer in pull mode requires explicit ack policy"},
+		JSConsumerPullRequiresAckErr:               {Code: 400, ErrCode: 10084, Description: "consumer in pull mode requires ack policy"},
 		JSConsumerPullWithRateLimitErr:             {Code: 400, ErrCode: 10086, Description: "consumer in pull mode can not have rate limit set"},
 		JSConsumerPushMaxWaitingErr:                {Code: 400, ErrCode: 10080, Description: "consumer in push mode can not set max waiting"},
 		JSConsumerReplacementWithDifferentNameErr:  {Code: 400, ErrCode: 10106, Description: "consumer replacement durable config not the same"},
@@ -372,6 +402,7 @@ var (
 		JSConsumerWQConsumerNotUniqueErr:           {Code: 400, ErrCode: 10100, Description: "filtered consumer not unique on workqueue stream"},
 		JSConsumerWQMultipleUnfilteredErr:          {Code: 400, ErrCode: 10099, Description: "multiple non-filtered consumers not allowed on workqueue stream"},
 		JSConsumerWQRequiresExplicitAckErr:         {Code: 400, ErrCode: 10098, Description: "workqueue stream requires explicit ack"},
+		JSConsumerWithFlowControlNeedsHeartbeats:   {Code: 400, ErrCode: 10108, Description: "consumer with flow control also needs heartbeats"},
 		JSInsufficientResourcesErr:                 {Code: 503, ErrCode: 10023, Description: "insufficient resources"},
 		JSInvalidJSONErr:                           {Code: 400, ErrCode: 10025, Description: "invalid JSON"},
 		JSMaximumConsumersLimitErr:                 {Code: 400, ErrCode: 10026, Description: "maximum consumers limit reached"},
@@ -402,10 +433,12 @@ var (
 		JSStreamExternalApiOverlapErrF:             {Code: 400, ErrCode: 10021, Description: "stream external api prefix {prefix} must not overlap with {subject}"},
 		JSStreamExternalDelPrefixOverlapsErrF:      {Code: 400, ErrCode: 10022, Description: "stream external delivery prefix {prefix} overlaps with stream subject {subject}"},
 		JSStreamGeneralErrorF:                      {Code: 500, ErrCode: 10051, Description: "{err}"},
+		JSStreamHeaderExceedsMaximumErr:            {Code: 400, ErrCode: 10097, Description: "header size exceeds maximum allowed of 64k"},
 		JSStreamInvalidConfigF:                     {Code: 500, ErrCode: 10052, Description: "{err}"},
 		JSStreamInvalidErr:                         {Code: 500, ErrCode: 10096, Description: "stream not valid"},
 		JSStreamInvalidExternalDeliverySubjErrF:    {Code: 400, ErrCode: 10024, Description: "stream external delivery prefix {prefix} must not contain wildcards"},
 		JSStreamLimitsErrF:                         {Code: 500, ErrCode: 10053, Description: "{err}"},
+		JSStreamMaxBytesRequired:                   {Code: 400, ErrCode: 10113, Description: "account requires a stream config to have max bytes set"},
 		JSStreamMessageExceedsMaximumErr:           {Code: 400, ErrCode: 10054, Description: "message size exceeds maximum allowed"},
 		JSStreamMirrorNotUpdatableErr:              {Code: 400, ErrCode: 10055, Description: "Mirror configuration can not be updated"},
 		JSStreamMismatchErr:                        {Code: 400, ErrCode: 10056, Description: "stream name in subject does not match request"},
@@ -413,9 +446,12 @@ var (
 		JSStreamNameExistErr:                       {Code: 400, ErrCode: 10058, Description: "stream name already in use"},
 		JSStreamNotFoundErr:                        {Code: 404, ErrCode: 10059, Description: "stream not found"},
 		JSStreamNotMatchErr:                        {Code: 400, ErrCode: 10060, Description: "expected stream does not match"},
+		JSStreamPurgeFailedF:                       {Code: 500, ErrCode: 10110, Description: "{err}"},
 		JSStreamReplicasNotSupportedErr:            {Code: 500, ErrCode: 10074, Description: "replicas > 1 not supported in non-clustered mode"},
 		JSStreamReplicasNotUpdatableErr:            {Code: 400, ErrCode: 10061, Description: "Replicas configuration can not be updated"},
 		JSStreamRestoreErrF:                        {Code: 500, ErrCode: 10062, Description: "restore failed: {err}"},
+		JSStreamRollupFailedF:                      {Code: 500, ErrCode: 10111, Description: "{err}"},
+		JSStreamSealedErr:                          {Code: 400, ErrCode: 10109, Description: "invalid operation on sealed stream"},
 		JSStreamSequenceNotMatchErr:                {Code: 503, ErrCode: 10063, Description: "expected stream sequence does not match"},
 		JSStreamSnapshotErrF:                       {Code: 500, ErrCode: 10064, Description: "snapshot failed: {err}"},
 		JSStreamStoreFailedF:                       {Code: 503, ErrCode: 10077, Description: "{err}"},
@@ -765,6 +801,16 @@ func NewJSConsumerHBRequiresPushError(opts ...ErrorOption) *ApiError {
 	return ApiErrors[JSConsumerHBRequiresPushErr]
 }
 
+// NewJSConsumerInvalidDeliverSubjectError creates a new JSConsumerInvalidDeliverSubject error: "invalid push consumer deliver subject"
+func NewJSConsumerInvalidDeliverSubjectError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSConsumerInvalidDeliverSubject]
+}
+
 // NewJSConsumerInvalidPolicyError creates a new JSConsumerInvalidPolicyErrF error: "{err}"
 func NewJSConsumerInvalidPolicyError(err error, opts ...ErrorOption) *ApiError {
 	eopts := parseOpts(opts)
@@ -805,6 +851,26 @@ func NewJSConsumerMaxPendingAckPolicyRequiredError(opts ...ErrorOption) *ApiErro
 	}
 
 	return ApiErrors[JSConsumerMaxPendingAckPolicyRequiredErr]
+}
+
+// NewJSConsumerMaxRequestBatchNegativeError creates a new JSConsumerMaxRequestBatchNegativeErr error: "consumer max request batch needs to be > 0"
+func NewJSConsumerMaxRequestBatchNegativeError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSConsumerMaxRequestBatchNegativeErr]
+}
+
+// NewJSConsumerMaxRequestExpiresToSmallError creates a new JSConsumerMaxRequestExpiresToSmall error: "consumer max request expires needs to be >= 1ms"
+func NewJSConsumerMaxRequestExpiresToSmallError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSConsumerMaxRequestExpiresToSmall]
 }
 
 // NewJSConsumerMaxWaitingNegativeError creates a new JSConsumerMaxWaitingNegativeErr error: "consumer max waiting needs to be positive"
@@ -873,7 +939,7 @@ func NewJSConsumerPullNotDurableError(opts ...ErrorOption) *ApiError {
 	return ApiErrors[JSConsumerPullNotDurableErr]
 }
 
-// NewJSConsumerPullRequiresAckError creates a new JSConsumerPullRequiresAckErr error: "consumer in pull mode requires explicit ack policy"
+// NewJSConsumerPullRequiresAckError creates a new JSConsumerPullRequiresAckErr error: "consumer in pull mode requires ack policy"
 func NewJSConsumerPullRequiresAckError(opts ...ErrorOption) *ApiError {
 	eopts := parseOpts(opts)
 	if ae, ok := eopts.err.(*ApiError); ok {
@@ -977,6 +1043,16 @@ func NewJSConsumerWQRequiresExplicitAckError(opts ...ErrorOption) *ApiError {
 	}
 
 	return ApiErrors[JSConsumerWQRequiresExplicitAckErr]
+}
+
+// NewJSConsumerWithFlowControlNeedsHeartbeatsError creates a new JSConsumerWithFlowControlNeedsHeartbeats error: "consumer with flow control also needs heartbeats"
+func NewJSConsumerWithFlowControlNeedsHeartbeatsError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSConsumerWithFlowControlNeedsHeartbeats]
 }
 
 // NewJSInsufficientResourcesError creates a new JSInsufficientResourcesErr error: "insufficient resources"
@@ -1345,6 +1421,16 @@ func NewJSStreamGeneralError(err error, opts ...ErrorOption) *ApiError {
 	}
 }
 
+// NewJSStreamHeaderExceedsMaximumError creates a new JSStreamHeaderExceedsMaximumErr error: "header size exceeds maximum allowed of 64k"
+func NewJSStreamHeaderExceedsMaximumError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSStreamHeaderExceedsMaximumErr]
+}
+
 // NewJSStreamInvalidConfigError creates a new JSStreamInvalidConfigF error: "{err}"
 func NewJSStreamInvalidConfigError(err error, opts ...ErrorOption) *ApiError {
 	eopts := parseOpts(opts)
@@ -1401,6 +1487,16 @@ func NewJSStreamLimitsError(err error, opts ...ErrorOption) *ApiError {
 		ErrCode:     e.ErrCode,
 		Description: strings.NewReplacer(args...).Replace(e.Description),
 	}
+}
+
+// NewJSStreamMaxBytesRequiredError creates a new JSStreamMaxBytesRequired error: "account requires a stream config to have max bytes set"
+func NewJSStreamMaxBytesRequiredError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSStreamMaxBytesRequired]
 }
 
 // NewJSStreamMessageExceedsMaximumError creates a new JSStreamMessageExceedsMaximumErr error: "message size exceeds maximum allowed"
@@ -1479,6 +1575,22 @@ func NewJSStreamNotMatchError(opts ...ErrorOption) *ApiError {
 	return ApiErrors[JSStreamNotMatchErr]
 }
 
+// NewJSStreamPurgeFailedError creates a new JSStreamPurgeFailedF error: "{err}"
+func NewJSStreamPurgeFailedError(err error, opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	e := ApiErrors[JSStreamPurgeFailedF]
+	args := e.toReplacerArgs([]interface{}{"{err}", err})
+	return &ApiError{
+		Code:        e.Code,
+		ErrCode:     e.ErrCode,
+		Description: strings.NewReplacer(args...).Replace(e.Description),
+	}
+}
+
 // NewJSStreamReplicasNotSupportedError creates a new JSStreamReplicasNotSupportedErr error: "replicas > 1 not supported in non-clustered mode"
 func NewJSStreamReplicasNotSupportedError(opts ...ErrorOption) *ApiError {
 	eopts := parseOpts(opts)
@@ -1513,6 +1625,32 @@ func NewJSStreamRestoreError(err error, opts ...ErrorOption) *ApiError {
 		ErrCode:     e.ErrCode,
 		Description: strings.NewReplacer(args...).Replace(e.Description),
 	}
+}
+
+// NewJSStreamRollupFailedError creates a new JSStreamRollupFailedF error: "{err}"
+func NewJSStreamRollupFailedError(err error, opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	e := ApiErrors[JSStreamRollupFailedF]
+	args := e.toReplacerArgs([]interface{}{"{err}", err})
+	return &ApiError{
+		Code:        e.Code,
+		ErrCode:     e.ErrCode,
+		Description: strings.NewReplacer(args...).Replace(e.Description),
+	}
+}
+
+// NewJSStreamSealedError creates a new JSStreamSealedErr error: "invalid operation on sealed stream"
+func NewJSStreamSealedError(opts ...ErrorOption) *ApiError {
+	eopts := parseOpts(opts)
+	if ae, ok := eopts.err.(*ApiError); ok {
+		return ae
+	}
+
+	return ApiErrors[JSStreamSealedErr]
 }
 
 // NewJSStreamSequenceNotMatchError creates a new JSStreamSequenceNotMatchErr error: "expected stream sequence does not match"
