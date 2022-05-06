@@ -143,6 +143,13 @@ type LeafNodeOpts struct {
 	// For solicited connections to other clusters/superclusters.
 	Remotes []*RemoteLeafOpts `json:"remotes,omitempty"`
 
+	// This is the minimum version that is accepted for remote connections.
+	// Note that since the server version in the CONNECT protocol was added
+	// only starting at v2.8.0, any version below that will be rejected
+	// (since empty version string in CONNECT would fail the "version at
+	// least" test).
+	MinVersion string
+
 	// Not exported, for tests.
 	resolver    netResolver
 	dialTimeout time.Duration
@@ -177,56 +184,64 @@ type RemoteLeafOpts struct {
 	tlsConfigOpts *TLSConfigOpts
 }
 
+type JSLimitOpts struct {
+	MaxRequestBatch int
+	MaxAckPending   int
+	MaxHAAssets     int
+	Duplicates      time.Duration
+}
+
 // Options block for nats-server.
 // NOTE: This structure is no longer used for monitoring endpoints
 // and json tags are deprecated and may be removed in the future.
 type Options struct {
-	ConfigFile            string            `json:"-"`
-	ServerName            string            `json:"server_name"`
-	Host                  string            `json:"addr"`
-	Port                  int               `json:"port"`
-	ClientAdvertise       string            `json:"-"`
-	Trace                 bool              `json:"-"`
-	Debug                 bool              `json:"-"`
-	TraceVerbose          bool              `json:"-"`
-	NoLog                 bool              `json:"-"`
-	NoSigs                bool              `json:"-"`
-	NoSublistCache        bool              `json:"-"`
-	NoHeaderSupport       bool              `json:"-"`
-	DisableShortFirstPing bool              `json:"-"`
-	Logtime               bool              `json:"-"`
-	MaxConn               int               `json:"max_connections"`
-	MaxSubs               int               `json:"max_subscriptions,omitempty"`
-	MaxSubTokens          uint8             `json:"-"`
-	Nkeys                 []*NkeyUser       `json:"-"`
-	Users                 []*User           `json:"-"`
-	Accounts              []*Account        `json:"-"`
-	NoAuthUser            string            `json:"-"`
-	SystemAccount         string            `json:"-"`
-	NoSystemAccount       bool              `json:"-"`
-	AllowNewAccounts      bool              `json:"-"`
-	Username              string            `json:"-"`
-	Password              string            `json:"-"`
-	Authorization         string            `json:"-"`
-	PingInterval          time.Duration     `json:"ping_interval"`
-	MaxPingsOut           int               `json:"ping_max"`
-	HTTPHost              string            `json:"http_host"`
-	HTTPPort              int               `json:"http_port"`
-	HTTPBasePath          string            `json:"http_base_path"`
-	HTTPSPort             int               `json:"https_port"`
-	AuthTimeout           float64           `json:"auth_timeout"`
-	MaxControlLine        int32             `json:"max_control_line"`
-	MaxPayload            int32             `json:"max_payload"`
-	MaxPending            int64             `json:"max_pending"`
-	Cluster               ClusterOpts       `json:"cluster,omitempty"`
-	Gateway               GatewayOpts       `json:"gateway,omitempty"`
-	LeafNode              LeafNodeOpts      `json:"leaf,omitempty"`
-	JetStream             bool              `json:"jetstream"`
-	JetStreamMaxMemory    int64             `json:"-"`
-	JetStreamMaxStore     int64             `json:"-"`
-	JetStreamDomain       string            `json:"-"`
-	JetStreamExtHint      string            `json:"-"`
-	JetStreamKey          string            `json:"-"`
+	ConfigFile            string        `json:"-"`
+	ServerName            string        `json:"server_name"`
+	Host                  string        `json:"addr"`
+	Port                  int           `json:"port"`
+	ClientAdvertise       string        `json:"-"`
+	Trace                 bool          `json:"-"`
+	Debug                 bool          `json:"-"`
+	TraceVerbose          bool          `json:"-"`
+	NoLog                 bool          `json:"-"`
+	NoSigs                bool          `json:"-"`
+	NoSublistCache        bool          `json:"-"`
+	NoHeaderSupport       bool          `json:"-"`
+	DisableShortFirstPing bool          `json:"-"`
+	Logtime               bool          `json:"-"`
+	MaxConn               int           `json:"max_connections"`
+	MaxSubs               int           `json:"max_subscriptions,omitempty"`
+	MaxSubTokens          uint8         `json:"-"`
+	Nkeys                 []*NkeyUser   `json:"-"`
+	Users                 []*User       `json:"-"`
+	Accounts              []*Account    `json:"-"`
+	NoAuthUser            string        `json:"-"`
+	SystemAccount         string        `json:"-"`
+	NoSystemAccount       bool          `json:"-"`
+	Username              string        `json:"-"`
+	Password              string        `json:"-"`
+	Authorization         string        `json:"-"`
+	PingInterval          time.Duration `json:"ping_interval"`
+	MaxPingsOut           int           `json:"ping_max"`
+	HTTPHost              string        `json:"http_host"`
+	HTTPPort              int           `json:"http_port"`
+	HTTPBasePath          string        `json:"http_base_path"`
+	HTTPSPort             int           `json:"https_port"`
+	AuthTimeout           float64       `json:"auth_timeout"`
+	MaxControlLine        int32         `json:"max_control_line"`
+	MaxPayload            int32         `json:"max_payload"`
+	MaxPending            int64         `json:"max_pending"`
+	Cluster               ClusterOpts   `json:"cluster,omitempty"`
+	Gateway               GatewayOpts   `json:"gateway,omitempty"`
+	LeafNode              LeafNodeOpts  `json:"leaf,omitempty"`
+	JetStream             bool          `json:"jetstream"`
+	JetStreamMaxMemory    int64         `json:"-"`
+	JetStreamMaxStore     int64         `json:"-"`
+	JetStreamDomain       string        `json:"-"`
+	JetStreamExtHint      string        `json:"-"`
+	JetStreamKey          string        `json:"-"`
+	JetStreamUniqueTag    string
+	JetStreamLimits       JSLimitOpts
 	StoreDir              string            `json:"-"`
 	JsAccDefaultDomain    map[string]string `json:"-"` // account to domain name mapping
 	Websocket             WebsocketOpts     `json:"-"`
@@ -287,7 +302,7 @@ type Options struct {
 	ReconnectErrorReports int
 
 	// Tags describing the server. They will be included in varz
-	// and used as a filter criteria for some system requests
+	// and used as a filter criteria for some system requests.
 	Tags jwt.TagList `json:"-"`
 
 	// OCSPConfig enables OCSP Stapling in the server.
@@ -663,7 +678,7 @@ func configureSystemAccount(o *Options, m map[string]interface{}) (retErr error)
 // or was present but set to false.
 func (o *Options) ProcessConfigFile(configFile string) error {
 	o.ConfigFile = configFile
-	if configFile == "" {
+	if configFile == _EMPTY_ {
 		return nil
 	}
 	m, err := conf.ParseFileWithChecks(configFile)
@@ -756,30 +771,55 @@ func (o *Options) processConfigFileLine(k string, v interface{}, errors *[]error
 		o.Username = auth.user
 		o.Password = auth.pass
 		o.Authorization = auth.token
-		if (auth.user != "" || auth.pass != "") && auth.token != "" {
+		o.AuthTimeout = auth.timeout
+		if (auth.user != _EMPTY_ || auth.pass != _EMPTY_) && auth.token != _EMPTY_ {
 			err := &configErr{tk, "Cannot have a user/pass and token"}
 			*errors = append(*errors, err)
 			return
 		}
-		o.AuthTimeout = auth.timeout
-		// Check for multiple users defined
-		if auth.users != nil {
-			if auth.user != "" {
+		// In case parseAccounts() was done first, we need to check for duplicates.
+		unames := setupUsersAndNKeysDuplicateCheckMap(o)
+		// Check for multiple users defined.
+		// Note: auth.users will be != nil as long as `users: []` is present
+		// in the authorization block, even if empty, and will also account for
+		// nkey users. We also check for users/nkeys that may have been already
+		// added in parseAccounts() (which means they will be in unames)
+		if auth.users != nil || len(unames) > 0 {
+			if auth.user != _EMPTY_ {
 				err := &configErr{tk, "Can not have a single user/pass and a users array"}
 				*errors = append(*errors, err)
 				return
 			}
-			if auth.token != "" {
+			if auth.token != _EMPTY_ {
 				err := &configErr{tk, "Can not have a token and a users array"}
 				*errors = append(*errors, err)
 				return
 			}
-			// Users may have been added from Accounts parsing, so do an append here
-			o.Users = append(o.Users, auth.users...)
+			// Now check that if we have users, there is no duplicate, including
+			// users that may have been configured in parseAccounts().
+			if len(auth.users) > 0 {
+				for _, u := range auth.users {
+					if _, ok := unames[u.Username]; ok {
+						err := &configErr{tk, fmt.Sprintf("Duplicate user %q detected", u.Username)}
+						*errors = append(*errors, err)
+						return
+					}
+					unames[u.Username] = struct{}{}
+				}
+				// Users may have been added from Accounts parsing, so do an append here
+				o.Users = append(o.Users, auth.users...)
+			}
 		}
-
 		// Check for nkeys
-		if auth.nkeys != nil {
+		if len(auth.nkeys) > 0 {
+			for _, u := range auth.nkeys {
+				if _, ok := unames[u.Nkey]; ok {
+					err := &configErr{tk, fmt.Sprintf("Duplicate nkey %q detected", u.Nkey)}
+					*errors = append(*errors, err)
+					return
+				}
+				unames[u.Nkey] = struct{}{}
+			}
 			// NKeys may have been added from Accounts parsing, so do an append here
 			o.Nkeys = append(o.Nkeys, auth.nkeys...)
 		}
@@ -1018,7 +1058,7 @@ func (o *Options) processConfigFileLine(k string, v interface{}, errors *[]error
 				}
 			}
 			// In case "system_account" is defined as well, it takes precedence
-			if o.SystemAccount == "" {
+			if o.SystemAccount == _EMPTY_ {
 				o.SystemAccount = o.TrustedOperators[0].SystemAccount
 			}
 		}
@@ -1304,6 +1344,17 @@ func (o *Options) processConfigFileLine(k string, v interface{}, errors *[]error
 	}
 }
 
+func setupUsersAndNKeysDuplicateCheckMap(o *Options) map[string]struct{} {
+	unames := make(map[string]struct{}, len(o.Users)+len(o.Nkeys))
+	for _, u := range o.Users {
+		unames[u.Username] = struct{}{}
+	}
+	for _, u := range o.Nkeys {
+		unames[u.Nkey] = struct{}{}
+	}
+	return unames
+}
+
 func parseDuration(field string, tk token, v interface{}, errors *[]error, warnings *[]error) time.Duration {
 	if wd, ok := v.(string); ok {
 		if dur, err := time.ParseDuration(wd); err != nil {
@@ -1433,7 +1484,7 @@ func parseCluster(v interface{}, opts *Options, errors *[]error, warnings *[]err
 			}
 		case "routes":
 			ra := mv.([]interface{})
-			routes, errs := parseURLs(ra, "route")
+			routes, errs := parseURLs(ra, "route", warnings)
 			if errs != nil {
 				*errors = append(*errors, errs...)
 				continue
@@ -1488,14 +1539,28 @@ func parseCluster(v interface{}, opts *Options, errors *[]error, warnings *[]err
 	return nil
 }
 
-func parseURLs(a []interface{}, typ string) (urls []*url.URL, errors []error) {
+func parseURLs(a []interface{}, typ string, warnings *[]error) (urls []*url.URL, errors []error) {
 	urls = make([]*url.URL, 0, len(a))
 	var lt token
 	defer convertPanicToErrorList(&lt, &errors)
 
+	dd := make(map[string]bool)
+
 	for _, u := range a {
 		tk, u := unwrapValue(u, &lt)
 		sURL := u.(string)
+		if dd[sURL] {
+			err := &configWarningErr{
+				field: sURL,
+				configErr: configErr{
+					token:  tk,
+					reason: fmt.Sprintf("Duplicate %s entry detected", typ),
+				},
+			}
+			*warnings = append(*warnings, err)
+			continue
+		}
+		dd[sURL] = true
 		url, err := parseURL(sURL, typ)
 		if err != nil {
 			err := &configErr{tk, err.Error()}
@@ -1604,7 +1669,8 @@ func parseGateway(v interface{}, o *Options, errors *[]error, warnings *[]error)
 	return nil
 }
 
-var dynamicJSAccountLimits = &JetStreamAccountLimits{-1, -1, -1, -1, false}
+var dynamicJSAccountLimits = JetStreamAccountLimits{-1, -1, -1, -1, -1, -1, -1, false}
+var defaultJSAccountTiers = map[string]JetStreamAccountLimits{_EMPTY_: dynamicJSAccountLimits}
 
 // Parses jetstream account limits for an account. Simple setup with boolen is allowed, and we will
 // use dynamic account limits.
@@ -1617,19 +1683,19 @@ func parseJetStreamForAccount(v interface{}, acc *Account, errors *[]error, warn
 	switch vv := v.(type) {
 	case bool:
 		if vv {
-			acc.jsLimits = dynamicJSAccountLimits
+			acc.jsLimits = defaultJSAccountTiers
 		}
 	case string:
 		switch strings.ToLower(vv) {
 		case "enabled", "enable":
-			acc.jsLimits = dynamicJSAccountLimits
+			acc.jsLimits = defaultJSAccountTiers
 		case "disabled", "disable":
 			acc.jsLimits = nil
 		default:
 			return &configErr{tk, fmt.Sprintf("Expected 'enabled' or 'disabled' for string value, got '%s'", vv)}
 		}
 	case map[string]interface{}:
-		jsLimits := &JetStreamAccountLimits{-1, -1, -1, -1, false}
+		jsLimits := JetStreamAccountLimits{-1, -1, -1, -1, -1, -1, -1, false}
 		for mk, mv := range vv {
 			tk, mv = unwrapValue(mv, &lt)
 			switch strings.ToLower(mk) {
@@ -1638,13 +1704,13 @@ func parseJetStreamForAccount(v interface{}, acc *Account, errors *[]error, warn
 				if !ok {
 					return &configErr{tk, fmt.Sprintf("Expected a parseable size for %q, got %v", mk, mv)}
 				}
-				jsLimits.MaxMemory = int64(vv)
+				jsLimits.MaxMemory = vv
 			case "max_store", "max_file", "max_disk", "store", "disk":
 				vv, ok := mv.(int64)
 				if !ok {
 					return &configErr{tk, fmt.Sprintf("Expected a parseable size for %q, got %v", mk, mv)}
 				}
-				jsLimits.MaxStore = int64(vv)
+				jsLimits.MaxStore = vv
 			case "max_streams", "streams":
 				vv, ok := mv.(int64)
 				if !ok {
@@ -1662,7 +1728,25 @@ func parseJetStreamForAccount(v interface{}, acc *Account, errors *[]error, warn
 				if !ok {
 					return &configErr{tk, fmt.Sprintf("Expected a parseable bool for %q, got %v", mk, mv)}
 				}
-				jsLimits.MaxBytesRequired = bool(vv)
+				jsLimits.MaxBytesRequired = vv
+			case "mem_max_stream_bytes", "memory_max_stream_bytes":
+				vv, ok := mv.(int64)
+				if !ok {
+					return &configErr{tk, fmt.Sprintf("Expected a parseable size for %q, got %v", mk, mv)}
+				}
+				jsLimits.MemoryMaxStreamBytes = vv
+			case "disk_max_stream_bytes", "store_max_stream_bytes":
+				vv, ok := mv.(int64)
+				if !ok {
+					return &configErr{tk, fmt.Sprintf("Expected a parseable size for %q, got %v", mk, mv)}
+				}
+				jsLimits.StoreMaxStreamBytes = vv
+			case "max_ack_pending":
+				vv, ok := mv.(int64)
+				if !ok {
+					return &configErr{tk, fmt.Sprintf("Expected a parseable size for %q, got %v", mk, mv)}
+				}
+				jsLimits.MaxAckPending = int(vv)
 			default:
 				if !tk.IsUsedVariable() {
 					err := &unknownConfigFieldErr{
@@ -1676,7 +1760,7 @@ func parseJetStreamForAccount(v interface{}, acc *Account, errors *[]error, warn
 				}
 			}
 		}
-		acc.jsLimits = jsLimits
+		acc.jsLimits = map[string]JetStreamAccountLimits{_EMPTY_: jsLimits}
 	default:
 		return &configErr{tk, fmt.Sprintf("Expected map, bool or string to define JetStream, got %T", v)}
 	}
@@ -1715,6 +1799,49 @@ func getStorageSize(v interface{}) (int64, error) {
 	num *= 1 << mult
 
 	return num, nil
+}
+
+// Parse enablement of jetstream for a server.
+func parseJetStreamLimits(v interface{}, opts *Options, errors *[]error, warnings *[]error) error {
+	var lt token
+	tk, v := unwrapValue(v, &lt)
+
+	lim := JSLimitOpts{}
+
+	vv, ok := v.(map[string]interface{})
+	if !ok {
+		return &configErr{tk, fmt.Sprintf("Expected a map to define JetStreamLimits, got %T", v)}
+	}
+	for mk, mv := range vv {
+		tk, mv = unwrapValue(mv, &lt)
+		switch strings.ToLower(mk) {
+		case "max_ack_pending":
+			lim.MaxAckPending = int(mv.(int64))
+		case "max_ha_assets":
+			lim.MaxHAAssets = int(mv.(int64))
+		case "max_request_batch":
+			lim.MaxRequestBatch = int(mv.(int64))
+		case "duplicate_window":
+			var err error
+			lim.Duplicates, err = time.ParseDuration(mv.(string))
+			if err != nil {
+				*errors = append(*errors, err)
+			}
+		default:
+			if !tk.IsUsedVariable() {
+				err := &unknownConfigFieldErr{
+					field: mk,
+					configErr: configErr{
+						token: tk,
+					},
+				}
+				*errors = append(*errors, err)
+				continue
+			}
+		}
+	}
+	opts.JetStreamLimits = lim
+	return nil
 }
 
 // Parse enablement of jetstream for a server.
@@ -1769,6 +1896,12 @@ func parseJetStream(v interface{}, opts *Options, errors *[]error, warnings *[]e
 				opts.JetStreamKey = mv.(string)
 			case "extension_hint":
 				opts.JetStreamExtHint = mv.(string)
+			case "limits":
+				if err := parseJetStreamLimits(tk, opts, errors, warnings); err != nil {
+					return err
+				}
+			case "unique_tag":
+				opts.JetStreamUniqueTag = strings.ToLower(strings.TrimSpace(mv.(string)))
 			default:
 				if !tk.IsUsedVariable() {
 					err := &unknownConfigFieldErr{
@@ -1864,6 +1997,14 @@ func parseLeafNodes(v interface{}, opts *Options, errors *[]error, warnings *[]e
 		case "no_advertise":
 			opts.LeafNode.NoAdvertise = mv.(bool)
 			trackExplicitVal(opts, &opts.inConfig, "LeafNode.NoAdvertise", opts.LeafNode.NoAdvertise)
+		case "min_version", "minimum_version":
+			version := mv.(string)
+			if err := checkLeafMinVersionConfig(version); err != nil {
+				err = &configErr{tk, err.Error()}
+				*errors = append(*errors, err)
+				continue
+			}
+			opts.LeafNode.MinVersion = version
 		default:
 			if !tk.IsUsedVariable() {
 				err := &unknownConfigFieldErr{
@@ -2020,7 +2161,7 @@ func parseRemoteLeafNodes(v interface{}, errors *[]error, warnings *[]error) ([]
 			case "url", "urls":
 				switch v := v.(type) {
 				case []interface{}, []string:
-					urls, errs := parseURLs(v.([]interface{}), "leafnode")
+					urls, errs := parseURLs(v.([]interface{}), "leafnode", warnings)
 					if errs != nil {
 						*errors = append(*errors, errs...)
 						continue
@@ -2166,7 +2307,7 @@ func parseGateways(v interface{}, errors *[]error, warnings *[]error) ([]*Remote
 				}
 				gateway.URLs = append(gateway.URLs, url)
 			case "urls":
-				urls, errs := parseURLs(v.([]interface{}), "gateway")
+				urls, errs := parseURLs(v.([]interface{}), "gateway", warnings)
 				if errs != nil {
 					*errors = append(*errors, errs...)
 					continue
@@ -2323,7 +2464,7 @@ func parseAccountMappings(v interface{}, acc *Account, errors *[]error, warnings
 		switch vv := v.(type) {
 		case string:
 			if err := acc.AddMapping(subj, v.(string)); err != nil {
-				err := &configErr{tk, fmt.Sprintf("Error adding mapping for %q: %v", subj, err)}
+				err := &configErr{tk, fmt.Sprintf("Error adding mapping for %q to %q : %v", subj, v.(string), err)}
 				*errors = append(*errors, err)
 				continue
 			}
@@ -2340,7 +2481,7 @@ func parseAccountMappings(v interface{}, acc *Account, errors *[]error, warnings
 
 			// Now add them in..
 			if err := acc.AddWeightedMappings(subj, mappings...); err != nil {
-				err := &configErr{tk, fmt.Sprintf("Error adding mapping for %q: %v", subj, err)}
+				err := &configErr{tk, fmt.Sprintf("Error adding mapping for %q to %q : %v", subj, v.(string), err)}
 				*errors = append(*errors, err)
 				continue
 			}
@@ -2352,7 +2493,7 @@ func parseAccountMappings(v interface{}, acc *Account, errors *[]error, warnings
 			}
 			// Now add it in..
 			if err := acc.AddWeightedMappings(subj, mdest); err != nil {
-				err := &configErr{tk, fmt.Sprintf("Error adding mapping for %q: %v", subj, err)}
+				err := &configErr{tk, fmt.Sprintf("Error adding mapping for %q to %q : %v", subj, v.(string), err)}
 				*errors = append(*errors, err)
 				continue
 			}
@@ -2436,7 +2577,10 @@ func parseAccounts(v interface{}, opts *Options, errors *[]error, warnings *[]er
 	case map[string]interface{}:
 		// Track users across accounts, must be unique across
 		// accounts and nkeys vs users.
-		uorn := make(map[string]struct{})
+		// We also want to check for users that may have been added in
+		// parseAuthorization{} if that happened first.
+		uorn := setupUsersAndNKeysDuplicateCheckMap(opts)
+
 		for aname, mv := range vv {
 			tk, amv := unwrapValue(mv, &lt)
 
@@ -2535,6 +2679,20 @@ func parseAccounts(v interface{}, opts *Options, errors *[]error, warnings *[]er
 						}
 						*errors = append(*errors, err)
 					}
+				}
+			}
+			// Report error if there is an authorization{} block
+			// with u/p or token and any user defined in accounts{}
+			if len(nkeyUsr) > 0 || len(users) > 0 {
+				if opts.Username != _EMPTY_ {
+					err := &configErr{usersTk, "Can not have a single user/pass and accounts"}
+					*errors = append(*errors, err)
+					continue
+				}
+				if opts.Authorization != _EMPTY_ {
+					err := &configErr{usersTk, "Can not have a token and accounts"}
+					*errors = append(*errors, err)
+					continue
 				}
 			}
 			applyDefaultPermissions(users, nkeyUsr, acc.defaultPerms)
@@ -4146,6 +4304,9 @@ func MergeOptions(fileOpts, flagOpts *Options) *Options {
 	}
 	if flagOpts.RoutesStr != "" {
 		mergeRoutes(&opts, flagOpts)
+	}
+	if flagOpts.JetStream {
+		fileOpts.JetStream = flagOpts.JetStream
 	}
 	return &opts
 }
