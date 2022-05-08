@@ -1,4 +1,4 @@
-// Copyright 2020-2021 The NATS Authors
+// Copyright 2020-2022 The NATS Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,11 +16,12 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
-	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -182,8 +183,9 @@ const (
 
 	// jsAckT is the template for the ack message stream coming back from a consumer
 	// when they ACK/NAK, etc a message.
-	jsAckT   = "$JS.ACK.%s.%s"
-	jsAckPre = "$JS.ACK."
+	jsAckT      = "$JS.ACK.%s.%s"
+	jsAckPre    = "$JS.ACK."
+	jsAckPreLen = len(jsAckPre)
 
 	// jsFlowControl is for flow control subjects.
 	jsFlowControlPre = "$JS.FC."
@@ -201,6 +203,9 @@ const (
 
 	// JSAdvisoryConsumerMaxDeliveryExceedPre is a notification published when a message exceeds its delivery threshold.
 	JSAdvisoryConsumerMaxDeliveryExceedPre = "$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES"
+
+	// JSAdvisoryConsumerMsgNakPre is a notification published when a message has been naked
+	JSAdvisoryConsumerMsgNakPre = "$JS.EVENT.ADVISORY.CONSUMER.MSG_NAKED"
 
 	// JSAdvisoryConsumerMsgTerminatedPre is a notification published when a message has been terminated.
 	JSAdvisoryConsumerMsgTerminatedPre = "$JS.EVENT.ADVISORY.CONSUMER.MSG_TERMINATED"
@@ -255,11 +260,41 @@ const (
 	JSAuditAdvisory = "$JS.EVENT.ADVISORY.API"
 )
 
+var denyAllClientJs = []string{jsAllAPI, "$KV.>", "$OBJ.>"}
+var denyAllJs = []string{jscAllSubj, raftAllSubj, jsAllAPI, "$KV.>", "$OBJ.>"}
+
+func generateJSMappingTable(domain string) map[string]string {
+	mappings := map[string]string{}
+	// This set of mappings is very very very ugly.
+	// It is a consequence of what we defined the domain prefix to be "$JS.domain.API" and it's mapping to "$JS.API"
+	// For optics $KV and $OBJ where made to be independent subject spaces.
+	// As materialized views of JS, they did not simply extend that subject space to say "$JS.API.KV" "$JS.API.OBJ"
+	// This is very unfortunate!!!
+	// Furthermore, it seemed bad to require different domain prefixes for JS/KV/OBJ.
+	// Especially since the actual API for say KV, does use stream create from JS.
+	// To avoid overlaps KV and OBJ views append the prefix to their API.
+	// (Replacing $KV with the prefix allows users to create collisions with say the bucket name)
+	// This mapping therefore needs to have extra token so that the mapping can properly discern between $JS, $KV, $OBJ
+	for srcMappingSuffix, to := range map[string]string{
+		"INFO":       JSApiAccountInfo,
+		"STREAM.>":   "$JS.API.STREAM.>",
+		"CONSUMER.>": "$JS.API.CONSUMER.>",
+		"META.>":     "$JS.API.META.>",
+		"SERVER.>":   "$JS.API.SERVER.>",
+		"$KV.>":      "$KV.>",
+		"$OBJ.>":     "$OBJ.>",
+	} {
+		mappings[fmt.Sprintf("$JS.%s.API.%s", domain, srcMappingSuffix)] = to
+	}
+	return mappings
+}
+
 // JSMaxDescription is the maximum description length for streams and consumers.
 const JSMaxDescriptionLen = 4 * 1024
 
 // JSMaxNameLen is the maximum name lengths for streams, consumers and templates.
-const JSMaxNameLen = 256
+// Picked 255 as it seems to be a widely used file name limit
+const JSMaxNameLen = 255
 
 // Responses for API calls.
 
@@ -269,7 +304,8 @@ type ApiResponse struct {
 	Error *ApiError `json:"error,omitempty"`
 }
 
-// ToError checks if the response has a error and if it does converts it to an error avoiding the pitfalls described by https://yourbasic.org/golang/gotcha-why-nil-error-not-equal-nil/
+// ToError checks if the response has a error and if it does converts it to an error avoiding
+// the pitfalls described by https://yourbasic.org/golang/gotcha-why-nil-error-not-equal-nil/
 func (r *ApiResponse) ToError() error {
 	if r.Error == nil {
 		return nil
@@ -304,6 +340,7 @@ const JSApiAccountInfoResponseType = "io.nats.jetstream.api.v1.account_info_resp
 type JSApiStreamCreateResponse struct {
 	ApiResponse
 	*StreamInfo
+	DidCreate bool `json:"did_create,omitempty"`
 }
 
 const JSApiStreamCreateResponseType = "io.nats.jetstream.api.v1.stream_create_response"
@@ -316,8 +353,12 @@ type JSApiStreamDeleteResponse struct {
 
 const JSApiStreamDeleteResponseType = "io.nats.jetstream.api.v1.stream_delete_response"
 
+// Maximum number of subject details we will send in the stream info.
+const JSMaxSubjectDetails = 100_000
+
 type JSApiStreamInfoRequest struct {
-	DeletedDetails bool `json:"deleted_details,omitempty"`
+	DeletedDetails bool   `json:"deleted_details,omitempty"`
+	SubjectsFilter string `json:"subjects_filter,omitempty"`
 }
 
 type JSApiStreamInfoResponse struct {
@@ -348,12 +389,19 @@ type JSApiStreamNamesResponse struct {
 
 const JSApiStreamNamesResponseType = "io.nats.jetstream.api.v1.stream_names_response"
 
+type JSApiStreamListRequest struct {
+	ApiPagedRequest
+	// These are filters that can be applied to the list.
+	Subject string `json:"subject,omitempty"`
+}
+
 // JSApiStreamListResponse list of detailed stream information.
 // A nil request is valid and means all streams.
 type JSApiStreamListResponse struct {
 	ApiResponse
 	ApiPaged
 	Streams []*StreamInfo `json:"streams"`
+	Missing []string      `json:"missing,omitempty"`
 }
 
 const JSApiStreamListResponseType = "io.nats.jetstream.api.v1.stream_list_response"
@@ -551,15 +599,17 @@ type JSApiConsumerListResponse struct {
 	ApiResponse
 	ApiPaged
 	Consumers []*ConsumerInfo `json:"consumers"`
+	Missing   []string        `json:"missing,omitempty"`
 }
 
 const JSApiConsumerListResponseType = "io.nats.jetstream.api.v1.consumer_list_response"
 
 // JSApiConsumerGetNextRequest is for getting next messages for pull based consumers.
 type JSApiConsumerGetNextRequest struct {
-	Expires time.Duration `json:"expires,omitempty"`
-	Batch   int           `json:"batch,omitempty"`
-	NoWait  bool          `json:"no_wait,omitempty"`
+	Expires   time.Duration `json:"expires,omitempty"`
+	Batch     int           `json:"batch,omitempty"`
+	NoWait    bool          `json:"no_wait,omitempty"`
+	Heartbeat time.Duration `json:"idle_heartbeat,omitempty"`
 }
 
 // JSApiStreamTemplateCreateResponse for creating templates.
@@ -598,14 +648,23 @@ type JSApiStreamTemplateNamesResponse struct {
 
 const JSApiStreamTemplateNamesResponseType = "io.nats.jetstream.api.v1.stream_template_names_response"
 
+// Default max API calls outstanding.
+const defaultMaxJSApiOut = int64(4096)
+
+// Max API calls outstanding.
+var maxJSApiOut = defaultMaxJSApiOut
+
 func (js *jetStream) apiDispatch(sub *subscription, c *client, acc *Account, subject, reply string, rmsg []byte) {
+	// No lock needed, those are immutable.
+	s, rr := js.srv, js.apiSubs.Match(subject)
+
 	hdr, _ := c.msgParts(rmsg)
 	if len(getHeader(ClientInfoHdr, hdr)) == 0 {
-		return
+		// Check if this is the system account. We will let these through for the account info only.
+		if s.SystemAccount() != acc || subject != JSApiAccountInfo {
+			return
+		}
 	}
-	js.mu.RLock()
-	s, rr := js.srv, js.apiSubs.Match(subject)
-	js.mu.RUnlock()
 
 	// Shortcircuit.
 	if len(rr.psubs)+len(rr.qsubs) == 0 {
@@ -621,7 +680,7 @@ func (js *jetStream) apiDispatch(sub *subscription, c *client, acc *Account, sub
 	jsub := rr.psubs[0]
 
 	// If this is directly from a client connection ok to do in place.
-	if c.kind == CLIENT {
+	if c.kind != ROUTER && c.kind != GATEWAY {
 		jsub.icb(sub, c, acc, subject, reply, rmsg)
 		return
 	}
@@ -629,8 +688,8 @@ func (js *jetStream) apiDispatch(sub *subscription, c *client, acc *Account, sub
 	// If we are here we have received this request over a non client connection.
 	// We need to make sure not to block. We will spin a Go routine per but also make
 	// sure we do not have too many outstanding.
-	if apiOut := atomic.AddInt64(&js.apiCalls, 1); apiOut > 1024 {
-		atomic.AddInt64(&js.apiCalls, -1)
+	if apiOut := atomic.AddInt64(&js.apiInflight, 1); apiOut > maxJSApiOut {
+		atomic.AddInt64(&js.apiInflight, -1)
 		ci, acc, _, msg, err := s.getRequestInfo(c, rmsg)
 		if err == nil {
 			resp := &ApiResponse{Type: JSApiOverloadedType, Error: NewJSInsufficientResourcesError()}
@@ -648,14 +707,14 @@ func (js *jetStream) apiDispatch(sub *subscription, c *client, acc *Account, sub
 	// the header from the msg body. No other references are needed.
 	// FIXME(dlc) - Should cleanup eventually and make sending
 	// and receiving internal messages more formal.
-	rmsg = append(rmsg[:0:0], rmsg...)
+	rmsg = copyBytes(rmsg)
 	client := &client{srv: s, kind: JETSTREAM}
 	client.pa = c.pa
 
 	// Dispatch the API call to its own Go routine.
 	go func() {
 		jsub.icb(sub, client, acc, subject, reply, rmsg)
-		atomic.AddInt64(&js.apiCalls, -1)
+		atomic.AddInt64(&js.apiInflight, -1)
 	}()
 }
 
@@ -790,11 +849,12 @@ func (a *Account) trackAPI() {
 	jsa := a.js
 	a.mu.RUnlock()
 	if jsa != nil {
-		jsa.mu.Lock()
-		jsa.usage.api++
+		jsa.usageMu.Lock()
+		jsa.usageApi++
 		jsa.apiTotal++
 		jsa.sendClusterUsageUpdate()
-		jsa.mu.Unlock()
+		atomic.AddInt64(&jsa.js.apiTotal, 1)
+		jsa.usageMu.Unlock()
 	}
 }
 
@@ -803,15 +863,15 @@ func (a *Account) trackAPIErr() {
 	jsa := a.js
 	a.mu.RUnlock()
 	if jsa != nil {
-		jsa.mu.Lock()
-		jsa.usage.api++
+		jsa.usageMu.Lock()
+		jsa.usageApi++
 		jsa.apiTotal++
-		jsa.usage.err++
+		jsa.usageErr++
 		jsa.apiErrors++
 		jsa.sendClusterUsageUpdate()
-		js := jsa.js
-		jsa.mu.Unlock()
-		atomic.AddInt64(&js.apiErrors, 1)
+		atomic.AddInt64(&jsa.js.apiTotal, 1)
+		atomic.AddInt64(&jsa.js.apiErrors, 1)
+		jsa.usageMu.Unlock()
 	}
 }
 
@@ -1089,8 +1149,33 @@ func (s *Server) jsonResponse(v interface{}) string {
 	return string(b)
 }
 
+// Read lock must be held
+func (jsa *jsAccount) tieredReservation(tier string, cfg *StreamConfig) int64 {
+	reservation := int64(0)
+	if tier == _EMPTY_ {
+		for _, sa := range jsa.streams {
+			if sa.cfg.MaxBytes > 0 {
+				if sa.cfg.Storage == cfg.Storage && sa.cfg.Name != cfg.Name {
+					reservation += (int64(sa.cfg.Replicas) * sa.cfg.MaxBytes)
+				}
+			}
+		}
+	} else {
+		for _, sa := range jsa.streams {
+			if sa.cfg.Replicas == cfg.Replicas {
+				if sa.cfg.MaxBytes > 0 {
+					if isSameTier(&sa.cfg, cfg) && sa.cfg.Name != cfg.Name {
+						reservation += (int64(sa.cfg.Replicas) * sa.cfg.MaxBytes)
+					}
+				}
+			}
+		}
+	}
+	return reservation
+}
+
 // Request to create a stream.
-func (s *Server) jsStreamCreateRequest(sub *subscription, c *client, a *Account, subject, reply string, rmsg []byte) {
+func (s *Server) jsStreamCreateRequest(sub *subscription, c *client, _ *Account, subject, reply string, rmsg []byte) {
 	if c == nil || !s.JetStreamEnabled() {
 		return
 	}
@@ -1132,6 +1217,7 @@ func (s *Server) jsStreamCreateRequest(sub *subscription, c *client, a *Account,
 		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}
+
 	streamName := streamNameFromSubject(subject)
 	if streamName != cfg.Name {
 		resp.Error = NewJSStreamMismatchError()
@@ -1139,131 +1225,22 @@ func (s *Server) jsStreamCreateRequest(sub *subscription, c *client, a *Account,
 		return
 	}
 
-	hasStream := func(streamName string) (bool, int32, []string) {
-		var exists bool
-		var maxMsgSize int32
-		var subs []string
-		if s.JetStreamIsClustered() {
-			if js, _ := s.getJetStreamCluster(); js != nil {
-				js.mu.RLock()
-				if sa := js.streamAssignment(acc.Name, streamName); sa != nil {
-					maxMsgSize = sa.Config.MaxMsgSize
-					subs = sa.Config.Subjects
-					exists = true
-				}
-				js.mu.RUnlock()
-			}
-		} else if mset, err := acc.lookupStream(streamName); err == nil {
-			maxMsgSize = mset.cfg.MaxMsgSize
-			subs = mset.cfg.Subjects
-			exists = true
-		}
-		return exists, maxMsgSize, subs
+	// Can't create a stream with a sealed state.
+	if cfg.Sealed {
+		resp.Error = NewJSStreamInvalidConfigError(fmt.Errorf("stream configuration for create can not be sealed"))
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
 	}
 
-	var streamSubs []string
-	var deliveryPrefixes []string
-	var apiPrefixes []string
-
-	// Do some pre-checking for mirror config to avoid cycles in clustered mode.
-	if cfg.Mirror != nil {
-		if len(cfg.Subjects) > 0 {
-			resp.Error = NewJSMirrorWithSubjectsError()
-			s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-			return
-		}
-		if len(cfg.Sources) > 0 {
-			resp.Error = NewJSMirrorWithSourcesError()
-			s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-			return
-		}
-		if cfg.Mirror.FilterSubject != _EMPTY_ {
-			resp.Error = NewJSMirrorWithSubjectFiltersError()
-			s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-			return
-		}
-		if cfg.Mirror.OptStartSeq > 0 && cfg.Mirror.OptStartTime != nil {
-			resp.Error = NewJSMirrorWithStartSeqAndTimeError()
-			s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-			return
-		}
-		if cfg.Duplicates != time.Duration(0) {
-			resp.Error = &ApiError{Code: 400, Description: "stream mirrors do not make use of a de-duplication window"}
-			s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-			return
-		}
-		// We do not require other stream to exist anymore, but if we can see it check payloads.
-		exists, maxMsgSize, subs := hasStream(cfg.Mirror.Name)
-		if len(subs) > 0 {
-			streamSubs = append(streamSubs, subs...)
-		}
-		if exists && cfg.MaxMsgSize > 0 && maxMsgSize > 0 && cfg.MaxMsgSize < maxMsgSize {
-			resp.Error = NewJSMirrorMaxMessageSizeTooBigError()
-			s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-			return
-		}
-		if cfg.Mirror.External != nil {
-			if cfg.Mirror.External.DeliverPrefix != _EMPTY_ {
-				deliveryPrefixes = append(deliveryPrefixes, cfg.Mirror.External.DeliverPrefix)
-			}
-			if cfg.Mirror.External.ApiPrefix != _EMPTY_ {
-				apiPrefixes = append(apiPrefixes, cfg.Mirror.External.ApiPrefix)
-			}
-		}
-	}
-	if len(cfg.Sources) > 0 {
-		for _, src := range cfg.Sources {
-			if src.External == nil {
-				continue
-			}
-			exists, maxMsgSize, subs := hasStream(src.Name)
-			if len(subs) > 0 {
-				streamSubs = append(streamSubs, subs...)
-			}
-			if src.External.DeliverPrefix != _EMPTY_ {
-				deliveryPrefixes = append(deliveryPrefixes, src.External.DeliverPrefix)
-			}
-			if src.External.ApiPrefix != _EMPTY_ {
-				apiPrefixes = append(apiPrefixes, src.External.ApiPrefix)
-			}
-			if exists && cfg.MaxMsgSize > 0 && maxMsgSize > 0 && cfg.MaxMsgSize < maxMsgSize {
-				resp.Error = NewJSSourceMaxMessageSizeTooBigError()
-				s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-				return
-			}
-		}
-	}
-	// check prefix overlap with subjects
-	for _, pfx := range deliveryPrefixes {
-		if !IsValidPublishSubject(pfx) {
-			resp.Error = NewJSStreamInvalidExternalDeliverySubjError(pfx)
-			s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-			return
-		}
-		for _, sub := range streamSubs {
-			if SubjectsCollide(sub, fmt.Sprintf("%s.%s", pfx, sub)) {
-				resp.Error = NewJSStreamExternalDelPrefixOverlapsError(pfx, sub)
-				s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-				return
-			}
-		}
-	}
-	// check if api prefixes overlap
-	for _, apiPfx := range apiPrefixes {
-		if !IsValidPublishSubject(apiPfx) {
-			resp.Error = &ApiError{Code: 400, Description: fmt.Sprintf("stream external api prefix %q must be a valid subject without wildcards", apiPfx)}
-			s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-			return
-		}
-		if SubjectsCollide(apiPfx, JSApiPrefix) {
-			resp.Error = NewJSStreamExternalApiOverlapError(apiPfx, JSApiPrefix)
-			s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-			return
-		}
-	}
-
+	// Hand off to cluster for processing.
 	if s.JetStreamIsClustered() {
 		s.jsClusteredStreamRequest(ci, acc, subject, reply, rmsg, &cfg)
+		return
+	}
+
+	if err := acc.jsNonClusteredStreamLimitsCheck(&cfg); err != nil {
+		resp.Error = err
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}
 
@@ -1273,7 +1250,12 @@ func (s *Server) jsStreamCreateRequest(sub *subscription, c *client, a *Account,
 		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}
-	resp.StreamInfo = &StreamInfo{Created: mset.createdTime(), State: mset.state(), Config: mset.config()}
+	resp.StreamInfo = &StreamInfo{
+		Created: mset.createdTime(),
+		State:   mset.state(),
+		Config:  mset.config(),
+	}
+	resp.DidCreate = true
 	s.sendAPIResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(resp))
 }
 
@@ -1322,9 +1304,9 @@ func (s *Server) jsStreamUpdateRequest(sub *subscription, c *client, _ *Account,
 		return
 	}
 
-	cfg, err := checkStreamCfg(&ncfg)
-	if err != nil {
-		resp.Error = NewJSStreamInvalidConfigError(err)
+	cfg, apiErr := s.checkStreamCfg(&ncfg, acc)
+	if apiErr != nil {
+		resp.Error = apiErr
 		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}
@@ -1336,8 +1318,15 @@ func (s *Server) jsStreamUpdateRequest(sub *subscription, c *client, _ *Account,
 		return
 	}
 
+	// Handle clustered version here.
 	if s.JetStreamIsClustered() {
-		s.jsClusteredStreamUpdateRequest(ci, acc, subject, reply, rmsg, &cfg)
+		// If we are inline with client, we still may need to do a callout for stream info
+		// during this call, so place in Go routine to not block client.
+		if c.kind != ROUTER && c.kind != GATEWAY {
+			go s.jsClusteredStreamUpdateRequest(ci, acc, subject, reply, rmsg, &cfg)
+		} else {
+			s.jsClusteredStreamUpdateRequest(ci, acc, subject, reply, rmsg, &cfg)
+		}
 		return
 	}
 
@@ -1354,9 +1343,14 @@ func (s *Server) jsStreamUpdateRequest(sub *subscription, c *client, _ *Account,
 		return
 	}
 
-	js, _ := s.getJetStreamCluster()
-
-	resp.StreamInfo = &StreamInfo{Created: mset.createdTime(), State: mset.state(), Config: mset.config(), Cluster: js.clusterInfo(mset.raftGroup())}
+	resp.StreamInfo = &StreamInfo{
+		Created: mset.createdTime(),
+		State:   mset.state(),
+		Config:  mset.config(),
+		Domain:  s.getOpts().JetStreamDomain,
+		Mirror:  mset.mirrorInfo(),
+		Sources: mset.sourcesInfo(),
+	}
 	s.sendAPIResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(resp))
 }
 
@@ -1526,27 +1520,38 @@ func (s *Server) jsStreamListRequest(sub *subscription, c *client, _ *Account, s
 	}
 
 	var offset int
+	var filter string
+
 	if !isEmptyRequest(msg) {
-		var req JSApiStreamNamesRequest
+		var req JSApiStreamListRequest
 		if err := json.Unmarshal(msg, &req); err != nil {
 			resp.Error = NewJSInvalidJSONError()
 			s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 			return
 		}
 		offset = req.Offset
+		if req.Subject != _EMPTY_ {
+			filter = req.Subject
+		}
 	}
 
 	// Clustered mode will invoke a scatter and gather.
 	if s.JetStreamIsClustered() {
-		// Need to copy these off before sending..
-		msg = append(msg[:0:0], msg...)
-		s.startGoRoutine(func() { s.jsClusteredStreamListRequest(acc, ci, offset, subject, reply, msg) })
+		// Need to copy these off before sending.. don't move this inside startGoRoutine!!!
+		msg = copyBytes(msg)
+		s.startGoRoutine(func() { s.jsClusteredStreamListRequest(acc, ci, filter, offset, subject, reply, msg) })
 		return
 	}
 
 	// TODO(dlc) - Maybe hold these results for large results that we expect to be paged.
 	// TODO(dlc) - If this list is long maybe do this in a Go routine?
-	msets := acc.streams()
+	var msets []*stream
+	if filter == _EMPTY_ {
+		msets = acc.streams()
+	} else {
+		msets = acc.filteredStreams(filter)
+	}
+
 	sort.Slice(msets, func(i, j int) bool {
 		return strings.Compare(msets[i].cfg.Name, msets[j].cfg.Name) < 0
 	})
@@ -1557,13 +1562,15 @@ func (s *Server) jsStreamListRequest(sub *subscription, c *client, _ *Account, s
 	}
 
 	for _, mset := range msets[offset:] {
+		config := mset.config()
 		resp.Streams = append(resp.Streams, &StreamInfo{
 			Created: mset.createdTime(),
 			State:   mset.state(),
-			Config:  mset.config(),
+			Config:  config,
+			Domain:  s.getOpts().JetStreamDomain,
 			Mirror:  mset.mirrorInfo(),
-			Sources: mset.sourcesInfo()},
-		)
+			Sources: mset.sourcesInfo(),
+		})
 		if len(resp.Streams) >= JSApiListLimit {
 			break
 		}
@@ -1579,7 +1586,7 @@ func (s *Server) jsStreamInfoRequest(sub *subscription, c *client, a *Account, s
 	if c == nil || !s.JetStreamEnabled() {
 		return
 	}
-	ci, acc, _, msg, err := s.getRequestInfo(c, rmsg)
+	ci, acc, hdr, msg, err := s.getRequestInfo(c, rmsg)
 	if err != nil {
 		s.Warnf(badAPIRequestT, msg)
 		return
@@ -1588,6 +1595,14 @@ func (s *Server) jsStreamInfoRequest(sub *subscription, c *client, a *Account, s
 	streamName := streamNameFromSubject(subject)
 
 	var resp = JSApiStreamInfoResponse{ApiResponse: ApiResponse{Type: JSApiStreamInfoResponseType}}
+
+	// If someone creates a duplicate stream that is identical we will get this request forwarded to us.
+	// Make sure the response type is for a create call.
+	if rt := getHeader(JSResponseType, hdr); len(rt) > 0 && string(rt) == jsCreateResponse {
+		resp.ApiResponse.Type = JSApiStreamCreateResponseType
+	}
+
+	var clusterWideConsCount int
 
 	// If we are in clustered mode we need to be the stream leader to proceed.
 	if s.JetStreamIsClustered() {
@@ -1599,6 +1614,11 @@ func (s *Server) jsStreamInfoRequest(sub *subscription, c *client, a *Account, s
 
 		js.mu.RLock()
 		isLeader, sa := cc.isLeader(), js.streamAssignment(acc.Name, streamName)
+		var offline bool
+		if sa != nil {
+			clusterWideConsCount = len(sa.consumers)
+			offline = s.allPeersOffline(sa.Group)
+		}
 		js.mu.RUnlock()
 
 		if isLeader && sa == nil {
@@ -1621,6 +1641,10 @@ func (s *Server) jsStreamInfoRequest(sub *subscription, c *client, a *Account, s
 				s.sendDelayedAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp), nil)
 			}
 			return
+		} else if isLeader && offline {
+			resp.Error = NewJSStreamOfflineError()
+			s.sendDelayedAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp), nil)
+			return
 		}
 
 		// Check to see if we are a member of the group and if the group has no leader.
@@ -1632,8 +1656,27 @@ func (s *Server) jsStreamInfoRequest(sub *subscription, c *client, a *Account, s
 				resp.Error = NewJSClusterNotAvailError()
 				// Delaying an error response gives the leader a chance to respond before us
 				s.sendDelayedAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp), sa.Group)
+				return
 			}
-			return
+
+			// We may be in process of electing a leader, but if this is a scale up from 1 we will still be the state leader
+			// while the new members work through the election and catchup process.
+			// Double check for that instead of exiting here and being silent. e.g. nats stream update test --replicas=3
+			js.mu.RLock()
+			rg := sa.Group
+			var ourID string
+			if cc.meta != nil {
+				ourID = cc.meta.ID()
+			}
+			bail := !rg.isMember(ourID)
+			if !bail {
+				// We know we are a member here, if this group is new and we are preferred allow us to answer.
+				bail = rg.Preferred != ourID || time.Since(rg.node.Created()) > lostQuorumInterval
+			}
+			js.mu.RUnlock()
+			if bail {
+				return
+			}
 		}
 	}
 
@@ -1646,6 +1689,7 @@ func (s *Server) jsStreamInfoRequest(sub *subscription, c *client, a *Account, s
 	}
 
 	var details bool
+	var subjects string
 	if !isEmptyRequest(msg) {
 		var req JSApiStreamInfoRequest
 		if err := json.Unmarshal(msg, &req); err != nil {
@@ -1653,7 +1697,7 @@ func (s *Server) jsStreamInfoRequest(sub *subscription, c *client, a *Account, s
 			s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 			return
 		}
-		details = req.DeletedDetails
+		details, subjects = req.DeletedDetails, req.SubjectsFilter
 	}
 
 	mset, err := acc.lookupStream(streamName)
@@ -1667,10 +1711,17 @@ func (s *Server) jsStreamInfoRequest(sub *subscription, c *client, a *Account, s
 	js, _ := s.getJetStreamCluster()
 
 	resp.StreamInfo = &StreamInfo{
-		Created: mset.createdTime(),
-		State:   mset.stateWithDetail(details),
-		Config:  config,
-		Cluster: js.clusterInfo(mset.raftGroup()),
+		Created:    mset.createdTime(),
+		State:      mset.stateWithDetail(details),
+		Config:     config,
+		Domain:     s.getOpts().JetStreamDomain,
+		Cluster:    js.clusterInfo(mset.raftGroup()),
+		Mirror:     mset.mirrorInfo(),
+		Sources:    mset.sourcesInfo(),
+		Alternates: js.streamAlternates(ci, config.Name),
+	}
+	if clusterWideConsCount > 0 {
+		resp.StreamInfo.State.Consumers = clusterWideConsCount
 	}
 	if mset.isMirror() {
 		resp.StreamInfo.Mirror = mset.mirrorInfo()
@@ -1678,9 +1729,26 @@ func (s *Server) jsStreamInfoRequest(sub *subscription, c *client, a *Account, s
 		resp.StreamInfo.Sources = mset.sourcesInfo()
 	}
 
+	// Check if they have asked for subject details.
+	if subjects != _EMPTY_ {
+		if mss := mset.store.SubjectsState(subjects); len(mss) > 0 {
+			if len(mss) > JSMaxSubjectDetails {
+				resp.StreamInfo = nil
+				resp.Error = NewJSStreamInfoMaxSubjectsError()
+				s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+				return
+			}
+			sd := make(map[string]uint64, len(mss))
+			for subj, ss := range mss {
+				sd[subj] = ss.Msgs
+			}
+			resp.StreamInfo.State.Subjects = sd
+		}
+
+	}
 	// Check for out of band catchups.
 	if mset.hasCatchupPeers() {
-		mset.checkClusterInfo(resp.StreamInfo)
+		mset.checkClusterInfo(resp.StreamInfo.Cluster)
 	}
 
 	s.sendAPIResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(resp))
@@ -1767,6 +1835,9 @@ func (s *Server) jsStreamLeaderStepDownRequest(sub *subscription, c *client, _ *
 	// Call actual stepdown.
 	if mset != nil {
 		if node := mset.raftNode(); node != nil {
+			mset.setLeader(false)
+			// TODO (mh) eventually make sure all go routines exited and all channels are cleared
+			time.Sleep(250 * time.Millisecond)
 			node.StepDown()
 		}
 	}
@@ -1868,7 +1939,12 @@ func (s *Server) jsConsumerLeaderStepDownRequest(sub *subscription, c *client, _
 	}
 
 	// Call actual stepdown.
-	o.raftNode().StepDown()
+	if n := o.raftNode(); n != nil {
+		o.setLeader(false)
+		// TODO (mh) eventually make sure all go routines exited and all channels are cleared
+		time.Sleep(250 * time.Millisecond)
+		n.StepDown()
+	}
 
 	resp.Success = true
 	s.sendAPIResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(resp))
@@ -2293,6 +2369,16 @@ func (s *Server) jsMsgDeleteRequest(sub *subscription, c *client, _ *Account, su
 		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}
+	if mset.cfg.Sealed {
+		resp.Error = NewJSStreamSealedError()
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
+	}
+	if mset.cfg.DenyDelete {
+		resp.Error = NewJSStreamMsgDeleteFailedError(errors.New("message delete not permitted"))
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
+	}
 
 	if s.JetStreamIsClustered() {
 		s.jsClusteredMsgDeleteRequest(ci, acc, mset, stream, subject, reply, &req, rmsg)
@@ -2410,15 +2496,13 @@ func (s *Server) jsMsgGetRequest(sub *subscription, c *client, _ *Account, subje
 		return
 	}
 
-	var subj string
-	var hdr []byte
-	var ts int64
-	seq := req.Seq
+	var svp StoreMsg
+	var sm *StoreMsg
 
 	if req.Seq > 0 {
-		subj, hdr, msg, ts, err = mset.store.LoadMsg(req.Seq)
+		sm, err = mset.store.LoadMsg(req.Seq, &svp)
 	} else {
-		subj, seq, hdr, msg, ts, err = mset.store.LoadLastMsg(req.LastFor)
+		sm, err = mset.store.LoadLastMsg(req.LastFor, &svp)
 	}
 	if err != nil {
 		resp.Error = NewJSNoMessageFoundError()
@@ -2426,11 +2510,11 @@ func (s *Server) jsMsgGetRequest(sub *subscription, c *client, _ *Account, subje
 		return
 	}
 	resp.Message = &StoredMsg{
-		Subject:  subj,
-		Sequence: seq,
-		Header:   hdr,
-		Data:     msg,
-		Time:     time.Unix(0, ts).UTC(),
+		Subject:  sm.subj,
+		Sequence: sm.seq,
+		Header:   sm.hdr,
+		Data:     sm.msg,
+		Time:     time.Unix(0, sm.ts).UTC(),
 	}
 	s.sendAPIResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(resp))
 }
@@ -2530,6 +2614,16 @@ func (s *Server) jsStreamPurgeRequest(sub *subscription, c *client, _ *Account, 
 		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}
+	if mset.cfg.Sealed {
+		resp.Error = NewJSStreamSealedError()
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
+	}
+	if mset.cfg.DenyPurge {
+		resp.Error = NewJSStreamPurgeFailedError(errors.New("stream purge not permitted"))
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
+	}
 
 	if s.JetStreamIsClustered() {
 		s.jsClusteredStreamPurgeRequest(ci, acc, mset, stream, subject, reply, rmsg, purgeRequest)
@@ -2544,6 +2638,23 @@ func (s *Server) jsStreamPurgeRequest(sub *subscription, c *client, _ *Account, 
 		resp.Success = true
 	}
 	s.sendAPIResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(resp))
+}
+
+func (acc *Account) jsNonClusteredStreamLimitsCheck(cfg *StreamConfig) *ApiError {
+	selectedLimits, tier, jsa, apiErr := acc.selectLimits(cfg)
+	if apiErr != nil {
+		return apiErr
+	}
+	jsa.mu.RLock()
+	defer jsa.mu.RUnlock()
+	if selectedLimits.MaxStreams > 0 && jsa.countStreams(tier, cfg) >= selectedLimits.MaxStreams {
+		return NewJSMaximumStreamsLimitError()
+	}
+	reserved := jsa.tieredReservation(tier, cfg)
+	if err := jsa.js.checkAllLimits(selectedLimits, cfg, reserved, 0); err != nil {
+		return NewJSStreamLimitsError(err, Unless(err))
+	}
+	return nil
 }
 
 // Request to restore a stream.
@@ -2582,8 +2693,22 @@ func (s *Server) jsStreamRestoreRequest(sub *subscription, c *client, _ *Account
 		req.Config.Name = stream
 	}
 
+	// check stream config at the start of the restore process, not at the end
+	cfg, apiErr := s.checkStreamCfg(&req.Config, acc)
+	if apiErr != nil {
+		resp.Error = apiErr
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
+	}
+
 	if s.JetStreamIsClustered() {
 		s.jsClusteredStreamRestoreRequest(ci, acc, &req, stream, subject, reply, rmsg)
+		return
+	}
+
+	if err := acc.jsNonClusteredStreamLimitsCheck(&cfg); err != nil {
+		resp.Error = err
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}
 
@@ -2609,7 +2734,7 @@ func (s *Server) processStreamRestore(ci *ClientInfo, acc *Account, cfg *StreamC
 
 	var resp = JSApiStreamRestoreResponse{ApiResponse: ApiResponse{Type: JSApiStreamRestoreResponseType}}
 
-	snapDir := path.Join(js.config.StoreDir, snapStagingDir)
+	snapDir := filepath.Join(js.config.StoreDir, snapStagingDir)
 	if _, err := os.Stat(snapDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(snapDir, defaultDirPerms); err != nil {
 			resp.Error = &ApiError{Code: 503, Description: "JetStream unable to create temp storage for restore"}
@@ -2651,7 +2776,7 @@ func (s *Server) processStreamRestore(ci *ClientInfo, acc *Account, cfg *StreamC
 
 	// For signaling to upper layers.
 	resultCh := make(chan result, 1)
-	activeCh := make(chan int, 32)
+	activeQ := s.newIPQueue(fmt.Sprintf("[ACC:%s] stream '%s' restore", acc.Name, streamName)) // of int
 
 	var total int
 
@@ -2703,7 +2828,7 @@ func (s *Server) processStreamRestore(ci *ClientInfo, acc *Account, cfg *StreamC
 			return
 		}
 
-		activeCh <- len(msg)
+		activeQ.push(len(msg))
 
 		s.sendInternalAccountMsg(acc, reply, nil)
 	}
@@ -2730,6 +2855,7 @@ func (s *Server) processStreamRestore(ci *ClientInfo, acc *Account, cfg *StreamC
 			tfile.Close()
 			os.Remove(tfile.Name())
 			sub.client.processUnsub(sub.sid)
+			activeQ.unregister()
 		}()
 
 		const activityInterval = 5 * time.Second
@@ -2789,7 +2915,8 @@ func (s *Server) processStreamRestore(ci *ClientInfo, acc *Account, cfg *StreamC
 				// Signal to the upper layers.
 				doneCh <- err
 				return
-			case n := <-activeCh:
+			case <-activeQ.ch:
+				n := activeQ.popOne().(int)
 				total += n
 				notActive.Reset(activityInterval)
 			case <-notActive.C:
@@ -2925,8 +3052,8 @@ func (s *Server) jsStreamSnapshotRequest(sub *subscription, c *client, _ *Accoun
 }
 
 // Default chunk size for now.
-const defaultSnapshotChunkSize = 256 * 1024
-const defaultSnapshotWindowSize = 32 * 1024 * 1024 // 32MB
+const defaultSnapshotChunkSize = 128 * 1024
+const defaultSnapshotWindowSize = 8 * 1024 * 1024 // 8MB
 
 // streamSnapshot will stream out our snapshot to the reply subject.
 func (s *Server) streamSnapshot(ci *ClientInfo, acc *Account, mset *stream, sr *SnapshotResult, req *JSApiStreamSnapshotRequest) {
@@ -2983,13 +3110,13 @@ func (s *Server) streamSnapshot(ci *ClientInfo, acc *Account, mset *stream, sr *
 		chunk = chunk[:n]
 		if err != nil {
 			if n > 0 {
-				mset.outq.send(&jsPubMsg{reply, _EMPTY_, _EMPTY_, nil, chunk, nil, 0, nil})
+				mset.outq.send(newJSPubMsg(reply, _EMPTY_, _EMPTY_, nil, chunk, nil, 0))
 			}
 			break
 		}
 
 		// Wait on acks for flow control if past our window size.
-		// Wait up to 1ms for now if no acks received.
+		// Wait up to 10ms for now if no acks received.
 		if atomic.LoadInt32(&out) > defaultSnapshotWindowSize {
 			select {
 			case <-acks:
@@ -2999,13 +3126,13 @@ func (s *Server) streamSnapshot(ci *ClientInfo, acc *Account, mset *stream, sr *
 			}
 		}
 		ackReply := fmt.Sprintf("%s.%d.%d", ackSubj, len(chunk), index)
-		mset.outq.send(&jsPubMsg{reply, _EMPTY_, ackReply, nil, chunk, nil, 0, nil})
+		mset.outq.send(newJSPubMsg(reply, _EMPTY_, ackReply, nil, chunk, nil, 0))
 		atomic.AddInt32(&out, int32(len(chunk)))
 	}
 done:
 	// Send last EOF
 	// TODO(dlc) - place hash in header
-	mset.outq.send(&jsPubMsg{reply, _EMPTY_, _EMPTY_, nil, nil, nil, 0, nil})
+	mset.outq.send(newJSPubMsg(reply, _EMPTY_, _EMPTY_, nil, nil, nil, 0))
 }
 
 // Request to create a durable consumer.
@@ -3045,15 +3172,19 @@ func (s *Server) jsConsumerCreate(sub *subscription, c *client, a *Account, subj
 		return
 	}
 
+	var js *jetStream
+	isClustered := s.JetStreamIsClustered()
+
 	// Determine if we should proceed here when we are in clustered mode.
-	if s.JetStreamIsClustered() {
+	if isClustered {
 		if req.Config.Direct {
 			// Check to see if we have this stream and are the stream leader.
 			if !acc.JetStreamIsStreamLeader(streamName) {
 				return
 			}
 		} else {
-			js, cc := s.getJetStreamCluster()
+			var cc *jetStreamCluster
+			js, cc = s.getJetStreamCluster()
 			if js == nil || cc == nil {
 				return
 			}
@@ -3113,7 +3244,7 @@ func (s *Server) jsConsumerCreate(sub *subscription, c *client, a *Account, subj
 		}
 	}
 
-	if s.JetStreamIsClustered() && !req.Config.Direct {
+	if isClustered && !req.Config.Direct {
 		s.jsClusteredConsumerRequest(ci, acc, subject, reply, rmsg, req.Stream, &req.Config)
 		return
 	}
@@ -3131,7 +3262,7 @@ func (s *Server) jsConsumerCreate(sub *subscription, c *client, a *Account, subj
 		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}
-	resp.ConsumerInfo = o.info()
+	resp.ConsumerInfo = o.initialInfo()
 	s.sendAPIResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(resp))
 }
 
@@ -3312,7 +3443,8 @@ func (s *Server) jsConsumerListRequest(sub *subscription, c *client, _ *Account,
 
 	// Clustered mode will invoke a scatter and gather.
 	if s.JetStreamIsClustered() {
-		msg = append(msg[:0:0], msg...)
+		// Need to copy these off before sending.. don't move this inside startGoRoutine!!!
+		msg = copyBytes(msg)
 		s.startGoRoutine(func() {
 			s.jsClusteredConsumerListRequest(acc, ci, offset, streamName, subject, reply, msg)
 		})
@@ -3364,6 +3496,12 @@ func (s *Server) jsConsumerInfoRequest(sub *subscription, c *client, _ *Account,
 
 	var resp = JSApiConsumerInfoResponse{ApiResponse: ApiResponse{Type: JSApiConsumerInfoResponseType}}
 
+	if !isEmptyRequest(msg) {
+		resp.Error = NewJSNotEmptyRequestError()
+		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
+		return
+	}
+
 	// If we are in clustered mode we need to be the stream leader to proceed.
 	if s.JetStreamIsClustered() {
 		// Check to make sure the consumer is assigned.
@@ -3374,11 +3512,11 @@ func (s *Server) jsConsumerInfoRequest(sub *subscription, c *client, _ *Account,
 
 		js.mu.RLock()
 		isLeader, sa, ca := cc.isLeader(), js.streamAssignment(acc.Name, streamName), js.consumerAssignment(acc.Name, streamName, consumerName)
-		// Ignore pending consumers for now.
-		if ca != nil && ca.pending {
-			ca = nil
-		}
 		ourID := cc.meta.ID()
+		var offline bool
+		if ca != nil {
+			offline = s.allPeersOffline(ca.Group)
+		}
 		js.mu.RUnlock()
 
 		if isLeader && ca == nil {
@@ -3406,6 +3544,10 @@ func (s *Server) jsConsumerInfoRequest(sub *subscription, c *client, _ *Account,
 				s.sendDelayedAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp), nil)
 			}
 			return
+		} else if isLeader && offline {
+			resp.Error = NewJSConsumerOfflineError()
+			s.sendDelayedAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp), nil)
+			return
 		}
 
 		// Check to see if we are a member of the group and if the group has no leader.
@@ -3421,26 +3563,50 @@ func (s *Server) jsConsumerInfoRequest(sub *subscription, c *client, _ *Account,
 				resp.Error = NewJSClusterNotAvailError()
 				// Delaying an error response gives the leader a chance to respond before us
 				s.sendDelayedAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp), ca.Group)
-			} else if ca != nil {
-				if rg := ca.Group; rg != nil && rg.node != nil && rg.isMember(ourID) {
-					// Check here if we are a member and this is just a new consumer that does not have a leader yet.
-					if rg.node.GroupLeader() == _EMPTY_ && !rg.node.HadPreviousLeader() {
-						resp.Error = NewJSConsumerNotFoundError()
-						s.sendDelayedAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp), nil)
-					}
+				return
+			}
+			// We have a consumer assignment.
+			js.mu.RLock()
+			var node RaftNode
+			var leaderNotPartOfGroup bool
+			if rg := ca.Group; rg != nil && rg.node != nil && rg.isMember(ourID) {
+				node = rg.node
+				if gl := node.GroupLeader(); gl != _EMPTY_ && !rg.isMember(gl) {
+					leaderNotPartOfGroup = true
 				}
 			}
-			return
+			js.mu.RUnlock()
+			// Check if we should ignore all together.
+			if node == nil {
+				// We have been assigned and are pending.
+				if ca.pending {
+					// Send our config and defaults for state and no cluster info.
+					resp.ConsumerInfo = &ConsumerInfo{
+						Stream:  ca.Stream,
+						Name:    ca.Name,
+						Created: ca.Created,
+						Config:  ca.Config,
+					}
+					s.sendAPIResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(resp))
+				}
+				return
+			}
+			// If we are a member and we have a group leader or we had a previous leader consider bailing out.
+			if node != nil && (node.GroupLeader() != _EMPTY_ || node.HadPreviousLeader()) {
+				if leaderNotPartOfGroup {
+					resp.Error = NewJSConsumerOfflineError()
+					s.sendDelayedAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp), nil)
+				}
+				return
+			}
+			// If we are here we are a member and this is just a new consumer that does not have a leader yet.
+			// Will fall through and return what we have. All consumers can respond but this should be very rare
+			// but makes more sense to clients when they try to create, get a consumer exists, and then do consumer info.
 		}
 	}
 
 	if !acc.JetStreamEnabled() {
 		resp.Error = NewJSNotEnabledForAccountError()
-		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
-		return
-	}
-	if !isEmptyRequest(msg) {
-		resp.Error = NewJSNotEmptyRequestError()
 		s.sendAPIErrResponse(ci, acc, subject, reply, string(msg), s.jsonResponse(&resp))
 		return
 	}

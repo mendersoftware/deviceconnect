@@ -345,7 +345,7 @@ func (s *Sublist) chkForRemoveNotification(subject, queue string) {
 			}
 			// Move from the remove map to the insert map.
 			s.notify.insert[key] = append(s.notify.insert[key], chs...)
-			delete(s.notify.remove, subject)
+			delete(s.notify.remove, key)
 		}
 	}
 }
@@ -1369,7 +1369,7 @@ func matchLiteral(literal, subject string) bool {
 }
 
 func addLocalSub(sub *subscription, subs *[]*subscription, includeLeafHubs bool) {
-	if sub != nil && sub.client != nil && sub.im == nil {
+	if sub != nil && sub.client != nil {
 		kind := sub.client.kind
 		if kind == CLIENT || kind == SYSTEM || kind == JETSTREAM || kind == ACCOUNT ||
 			(includeLeafHubs && sub.client.isHubLeafNode() /* implied kind==LEAF */) {
