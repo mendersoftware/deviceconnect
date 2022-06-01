@@ -6,7 +6,7 @@ require (
 	github.com/gin-gonic/gin v1.7.7
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/google/uuid v1.3.0
-	github.com/gorilla/websocket v1.4.2
+	github.com/gorilla/websocket v1.5.0
 	github.com/mendersoftware/go-lib-micro v0.0.0-20220304124258-d8414885f1c3
 	github.com/nats-io/nats-server/v2 v2.8.2
 	github.com/nats-io/nats.go v1.15.0
