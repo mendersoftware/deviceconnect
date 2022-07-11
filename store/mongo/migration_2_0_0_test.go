@@ -16,14 +16,12 @@ package mongo
 
 import (
 	"context"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/mendersoftware/go-lib-micro/mongo/migrate"
 	mstore "github.com/mendersoftware/go-lib-micro/store/v2"
 )
 
@@ -38,24 +36,34 @@ func TestMigration_2_0_0(t *testing.T) {
 		client: db.Client(),
 		db:     DbName,
 	}
-	from := migrate.MakeVersion(0, 0, 0)
 	db := db.Client().Database(DbName)
 
-	collDevs := db.Client().Database(DbName).
-		Collection(DevicesCollectionName)
+	collDevs := db.Collection(DevicesCollectionName)
 	ctx := context.Background()
 
 	_, err := collDevs.InsertMany(ctx, func() []interface{} {
 		ret := make([]interface{}, findBatchSize+1)
 		for i := range ret {
-			ret[i] = bson.D{{Key: "_id", Value: strconv.Itoa(i)}}
+			ret[i] = bson.D{}
 		}
 		return ret
 	}())
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
-	err = m.Up(from)
+	_, err = db.Client().
+		Database(DbName+"-123456789012345678901234").
+		Collection(DevicesCollectionName).
+		InsertMany(ctx, func() []interface{} {
+			ret := make([]interface{}, findBatchSize+1)
+			for i := range ret {
+				ret[i] = bson.D{}
+			}
+			return ret
+		}())
+	require.NoError(t, err)
+
+	err = Migrate(ctx, DbName, "2.0.0", db.Client(), true)
 	require.NoError(t, err)
 
 	collNames, err := db.ListCollectionNames(ctx, bson.D{})
@@ -113,13 +121,8 @@ func TestMigration_2_0_0(t *testing.T) {
 	assert.Equal(t, "2.0.0", m.Version().String())
 
 	actual, err := collDevs.CountDocuments(ctx, bson.D{
-		{Key: mstore.FieldTenantID, Value: bson.D{{Key: "$exists", Value: true}}},
+		{Key: mstore.FieldTenantID, Value: bson.D{{Key: "$exists", Value: false}}},
 	})
-	if assert.NoError(t, err) {
-		expected, err := collDevs.CountDocuments(ctx, bson.D{})
-		if assert.NoError(t, err) {
-			assert.Equalf(t, expected, actual,
-				"%d documents does not contain 'tenant_id' key", expected-actual)
-		}
-	}
+	require.NoError(t, err)
+	assert.Zerof(t, actual, "%d documents are not indexed by tenant_id", actual)
 }

@@ -93,9 +93,10 @@ func (m *migration_2_0_0) Up(from migrate.Version) error {
 	ctx = identity.WithContext(ctx, &identity.Identity{
 		Tenant: tenantID,
 	})
+	writes := make([]mongo.WriteModel, 0, findBatchSize)
 
 	for collection, idxes := range collections {
-		// get all the documents in the collection
+		writes = writes[:0]
 		findOptions := mopts.Find().
 			SetBatchSize(findBatchSize).
 			SetSort(bson.D{{Key: dbFieldID, Value: 1}})
@@ -107,14 +108,24 @@ func (m *migration_2_0_0) Up(from migrate.Version) error {
 				return err
 			}
 		}
+		if m.db == DbName {
+			coll.UpdateMany(ctx, bson.D{
+				{Key: mstore.FieldTenantID, Value: bson.D{
+					{Key: "$exists", Value: false},
+				}},
+			}, bson.D{{Key: "$set", Value: bson.D{
+				{Key: mstore.FieldTenantID, Value: ""},
+			}}},
+			)
+			continue
+		}
 
+		// get all the documents in the collection
 		cur, err := coll.Find(ctx, bson.D{}, findOptions)
 		if err != nil {
 			return err
 		}
 		defer cur.Close(ctx)
-
-		writes := make([]mongo.WriteModel, 0, findBatchSize)
 
 		// migrate the documents
 		for cur.Next(ctx) {
@@ -125,19 +136,7 @@ func (m *migration_2_0_0) Up(from migrate.Version) error {
 			}
 
 			item = mstore.WithTenantID(ctx, item)
-			if m.db == DbName {
-				filter := bson.D{}
-				for _, i := range item {
-					if i.Key == dbFieldID {
-						filter = append(filter, i)
-					}
-				}
-				writes = append(writes,
-					mongo.NewReplaceOneModel().
-						SetFilter(filter).SetReplacement(item))
-			} else {
-				writes = append(writes, mongo.NewInsertOneModel().SetDocument(item))
-			}
+			writes = append(writes, mongo.NewInsertOneModel().SetDocument(item))
 			if len(writes) == findBatchSize {
 				_, err = collOut.BulkWrite(ctx, writes)
 				if err != nil {
