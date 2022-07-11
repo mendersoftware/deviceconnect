@@ -31,11 +31,7 @@ type index struct {
 	ExpireAfter *int           `bson:"expireAfterSeconds"`
 }
 
-func TestMigration_2_0_0(t *testing.T) {
-	m := &migration_2_0_0{
-		client: db.Client(),
-		db:     DbName,
-	}
+func TestMigration_2_0_1(t *testing.T) {
 	db := db.Client().Database(DbName)
 
 	collDevs := db.Collection(DevicesCollectionName)
@@ -63,7 +59,9 @@ func TestMigration_2_0_0(t *testing.T) {
 		}())
 	require.NoError(t, err)
 
-	err = Migrate(ctx, DbName, "2.0.0", db.Client(), true)
+	// NOTE: We're using 2.0.1 since it's the same migration, thus verifying
+	//       that the migration is reentrant.
+	err = Migrate(ctx, DbName, "2.0.1", db.Client(), true)
 	require.NoError(t, err)
 
 	collNames, err := db.ListCollectionNames(ctx, bson.D{})
@@ -118,7 +116,6 @@ func TestMigration_2_0_0(t *testing.T) {
 			}
 		}
 	}
-	assert.Equal(t, "2.0.0", m.Version().String())
 
 	actual, err := collDevs.CountDocuments(ctx, bson.D{
 		{Key: mstore.FieldTenantID, Value: bson.D{{Key: "$exists", Value: false}}},
