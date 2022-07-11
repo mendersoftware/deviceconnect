@@ -26,7 +26,7 @@ import (
 
 const (
 	// DbVersion is the current schema version
-	DbVersion = "2.0.0"
+	DbVersion = "2.0.1"
 
 	// DbName is the database name
 	DbName = "deviceconnect"
@@ -68,10 +68,11 @@ func Migrate(ctx context.Context,
 				client: client,
 				db:     dbName,
 			},
-			&migration_2_0_0{
+			&migration_2_0_1{
 				client: client,
 				db:     dbName,
 			},
+			// NOTE: Future migrations need only be applied to DbName
 		}
 		err = m.Apply(ctx, *ver, migrations)
 		if err != nil {

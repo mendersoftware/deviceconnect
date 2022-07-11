@@ -31,12 +31,12 @@ const (
 	findBatchSize = 255
 )
 
-type migration_2_0_0 struct {
+type migration_2_0_1 struct {
 	client *mongo.Client
 	db     string
 }
 
-func (m *migration_2_0_0) Up(from migrate.Version) error {
+func (m *migration_2_0_1) Up(from migrate.Version) error {
 	ctx := context.Background()
 	client := m.client
 
@@ -100,16 +100,15 @@ func (m *migration_2_0_0) Up(from migrate.Version) error {
 		findOptions := mopts.Find().
 			SetBatchSize(findBatchSize).
 			SetSort(bson.D{{Key: dbFieldID, Value: 1}})
-		coll := client.Database(m.db).Collection(collection)
 		collOut := client.Database(DbName).Collection(collection)
-		if len(idxes.Indexes) > 0 {
-			_, err := collOut.Indexes().CreateMany(ctx, collections[collection].Indexes)
-			if err != nil {
-				return err
-			}
-		}
 		if m.db == DbName {
-			coll.UpdateMany(ctx, bson.D{
+			if len(idxes.Indexes) > 0 {
+				_, err := collOut.Indexes().CreateMany(ctx, collections[collection].Indexes)
+				if err != nil {
+					return err
+				}
+			}
+			_, err := collOut.UpdateMany(ctx, bson.D{
 				{Key: mstore.FieldTenantID, Value: bson.D{
 					{Key: "$exists", Value: false},
 				}},
@@ -117,9 +116,13 @@ func (m *migration_2_0_0) Up(from migrate.Version) error {
 				{Key: mstore.FieldTenantID, Value: ""},
 			}}},
 			)
+			if err != nil {
+				return err
+			}
 			continue
 		}
 
+		coll := client.Database(m.db).Collection(collection)
 		// get all the documents in the collection
 		cur, err := coll.Find(ctx, bson.D{}, findOptions)
 		if err != nil {
@@ -129,14 +132,16 @@ func (m *migration_2_0_0) Up(from migrate.Version) error {
 
 		// migrate the documents
 		for cur.Next(ctx) {
-			item := bson.D{}
-			err := cur.Decode(&item)
-			if err != nil {
+			id := cur.Current.Lookup(dbFieldID)
+			var item bson.D
+			if err = cur.Decode(&item); err != nil {
 				return err
 			}
-
-			item = mstore.WithTenantID(ctx, item)
-			writes = append(writes, mongo.NewInsertOneModel().SetDocument(item))
+			writes = append(writes, mongo.
+				NewReplaceOneModel().
+				SetFilter(bson.D{{Key: dbFieldID, Value: id}}).
+				SetUpsert(true).
+				SetReplacement(mstore.WithTenantID(ctx, item)))
 			if len(writes) == findBatchSize {
 				_, err = collOut.BulkWrite(ctx, writes)
 				if err != nil {
@@ -156,6 +161,6 @@ func (m *migration_2_0_0) Up(from migrate.Version) error {
 	return nil
 }
 
-func (m *migration_2_0_0) Version() migrate.Version {
-	return migrate.MakeVersion(2, 0, 0)
+func (m *migration_2_0_1) Version() migrate.Version {
+	return migrate.MakeVersion(2, 0, 1)
 }
