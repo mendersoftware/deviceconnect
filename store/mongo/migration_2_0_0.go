@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2022 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -43,18 +43,7 @@ func (m *migration_2_0_0) Up(from migrate.Version) error {
 	collections := map[string]struct {
 		Indexes []mongo.IndexModel
 	}{
-		DevicesCollectionName: {
-			Indexes: []mongo.IndexModel{
-				{
-					Keys: bson.D{
-						{Key: mstore.FieldTenantID, Value: 1},
-						{Key: dbFieldID, Value: 1},
-					},
-					Options: mopts.Index().
-						SetName(mstore.FieldTenantID + "_" + dbFieldID),
-				},
-			},
-		},
+		DevicesCollectionName: {},
 		SessionsCollectionName: {
 			Indexes: []mongo.IndexModel{
 				{
@@ -105,16 +94,18 @@ func (m *migration_2_0_0) Up(from migrate.Version) error {
 		Tenant: tenantID,
 	})
 
-	for collection := range collections {
+	for collection, idxes := range collections {
 		// get all the documents in the collection
 		findOptions := mopts.Find().
 			SetBatchSize(findBatchSize).
 			SetSort(bson.D{{Key: dbFieldID, Value: 1}})
 		coll := client.Database(m.db).Collection(collection)
 		collOut := client.Database(DbName).Collection(collection)
-		_, err := collOut.Indexes().CreateMany(ctx, collections[collection].Indexes)
-		if err != nil {
-			return err
+		if len(idxes.Indexes) > 0 {
+			_, err := collOut.Indexes().CreateMany(ctx, collections[collection].Indexes)
+			if err != nil {
+				return err
+			}
 		}
 
 		cur, err := coll.Find(ctx, bson.D{}, findOptions)
@@ -148,6 +139,7 @@ func (m *migration_2_0_0) Up(from migrate.Version) error {
 				writes = append(writes, mongo.NewInsertOneModel().SetDocument(item))
 			}
 			if len(writes) == findBatchSize {
+				_, err = collOut.BulkWrite(ctx, writes)
 				if err != nil {
 					return err
 				}
