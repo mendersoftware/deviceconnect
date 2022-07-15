@@ -29,8 +29,6 @@ include:
     file: '.gitlab-ci-check-docker-build.yml'
 
 test:unit:
-  image: golang:1.15
-  needs: []
   services:
     - name: mongo:4.4
       alias: mender-mongo
