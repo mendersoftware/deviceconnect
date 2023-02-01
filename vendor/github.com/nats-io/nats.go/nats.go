@@ -24,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
@@ -48,7 +47,7 @@ import (
 
 // Default Constants
 const (
-	Version                   = "1.20.0"
+	Version                   = "1.23.0"
 	DefaultURL                = "nats://127.0.0.1:4222"
 	DefaultPort               = 4222
 	DefaultMaxReconnect       = 60
@@ -247,8 +246,9 @@ type asyncCallbacksHandler struct {
 // Option is a function on the options for a connection.
 type Option func(*Options) error
 
-// CustomDialer can be used to specify any dialer, not necessarily
-// a *net.Dialer.
+// CustomDialer can be used to specify any dialer, not necessarily a
+// *net.Dialer.  A CustomDialer may also implement `SkipTLSHandshake() bool`
+// in order to skip the TLS handshake in case not required.
 type CustomDialer interface {
 	Dial(network, address string) (net.Conn, error)
 }
@@ -375,6 +375,12 @@ type Options struct {
 	// DisconnectedCB will not be called if DisconnectedErrCB is set
 	DisconnectedErrCB ConnErrHandler
 
+	// ConnectedCB sets the connected handler called when the initial connection
+	// is established. It is not invoked on successful reconnects - for reconnections,
+	// use ReconnectedCB. ConnectedCB can be used in conjunction with RetryOnFailedConnect
+	// to detect whether the initial connect was successful.
+	ConnectedCB ConnHandler
+
 	// ReconnectedCB sets the reconnected handler called whenever
 	// the connection is successfully reconnected.
 	ReconnectedCB ConnHandler
@@ -465,6 +471,10 @@ type Options struct {
 
 	// InboxPrefix allows the default _INBOX prefix to be customized
 	InboxPrefix string
+
+	// IgnoreAuthErrorAbort - if set to true, client opts out of the default connect behavior of aborting
+	// subsequent reconnect attempts if server returns the same auth error twice (regardless of reconnect policy).
+	IgnoreAuthErrorAbort bool
 }
 
 const (
@@ -827,9 +837,9 @@ func RootCAs(file ...string) Option {
 	return func(o *Options) error {
 		pool := x509.NewCertPool()
 		for _, f := range file {
-			rootPEM, err := ioutil.ReadFile(f)
+			rootPEM, err := os.ReadFile(f)
 			if err != nil || rootPEM == nil {
-				return fmt.Errorf("nats: error loading or parsing rootCA file: %v", err)
+				return fmt.Errorf("nats: error loading or parsing rootCA file: %w", err)
 			}
 			ok := pool.AppendCertsFromPEM(rootPEM)
 			if !ok {
@@ -851,11 +861,11 @@ func ClientCert(certFile, keyFile string) Option {
 	return func(o *Options) error {
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
-			return fmt.Errorf("nats: error loading client certificate: %v", err)
+			return fmt.Errorf("nats: error loading client certificate: %w", err)
 		}
 		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
 		if err != nil {
-			return fmt.Errorf("nats: error parsing client certificate: %v", err)
+			return fmt.Errorf("nats: error parsing client certificate: %w", err)
 		}
 		if o.TLSConfig == nil {
 			o.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
@@ -948,7 +958,7 @@ func MaxPingsOutstanding(max int) Option {
 }
 
 // ReconnectBufSize sets the buffer size of messages kept while busy reconnecting.
-// Defaults to 8388608 bytes (8MB).
+// Defaults to 8388608 bytes (8MB).  It can be disabled by setting it to -1.
 func ReconnectBufSize(size int) Option {
 	return func(o *Options) error {
 		o.ReconnectBufSize = size
@@ -995,6 +1005,14 @@ func DisconnectErrHandler(cb ConnErrHandler) Option {
 func DisconnectHandler(cb ConnHandler) Option {
 	return func(o *Options) error {
 		o.DisconnectedCB = cb
+		return nil
+	}
+}
+
+// ConnectHandler is an Option to set the connected handler.
+func ConnectHandler(cb ConnHandler) Option {
+	return func(o *Options) error {
+		o.ConnectedCB = cb
 		return nil
 	}
 }
@@ -1095,7 +1113,7 @@ func UserJWTAndSeed(jwt string, seed string) Option {
 	sigCB := func(nonce []byte) ([]byte, error) {
 		kp, err := nkeys.FromSeed([]byte(seed))
 		if err != nil {
-			return nil, fmt.Errorf("unable to extract key pair from seed: %v", err)
+			return nil, fmt.Errorf("unable to extract key pair from seed: %w", err)
 		}
 		// Wipe our key on exit.
 		defer kp.Wipe()
@@ -1118,6 +1136,12 @@ func UserJWT(userCB UserJWTHandler, sigCB SignatureHandler) Option {
 		if sigCB == nil {
 			return ErrUserButNoSigCB
 		}
+		// Smoke test the user callback to ensure it is setup properly
+		// when processing options.
+		if _, err := userCB(); err != nil {
+			return err
+		}
+
 		o.UserJWT = userCB
 		o.SignatureCB = sigCB
 		return nil
@@ -1235,6 +1259,15 @@ func CustomInboxPrefix(p string) Option {
 	}
 }
 
+// IgnoreAuthErrorAbort opts out of the default connect behavior of aborting
+// subsequent reconnect attempts if server returns the same auth error twice.
+func IgnoreAuthErrorAbort() Option {
+	return func(o *Options) error {
+		o.IgnoreAuthErrorAbort = true
+		return nil
+	}
+}
+
 // Handler processing
 
 // SetDisconnectHandler will set the disconnect event handler.
@@ -1258,6 +1291,16 @@ func (nc *Conn) SetDisconnectErrHandler(dcb ConnErrHandler) {
 	nc.Opts.DisconnectedErrCB = dcb
 }
 
+// DisconnectErrHandler will return the disconnect event handler.
+func (nc *Conn) DisconnectErrHandler() ConnErrHandler {
+	if nc == nil {
+		return nil
+	}
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	return nc.Opts.DisconnectedErrCB
+}
+
 // SetReconnectHandler will set the reconnect event handler.
 func (nc *Conn) SetReconnectHandler(rcb ConnHandler) {
 	if nc == nil {
@@ -1266,6 +1309,16 @@ func (nc *Conn) SetReconnectHandler(rcb ConnHandler) {
 	nc.mu.Lock()
 	defer nc.mu.Unlock()
 	nc.Opts.ReconnectedCB = rcb
+}
+
+// ReconnectHandler will return the reconnect event handler.
+func (nc *Conn) ReconnectHandler() ConnHandler {
+	if nc == nil {
+		return nil
+	}
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	return nc.Opts.ReconnectedCB
 }
 
 // SetDiscoveredServersHandler will set the discovered servers handler.
@@ -1278,6 +1331,16 @@ func (nc *Conn) SetDiscoveredServersHandler(dscb ConnHandler) {
 	nc.Opts.DiscoveredServersCB = dscb
 }
 
+// DiscoveredServersHandler will return the discovered servers handler.
+func (nc *Conn) DiscoveredServersHandler() ConnHandler {
+	if nc == nil {
+		return nil
+	}
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	return nc.Opts.DiscoveredServersCB
+}
+
 // SetClosedHandler will set the closed event handler.
 func (nc *Conn) SetClosedHandler(cb ConnHandler) {
 	if nc == nil {
@@ -1288,6 +1351,16 @@ func (nc *Conn) SetClosedHandler(cb ConnHandler) {
 	nc.Opts.ClosedCB = cb
 }
 
+// ClosedHandler will return the closed event handler.
+func (nc *Conn) ClosedHandler() ConnHandler {
+	if nc == nil {
+		return nil
+	}
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	return nc.Opts.ClosedCB
+}
+
 // SetErrorHandler will set the async error handler.
 func (nc *Conn) SetErrorHandler(cb ErrHandler) {
 	if nc == nil {
@@ -1296,6 +1369,16 @@ func (nc *Conn) SetErrorHandler(cb ErrHandler) {
 	nc.mu.Lock()
 	defer nc.mu.Unlock()
 	nc.Opts.AsyncErrorCB = cb
+}
+
+// ErrorHandler will return the async error handler.
+func (nc *Conn) ErrorHandler() ErrHandler {
+	if nc == nil {
+		return nil
+	}
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	return nc.Opts.AsyncErrorCB
 }
 
 // Process the url string argument to Connect.
@@ -1367,12 +1450,17 @@ func (o Options) Connect() (*Conn, error) {
 	// Create reader/writer
 	nc.newReaderWriter()
 
-	if err := nc.connect(); err != nil {
+	connectionEstablished, err := nc.connect()
+	if err != nil {
 		return nil, err
 	}
 
 	// Spin up the async cb dispatcher on success
 	go nc.ach.asyncCBDispatcher()
+
+	if connectionEstablished && nc.Opts.ConnectedCB != nil {
+		nc.ach.push(func() { nc.Opts.ConnectedCB(nc) })
+	}
 
 	return nc, nil
 }
@@ -1860,8 +1948,19 @@ func (nc *Conn) createConn() (err error) {
 	return nil
 }
 
+type skipTLSDialer interface {
+	SkipTLSHandshake() bool
+}
+
 // makeTLSConn will wrap an existing Conn using TLS
 func (nc *Conn) makeTLSConn() error {
+	if nc.Opts.CustomDialer != nil {
+		// we do nothing when asked to skip the TLS wrapper
+		sd, ok := nc.Opts.CustomDialer.(skipTLSDialer)
+		if ok && sd.SkipTLSHandshake() {
+			return nil
+		}
+	}
 	// Allow the user to configure their own tls.Config structure.
 	var tlsCopy *tls.Config
 	if nc.Opts.TLSConfig != nil {
@@ -2114,9 +2213,10 @@ func (nc *Conn) processConnectInit() error {
 	return nil
 }
 
-// Main connect function. Will connect to the nats-server
-func (nc *Conn) connect() error {
+// Main connect function. Will connect to the nats-server.
+func (nc *Conn) connect() (bool, error) {
 	var err error
+	var connectionEstablished bool
 
 	// Create actual socket connection
 	// For first connect we walk all servers in the pool and try
@@ -2162,6 +2262,7 @@ func (nc *Conn) connect() error {
 	}
 
 	if err == nil {
+		connectionEstablished = true
 		nc.initc = false
 	} else if nc.Opts.RetryOnFailedConnect {
 		nc.setup()
@@ -2173,7 +2274,7 @@ func (nc *Conn) connect() error {
 		nc.current = nil
 	}
 
-	return err
+	return connectionEstablished, err
 }
 
 // This will check to see if the connection should be
@@ -2287,7 +2388,7 @@ func (nc *Conn) connectProto() (string, error) {
 		}
 		sigraw, err := o.SignatureCB([]byte(nc.info.Nonce))
 		if err != nil {
-			return _EMPTY_, fmt.Errorf("error signing nonce: %v", err)
+			return _EMPTY_, fmt.Errorf("error signing nonce: %w", err)
 		}
 		sig = base64.RawURLEncoding.EncodeToString(sigraw)
 	}
@@ -3132,8 +3233,8 @@ func (nc *Conn) processAuthError(err error) bool {
 		nc.ach.push(func() { nc.Opts.AsyncErrorCB(nc, nil, err) })
 	}
 	// We should give up if we tried twice on this server and got the
-	// same error.
-	if nc.current.lastErr == err {
+	// same error. This behavior can be modified using IgnoreAuthErrorAbort.
+	if nc.current.lastErr == err && !nc.Opts.IgnoreAuthErrorAbort {
 		nc.ar = true
 	} else {
 		nc.current.lastErr = err
@@ -3458,7 +3559,8 @@ const (
 
 // decodeHeadersMsg will decode and headers.
 func decodeHeadersMsg(data []byte) (Header, error) {
-	tp := textproto.NewReader(bufio.NewReader(bytes.NewReader(data)))
+	br := bufio.NewReaderSize(bytes.NewReader(data), 128)
+	tp := textproto.NewReader(br)
 	l, err := tp.ReadLine()
 	if err != nil || len(l) < hdrPreEnd || l[:hdrPreEnd] != hdrLine[:hdrPreEnd] {
 		return nil, ErrBadHeaderMsg
@@ -5337,12 +5439,12 @@ func wipeSlice(buf []byte) {
 func userFromFile(userFile string) (string, error) {
 	path, err := expandPath(userFile)
 	if err != nil {
-		return _EMPTY_, fmt.Errorf("nats: %v", err)
+		return _EMPTY_, fmt.Errorf("nats: %w", err)
 	}
 
-	contents, err := ioutil.ReadFile(path)
+	contents, err := os.ReadFile(path)
 	if err != nil {
-		return _EMPTY_, fmt.Errorf("nats: %v", err)
+		return _EMPTY_, fmt.Errorf("nats: %w", err)
 	}
 	defer wipeSlice(contents)
 	return nkeys.ParseDecoratedJWT(contents)
@@ -5389,9 +5491,9 @@ func expandPath(p string) (string, error) {
 }
 
 func nkeyPairFromSeedFile(seedFile string) (nkeys.KeyPair, error) {
-	contents, err := ioutil.ReadFile(seedFile)
+	contents, err := os.ReadFile(seedFile)
 	if err != nil {
-		return nil, fmt.Errorf("nats: %v", err)
+		return nil, fmt.Errorf("nats: %w", err)
 	}
 	defer wipeSlice(contents)
 	return nkeys.ParseDecoratedNKey(contents)
@@ -5402,7 +5504,7 @@ func nkeyPairFromSeedFile(seedFile string) (nkeys.KeyPair, error) {
 func sigHandler(nonce []byte, seedFile string) ([]byte, error) {
 	kp, err := nkeyPairFromSeedFile(seedFile)
 	if err != nil {
-		return nil, fmt.Errorf("unable to extract key pair from file %q: %v", seedFile, err)
+		return nil, fmt.Errorf("unable to extract key pair from file %q: %w", seedFile, err)
 	}
 	// Wipe our key on exit.
 	defer kp.Wipe()

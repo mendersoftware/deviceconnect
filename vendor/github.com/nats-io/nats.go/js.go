@@ -652,7 +652,11 @@ func (js *js) newAsyncReply() string {
 		for i := 0; i < aReplyTokensize; i++ {
 			b[i] = rdigits[int(b[i]%base)]
 		}
-		js.rpre = fmt.Sprintf("%s%s.", InboxPrefix, b[:aReplyTokensize])
+		inboxPrefix := InboxPrefix
+		if js.nc.Opts.InboxPrefix != _EMPTY_ {
+			inboxPrefix = js.nc.Opts.InboxPrefix + "."
+		}
+		js.rpre = fmt.Sprintf("%s%s.", inboxPrefix, b[:aReplyTokensize])
 		sub, err := js.nc.Subscribe(fmt.Sprintf("%s*", js.rpre), js.handleAsyncReply)
 		if err != nil {
 			js.mu.Unlock()
@@ -1528,13 +1532,11 @@ func (js *js) subscribe(subj, queue string, cb MsgHandler, ch chan *Msg, isSync,
 	}
 
 	// Find the stream mapped to the subject if not bound to a stream already.
-	if o.stream == _EMPTY_ {
+	if stream == _EMPTY_ {
 		stream, err = js.StreamNameBySubject(subj)
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		stream = o.stream
 	}
 
 	// With an explicit durable name, we can lookup the consumer first
@@ -2578,6 +2580,11 @@ func checkMsg(msg *Msg, checkSts, isNoWait bool) (usrMsg bool, err error) {
 	case jetStream409Sts:
 		if strings.Contains(strings.ToLower(string(msg.Header.Get(descrHdr))), "consumer deleted") {
 			err = ErrConsumerDeleted
+			break
+		}
+
+		if strings.Contains(strings.ToLower(string(msg.Header.Get(descrHdr))), "leadership change") {
+			err = ErrConsumerLeadershipChanged
 			break
 		}
 		fallthrough
