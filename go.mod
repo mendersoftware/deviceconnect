@@ -15,7 +15,7 @@ require (
 	github.com/urfave/cli v1.22.10
 	github.com/vmihailenco/msgpack/v5 v5.3.5
 	go.mongodb.org/mongo-driver v1.11.0
-	golang.org/x/sys v0.0.0-20220111092808-5a964db01320
+	golang.org/x/sys v0.5.0
 )
 
 require (
