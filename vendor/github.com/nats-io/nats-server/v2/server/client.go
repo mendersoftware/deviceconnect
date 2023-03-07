@@ -110,6 +110,9 @@ const (
 	// For stalling fast producers
 	stallClientMinDuration = 100 * time.Millisecond
 	stallClientMaxDuration = time.Second
+
+	// Threshold for not knowingly doing a potential blocking operation when internal and on a route or gateway or leafnode.
+	noBlockThresh = 500 * time.Millisecond
 )
 
 var readLoopReportThreshold = readLoopReport
@@ -203,6 +206,7 @@ const (
 	DuplicateClientID
 	DuplicateServerName
 	MinimumVersionRequired
+	ClusterNamesIdentical
 )
 
 // Some flags passed to processMsgResults
@@ -357,6 +361,7 @@ type readCacheFlag uint16
 
 const (
 	hasMappings readCacheFlag = 1 << iota // For account subject mappings.
+	sysGroup                  = "_sys_"
 )
 
 // Used in readloop to cache hot subject lookups and group statistics.
@@ -382,8 +387,11 @@ type readCache struct {
 	rsz int32 // Read buffer size
 	srs int32 // Short reads, used for dynamic buffer resizing.
 
-	// These are for readcache flags to avoind locks.
+	// These are for readcache flags to avoid locks.
 	flags readCacheFlag
+
+	// Capture the time we started processing our readLoop.
+	start time.Time
 }
 
 // set the flag (would be equivalent to set the boolean to true)
@@ -1206,7 +1214,6 @@ func (c *client) readLoop(pre []byte) {
 		} else {
 			bufs[0] = b[:n]
 		}
-		start := time.Now()
 
 		// Check if the account has mappings and if so set the local readcache flag.
 		// We check here to make sure any changes such as config reload are reflected here.
@@ -1217,6 +1224,8 @@ func (c *client) readLoop(pre []byte) {
 				c.in.flags.clear(hasMappings)
 			}
 		}
+
+		c.in.start = time.Now()
 
 		// Clear inbound stats cache
 		c.in.msgs = 0
@@ -1236,7 +1245,7 @@ func (c *client) readLoop(pre []byte) {
 					// We don't need to do any of the things below, simply return.
 					return
 				}
-				if dur := time.Since(start); dur >= readLoopReportThreshold {
+				if dur := time.Since(c.in.start); dur >= readLoopReportThreshold {
 					c.Warnf("Readloop processing time: %v", dur)
 				}
 				// Need to call flushClients because some of the clients have been
@@ -1257,6 +1266,10 @@ func (c *client) readLoop(pre []byte) {
 		if c.in.msgs > 0 {
 			atomic.AddInt64(&c.inMsgs, int64(c.in.msgs))
 			atomic.AddInt64(&c.inBytes, int64(c.in.bytes))
+			if acc != nil {
+				atomic.AddInt64(&acc.inMsgs, int64(c.in.msgs))
+				atomic.AddInt64(&acc.inBytes, int64(c.in.bytes))
+			}
 			atomic.AddInt64(&s.inMsgs, int64(c.in.msgs))
 			atomic.AddInt64(&s.inBytes, int64(c.in.bytes))
 		}
@@ -1299,7 +1312,7 @@ func (c *client) readLoop(pre []byte) {
 			return
 		}
 
-		if dur := time.Since(start); dur >= readLoopReportThreshold {
+		if dur := time.Since(c.in.start); dur >= readLoopReportThreshold {
 			c.Warnf("Readloop processing time: %v", dur)
 		}
 
@@ -1310,7 +1323,7 @@ func (c *client) readLoop(pre []byte) {
 			return
 		}
 
-		if cpacc && (start.Sub(lpacc)) >= closedSubsCheckInterval {
+		if cpacc && (c.in.start.Sub(lpacc)) >= closedSubsCheckInterval {
 			c.pruneClosedSubFromPerAccountCache()
 			lpacc = time.Now()
 		}
@@ -1518,6 +1531,9 @@ func (c *client) handleWriteTimeout(written, attempted int64, numChunks int) boo
 
 	// Slow consumer here..
 	atomic.AddInt64(&c.srv.slowConsumers, 1)
+	if c.acc != nil {
+		atomic.AddInt64(&c.acc.slowConsumers, 1)
+	}
 	c.Noticef("Slow Consumer Detected: WriteDeadline of %v exceeded with %d chunks of %d total bytes.",
 		c.out.wdl, numChunks, attempted)
 
@@ -1785,7 +1801,7 @@ func (c *client) processConnect(arg []byte) error {
 			}
 		}
 		if ncs != _EMPTY_ {
-			c.ncs.Store(fmt.Sprintf("%s - %q", c, ncs))
+			c.ncs.CompareAndSwap(nil, fmt.Sprintf("%s - %q", c, ncs))
 		}
 	}
 
@@ -1980,6 +1996,9 @@ func (c *client) queueOutbound(data []byte) {
 		// checking current pb+len(data) and then add to pb.
 		c.out.pb -= int64(len(data))
 		atomic.AddInt64(&c.srv.slowConsumers, 1)
+		if c.acc != nil {
+			atomic.AddInt64(&c.acc.slowConsumers, 1)
+		}
 		c.Noticef("Slow Consumer Detected: MaxPending of %d Exceeded", c.out.mp)
 		c.markConnAsClosed(SlowConsumerPendingBytes)
 		return
@@ -2276,17 +2295,17 @@ func (c *client) processHeaderPub(arg []byte) error {
 		c.pa.hdb = args[2]
 		c.pa.szb = args[3]
 	default:
-		return fmt.Errorf("processHeaderPub Parse Error: '%s'", arg)
+		return fmt.Errorf("processHeaderPub Parse Error: %q", arg)
 	}
 	if c.pa.hdr < 0 {
-		return fmt.Errorf("processHeaderPub Bad or Missing Header Size: '%s'", arg)
+		return fmt.Errorf("processHeaderPub Bad or Missing Header Size: %q", arg)
 	}
 	// If number overruns an int64, parseSize() will have returned a negative value
 	if c.pa.size < 0 {
-		return fmt.Errorf("processHeaderPub Bad or Missing Total Size: '%s'", arg)
+		return fmt.Errorf("processHeaderPub Bad or Missing Total Size: %q", arg)
 	}
 	if c.pa.hdr > c.pa.size {
-		return fmt.Errorf("processHeaderPub Header Size larger then TotalSize: '%s'", arg)
+		return fmt.Errorf("processHeaderPub Header Size larger then TotalSize: %q", arg)
 	}
 	maxPayload := atomic.LoadInt32(&c.mpay)
 	// Use int64() to avoid int32 overrun...
@@ -2335,11 +2354,11 @@ func (c *client) processPub(arg []byte) error {
 		c.pa.size = parseSize(args[2])
 		c.pa.szb = args[2]
 	default:
-		return fmt.Errorf("processPub Parse Error: '%s'", arg)
+		return fmt.Errorf("processPub Parse Error: %q", arg)
 	}
 	// If number overruns an int64, parseSize() will have returned a negative value
 	if c.pa.size < 0 {
-		return fmt.Errorf("processPub Bad or Missing Size: '%s'", arg)
+		return fmt.Errorf("processPub Bad or Missing Size: %q", arg)
 	}
 	maxPayload := atomic.LoadInt32(&c.mpay)
 	// Use int64() to avoid int32 overrun...
@@ -2397,7 +2416,7 @@ func (c *client) parseSub(argo []byte, noForward bool) error {
 		queue = args[1]
 		sid = args[2]
 	default:
-		return fmt.Errorf("processSub Parse Error: '%s'", arg)
+		return fmt.Errorf("processSub Parse Error: %q", arg)
 	}
 	// If there was an error, it has been sent to the client. We don't return an
 	// error here to not close the connection as a parsing error.
@@ -2441,7 +2460,7 @@ func (c *client) processSubEx(subject, queue, bsid []byte, cb msgHandler, noForw
 		// allow = ["foo", "foo v1"]  -> can subscribe to 'foo' but can only queue subscribe to 'foo v1'
 		//
 		if sub.queue != nil {
-			if !c.canSubscribe(string(sub.subject), string(sub.queue)) {
+			if !c.canSubscribe(string(sub.subject), string(sub.queue)) || string(sub.queue) == sysGroup {
 				c.mu.Unlock()
 				c.subPermissionViolation(sub)
 				return nil, ErrSubscribePermissionViolation
@@ -2667,7 +2686,7 @@ func (c *client) addShadowSub(sub *subscription, ime *ime) (*subscription, error
 			return nil, err
 		}
 		nsub.subject = []byte(subj)
-	} else if !im.usePub || !ime.dyn {
+	} else if !im.usePub || (im.usePub && ime.overlapSubj != _EMPTY_) || !ime.dyn {
 		if ime.overlapSubj != _EMPTY_ {
 			nsub.subject = []byte(ime.overlapSubj)
 		} else {
@@ -2840,7 +2859,7 @@ func (c *client) processUnsub(arg []byte) error {
 		sid = args[0]
 		max = int64(parseSize(args[1]))
 	default:
-		return fmt.Errorf("processUnsub Parse Error: '%s'", arg)
+		return fmt.Errorf("processUnsub Parse Error: %q", arg)
 	}
 
 	var sub *subscription
@@ -2954,7 +2973,7 @@ func (c *client) msgHeaderForRouteOrLeaf(subj, reply []byte, rt *routeTarget, ac
 	mh = append(mh, ' ')
 
 	if len(rt.qs) > 0 {
-		if reply != nil {
+		if len(reply) > 0 {
 			mh = append(mh, "+ "...) // Signal that there is a reply.
 			mh = append(mh, reply...)
 			mh = append(mh, ' ')
@@ -2962,7 +2981,7 @@ func (c *client) msgHeaderForRouteOrLeaf(subj, reply []byte, rt *routeTarget, ac
 			mh = append(mh, "| "...) // Only queues
 		}
 		mh = append(mh, rt.qs...)
-	} else if reply != nil {
+	} else if len(reply) > 0 {
 		mh = append(mh, reply...)
 		mh = append(mh, ' ')
 	}
@@ -3065,7 +3084,7 @@ var needFlush = struct{}{}
 
 // deliverMsg will deliver a message to a matching subscription and its underlying client.
 // We process all connection/client types. mh is the part that will be protocol/client specific.
-func (c *client) deliverMsg(sub *subscription, acc *Account, subject, reply, mh, msg []byte, gwrply bool) bool {
+func (c *client) deliverMsg(prodIsMQTT bool, sub *subscription, acc *Account, subject, reply, mh, msg []byte, gwrply bool) bool {
 	if sub.client == nil {
 		return false
 	}
@@ -3148,7 +3167,6 @@ func (c *client) deliverMsg(sub *subscription, acc *Account, subject, reply, mh,
 
 	// The msg includes the CR_LF, so pull back out for accounting.
 	msgSize := int64(len(msg))
-	prodIsMQTT := c.isMqtt()
 	// MQTT producers send messages without CR_LF, so don't remove it for them.
 	if !prodIsMQTT {
 		msgSize -= int64(LEN_CR_LF)
@@ -3169,17 +3187,17 @@ func (c *client) deliverMsg(sub *subscription, acc *Account, subject, reply, mh,
 		client.mu.Unlock()
 
 		// Internal account clients are for service imports and need the '\r\n'.
+		start := time.Now()
 		if client.kind == ACCOUNT {
 			sub.icb(sub, c, acc, string(subject), string(reply), msg)
 		} else {
 			sub.icb(sub, c, acc, string(subject), string(reply), msg[:msgSize])
 		}
+		if dur := time.Since(start); dur >= readLoopReportThreshold {
+			srv.Warnf("Internal subscription on %q took too long: %v", subject, dur)
+		}
 		return true
 	}
-
-	// We don't count internal deliveries so we update server statistics here.
-	atomic.AddInt64(&srv.outMsgs, 1)
-	atomic.AddInt64(&srv.outBytes, msgSize)
 
 	// If we are a client and we detect that the consumer we are
 	// sending to is in a stalled state, go ahead and wait here
@@ -3801,6 +3819,10 @@ func getHeader(key string, hdr []byte) []byte {
 	if index < 0 {
 		return nil
 	}
+	// Make sure this key does not have additional prefix.
+	if index < 2 || hdr[index-1] != '\n' || hdr[index-2] != '\r' {
+		return nil
+	}
 	index += len(key)
 	if index >= len(hdr) {
 		return nil
@@ -3833,27 +3855,31 @@ func (c *client) processServiceImport(si *serviceImport, acc *Account, msg []byt
 	if (c.kind == GATEWAY || c.kind == ROUTER) && !isResponse {
 		return
 	}
-	// If we are here and we are a serviceImport response make sure we are not matching back
-	// to the import/export pair that started the request. If so ignore.
-	if isResponse && c.pa.psi != nil && c.pa.psi.se == si.se {
-		return
+	// Detect cycles and ignore (return) when we detect one.
+	if len(c.pa.psi) > 0 {
+		for i := len(c.pa.psi) - 1; i >= 0; i-- {
+			if psi := c.pa.psi[i]; psi.se == si.se {
+				return
+			}
+		}
 	}
 
 	acc.mu.RLock()
+	var checkJS bool
 	shouldReturn := si.invalid || acc.sl == nil
-	checkJSGetNext := !isResponse && si.to == jsAllAPI && strings.HasPrefix(string(c.pa.subject), jsRequestNextPre)
+	if !shouldReturn && !isResponse && si.to == jsAllAPI {
+		subj := string(c.pa.subject)
+		if strings.HasPrefix(subj, jsRequestNextPre) || strings.HasPrefix(subj, jsDirectGetPre) {
+			checkJS = true
+		}
+	}
 	acc.mu.RUnlock()
 
 	// We have a special case where JetStream pulls in all service imports through one export.
-	// However the GetNext for consumers is a no-op and causes buildups of service imports,
+	// However the GetNext for consumers and DirectGet for streams are a no-op and causes buildups of service imports,
 	// response service imports and rrMap entries which all will need to simply expire.
 	// TODO(dlc) - Come up with something better.
-	if checkJSGetNext && si.se != nil && si.se.acc == c.srv.SystemAccount() {
-		shouldReturn = true
-	}
-
-	// Check for short circuit return.
-	if shouldReturn {
+	if shouldReturn || (checkJS && si.se != nil && si.se.acc == c.srv.SystemAccount()) {
 		return
 	}
 
@@ -3905,21 +3931,24 @@ func (c *client) processServiceImport(si *serviceImport, acc *Account, msg []byt
 	// Now check to see if this account has mappings that could affect the service import.
 	// Can't use non-locked trick like in processInboundClientMsg, so just call into selectMappedSubject
 	// so we only lock once.
-	if nsubj, changed := si.acc.selectMappedSubject(to); changed {
+	nsubj, changed := si.acc.selectMappedSubject(to)
+	if changed {
 		c.pa.mapped = []byte(to)
 		to = nsubj
 	}
 
 	// Set previous service import to detect chaining.
-	hadPrevSi, share := c.pa.psi != nil, si.share
+	lpsi := len(c.pa.psi)
+	hadPrevSi, share := lpsi > 0, si.share
 	if hadPrevSi {
-		share = c.pa.psi.share
+		share = c.pa.psi[lpsi-1].share
 	}
-	c.pa.psi = si
+	c.pa.psi = append(c.pa.psi, si)
 
 	// Place our client info for the request in the original message.
 	// This will survive going across routes, etc.
 	if !isResponse {
+		isSysImport := si.acc == c.srv.SystemAccount()
 		var ci *ClientInfo
 		if hadPrevSi && c.pa.hdr >= 0 {
 			var cis ClientInfo
@@ -3928,15 +3957,22 @@ func (c *client) processServiceImport(si *serviceImport, acc *Account, msg []byt
 				ci.Service = acc.Name
 				// Check if we are moving into a share details account from a non-shared
 				// and add in server and cluster details.
-				if !share && si.share {
+				if !share && (si.share || isSysImport) {
 					c.addServerAndClusterInfo(ci)
 				}
 			}
 		} else if c.kind != LEAF || c.pa.hdr < 0 || len(getHeader(ClientInfoHdr, msg[:c.pa.hdr])) == 0 {
 			ci = c.getClientInfo(share)
-		} else if c.kind == LEAF && si.share {
+			// If we did not share but the imports destination is the system account add in the server and cluster info.
+			if !share && isSysImport {
+				c.addServerAndClusterInfo(ci)
+			}
+		} else if c.kind == LEAF && (si.share || isSysImport) {
 			// We have a leaf header here for ci, augment as above.
 			ci = c.getClientInfo(si.share)
+			if !si.share && isSysImport {
+				c.addServerAndClusterInfo(ci)
+			}
 		}
 		// Set clientInfo if present.
 		if ci != nil {
@@ -3951,6 +3987,10 @@ func (c *client) processServiceImport(si *serviceImport, acc *Account, msg []byt
 		c.pa.subject = []byte(to)
 	}
 	c.pa.reply = nrr
+
+	if changed && c.isMqtt() && c.pa.hdr > 0 {
+		c.srv.mqttStoreQoS1MsgForAccountOnNewSubject(c.pa.hdr, msg, si.acc.GetName(), to)
+	}
 
 	// FIXME(dlc) - Do L1 cache trick like normal client?
 	rr := si.acc.sl.Match(to)
@@ -4103,6 +4143,37 @@ func (c *client) processMsgResults(acc *Account, r *SublistResult, msg, deliver,
 	// Used as scratch if mapping
 	var _dsubj [64]byte
 
+	// For stats, we will keep track of the number of messages that have been
+	// delivered and then multiply by the size of that message and update
+	// server and account stats in a "single" operation (instead of per-sub).
+	// However, we account for situations where the message is possibly changed
+	// by having an extra size
+	var dlvMsgs int64
+	var dlvExtraSize int64
+
+	// We need to know if this is a MQTT producer because they send messages
+	// without CR_LF (we otherwise remove the size of CR_LF from message size).
+	prodIsMQTT := c.isMqtt()
+
+	updateStats := func() {
+		if dlvMsgs == 0 {
+			return
+		}
+		totalBytes := dlvMsgs*int64(len(msg)) + dlvExtraSize
+		// For non MQTT producers, remove the CR_LF * number of messages
+		if !prodIsMQTT {
+			totalBytes -= dlvMsgs * int64(LEN_CR_LF)
+		}
+		if acc != nil {
+			atomic.AddInt64(&acc.outMsgs, dlvMsgs)
+			atomic.AddInt64(&acc.outBytes, totalBytes)
+		}
+		if srv := c.srv; srv != nil {
+			atomic.AddInt64(&srv.outMsgs, dlvMsgs)
+			atomic.AddInt64(&srv.outBytes, totalBytes)
+		}
+	}
+
 	// Loop over all normal subscriptions that match.
 	for _, sub := range r.psubs {
 		// Check if this is a send to a ROUTER. We now process
@@ -4165,7 +4236,13 @@ func (c *client) processMsgResults(acc *Account, r *SublistResult, msg, deliver,
 
 		// Normal delivery
 		mh := c.msgHeader(dsubj, creply, sub)
-		didDeliver = c.deliverMsg(sub, acc, dsubj, creply, mh, msg, rplyHasGWPrefix) || didDeliver
+		if c.deliverMsg(prodIsMQTT, sub, acc, dsubj, creply, mh, msg, rplyHasGWPrefix) {
+			// We don't count internal deliveries, so do only when sub.icb is nil.
+			if sub.icb == nil {
+				dlvMsgs++
+			}
+			didDeliver = true
+		}
 	}
 
 	// Set these up to optionally filter based on the queue lists.
@@ -4180,7 +4257,7 @@ func (c *client) processMsgResults(acc *Account, r *SublistResult, msg, deliver,
 	// leaf nodes or routes even if there are no queue filters since we collect
 	// them above and do not process inline like normal clients.
 	// However, do select queue subs if asked to ignore empty queue filter.
-	if (c.kind == LEAF || c.kind == ROUTER || c.kind == GATEWAY) && qf == nil && flags&pmrIgnoreEmptyQueueFilter == 0 {
+	if (c.kind == LEAF || c.kind == ROUTER || c.kind == GATEWAY) && len(qf) == 0 && flags&pmrIgnoreEmptyQueueFilter == 0 {
 		goto sendToRoutesOrLeafs
 	}
 
@@ -4299,7 +4376,10 @@ func (c *client) processMsgResults(acc *Account, r *SublistResult, msg, deliver,
 			}
 
 			mh := c.msgHeader(dsubj, creply, sub)
-			if c.deliverMsg(sub, acc, subject, creply, mh, msg, rplyHasGWPrefix) {
+			if c.deliverMsg(prodIsMQTT, sub, acc, subject, creply, mh, msg, rplyHasGWPrefix) {
+				if sub.icb == nil {
+					dlvMsgs++
+				}
 				didDeliver = true
 				// Clear rsub
 				rsub = nil
@@ -4324,6 +4404,7 @@ sendToRoutesOrLeafs:
 
 	// If no messages for routes or leafnodes return here.
 	if len(c.in.rts) == 0 {
+		updateStats()
 		return didDeliver, queues
 	}
 
@@ -4376,13 +4457,20 @@ sendToRoutesOrLeafs:
 		}
 
 		mh := c.msgHeaderForRouteOrLeaf(subject, reply, rt, acc)
-		didDeliver = c.deliverMsg(rt.sub, acc, subject, reply, mh, dmsg, false) || didDeliver
+		if c.deliverMsg(prodIsMQTT, rt.sub, acc, subject, reply, mh, dmsg, false) {
+			if rt.sub.icb == nil {
+				dlvMsgs++
+				dlvExtraSize += int64(len(dmsg) - len(msg))
+			}
+			didDeliver = true
+		}
 
 		// If we set the header reset the origin pub args.
 		if hset {
 			c.pa = pa
 		}
 	}
+	updateStats()
 	return didDeliver, queues
 }
 
@@ -4459,19 +4547,20 @@ func (c *client) processPingTimer() {
 
 	var sendPing bool
 
-	// If we have had activity within the PingInterval then
-	// there is no need to send a ping. This can be client data
-	// or if we received a ping from the other side.
 	pingInterval := c.srv.getOpts().PingInterval
 	if c.kind == GATEWAY {
 		pingInterval = adjustPingIntervalForGateway(pingInterval)
-		sendPing = true
 	}
 	now := time.Now()
 	needRTT := c.rtt == 0 || now.Sub(c.rttStart) > DEFAULT_RTT_MEASUREMENT_INTERVAL
 
-	// Do not delay PINGs for GATEWAY connections.
-	if c.kind != GATEWAY {
+	// Do not delay PINGs for GATEWAY or spoke LEAF connections.
+	if c.kind == GATEWAY || c.isSpokeLeafNode() {
+		sendPing = true
+	} else {
+		// If we have had activity within the PingInterval then
+		// there is no need to send a ping. This can be client data
+		// or if we received a ping from the other side.
 		if delta := now.Sub(c.last); delta < pingInterval && !needRTT {
 			c.Debugf("Delaying PING due to client activity %v ago", delta.Round(time.Second))
 		} else if delta := now.Sub(c.ping.last); delta < pingInterval && !needRTT {
@@ -4480,6 +4569,7 @@ func (c *client) processPingTimer() {
 			sendPing = true
 		}
 	}
+
 	if sendPing {
 		// Check for violation
 		if c.ping.out+1 > c.srv.getOpts().MaxPingsOut {
@@ -4853,7 +4943,10 @@ func (c *client) reconnect() {
 		return
 	}
 	if c.route != nil {
-		retryImplicit = c.route.retry
+		// A route is marked as solicited if it was given an URL to connect to,
+		// which would be the case even with implicit (due to gossip), so mark this
+		// as a retry for a route that is solicited and not explicit.
+		retryImplicit = c.route.retry || (c.route.didSolicit && c.route.routeType == Implicit)
 	}
 	kind := c.kind
 	if kind == GATEWAY {
