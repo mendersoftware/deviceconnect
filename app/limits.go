@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2023 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -21,6 +21,6 @@ var (
 	//Note: this refers to the number of bytes seen on the terminal stdout, as opposed
 	//      to the number of bytes saved in the db. The key difference being:
 	//      the latter is compressed.
-	//see: https://tracker.mender.io/browse/MEN-4448
+	//see: https://northerntech.atlassian.net/browse/MEN-4448
 	MessageSizeLimit = 8 * 1024 * 1024
 )
