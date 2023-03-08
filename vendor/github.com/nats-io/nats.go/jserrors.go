@@ -80,10 +80,10 @@ var (
 	// ErrNotJSMessage is returned when attempting to get metadata from non JetStream message .
 	ErrNotJSMessage JetStreamError = &jsError{message: "not a jetstream message"}
 
-	// ErrInvalidStreamName is returned when the provided stream name is invalid (contains '.').
+	// ErrInvalidStreamName is returned when the provided stream name is invalid (contains '.' or ' ').
 	ErrInvalidStreamName JetStreamError = &jsError{message: "invalid stream name"}
 
-	// ErrInvalidConsumerName is returned when the provided consumer name is invalid (contains '.').
+	// ErrInvalidConsumerName is returned when the provided consumer name is invalid (contains '.' or ' ').
 	ErrInvalidConsumerName JetStreamError = &jsError{message: "invalid consumer name"}
 
 	// ErrNoMatchingStream is returned when stream lookup by subject is unsuccessful.
@@ -101,6 +101,9 @@ var (
 	// ErrConsumerDeleted is returned when attempting to send pull request to a consumer which does not exist
 	ErrConsumerDeleted JetStreamError = &jsError{message: "consumer deleted"}
 
+	// ErrConsumerLeadershipChanged is returned when pending requests are no longer valid after leadership has changed
+	ErrConsumerLeadershipChanged JetStreamError = &jsError{message: "Leadership Changed"}
+
 	// DEPRECATED: ErrInvalidDurableName is no longer returned and will be removed in future releases.
 	// Use ErrInvalidConsumerName instead.
 	ErrInvalidDurableName = errors.New("nats: invalid durable name")
@@ -112,6 +115,7 @@ type ErrorCode uint16
 const (
 	JSErrCodeJetStreamNotEnabledForAccount ErrorCode = 10039
 	JSErrCodeJetStreamNotEnabled           ErrorCode = 10076
+	JSErrCodeInsufficientResourcesErr      ErrorCode = 10023
 
 	JSErrCodeStreamNotFound  ErrorCode = 10059
 	JSErrCodeStreamNameInUse ErrorCode = 10058
@@ -123,6 +127,8 @@ const (
 	JSErrCodeMessageNotFound ErrorCode = 10037
 
 	JSErrCodeBadRequest ErrorCode = 10003
+
+	JSErrCodeStreamWrongLastSequence ErrorCode = 10071
 )
 
 // APIError is included in all API responses if there was an error.
