@@ -1,4 +1,4 @@
-// Copyright 2022 Northern.tech AS
+// Copyright 2023 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -723,7 +723,7 @@ func (h ManagementController) connectServeWSProcessMessages(
 				if controlBytes >= app.MessageSizeLimit {
 					l.Infof("session_id=%s control data limit reached.",
 						sess.ID)
-					//see https://tracker.mender.io/browse/MEN-4448
+					//see https://northerntech.atlassian.net/browse/MEN-4448
 					ignoreControlMessages = true
 					continue
 				}
