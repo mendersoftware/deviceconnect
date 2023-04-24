@@ -372,6 +372,14 @@ components:
             - disconnected
             - unknown
           description: Device status.
+        updated_ts:
+          description: Server-side timestamp of the last device information update.
+          format: date-time
+          type: string
+        created_ts:
+          description: Server-side timestamp of the device creation.
+          format: date-time
+          type: string
 
     Error:
       type: object
