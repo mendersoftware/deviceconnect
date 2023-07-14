@@ -1,4 +1,4 @@
-// Copyright 2022 Northern.tech AS
+// Copyright 2023 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -143,7 +143,11 @@ func NewClient(ctx context.Context, c config.Reader) (*mongo.Client, error) {
 	// Set writeconcern to acknowlage after write has propagated to the
 	// mongod instance and commited to the file system journal.
 	var wc *writeconcern.WriteConcern
-	wc.WithOptions(writeconcern.W(1), writeconcern.J(true))
+	journal := true
+	wc = &writeconcern.WriteConcern{
+		W:       1,
+		Journal: &journal,
+	}
 	clientOptions.SetWriteConcern(wc)
 
 	// Set 10s timeout
