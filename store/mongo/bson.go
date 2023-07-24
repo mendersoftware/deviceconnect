@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2023 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 	"go.mongodb.org/mongo-driver/bson/bsonrw"
-	"go.mongodb.org/mongo-driver/bson/bsontype"
 )
 
 var (
@@ -31,10 +30,9 @@ var (
 
 func init() {
 	// Add UUID encoder/decoder for github.com/google/uuid.UUID
-	bson.DefaultRegistry = bson.NewRegistryBuilder().
-		RegisterTypeEncoder(tUUID, bsoncodec.ValueEncoderFunc(uuidEncodeValue)).
-		RegisterTypeDecoder(tUUID, bsoncodec.ValueDecoderFunc(uuidDecodeValue)).
-		Build()
+	bson.DefaultRegistry = bson.NewRegistry()
+	bson.DefaultRegistry.RegisterTypeEncoder(tUUID, bsoncodec.ValueEncoderFunc(uuidEncodeValue))
+	bson.DefaultRegistry.RegisterTypeDecoder(tUUID, bsoncodec.ValueDecoderFunc(uuidDecodeValue))
 }
 
 func uuidEncodeValue(ec bsoncodec.EncodeContext, w bsonrw.ValueWriter, val reflect.Value) error {
@@ -46,7 +44,7 @@ func uuidEncodeValue(ec bsoncodec.EncodeContext, w bsonrw.ValueWriter, val refle
 		}
 	}
 	uid := val.Interface().(uuid.UUID)
-	return w.WriteBinaryWithSubtype(uid[:], bsontype.BinaryUUID)
+	return w.WriteBinaryWithSubtype(uid[:], byte(bson.TypeBinaryUUID))
 }
 
 func uuidDecodeValue(ec bsoncodec.DecodeContext, r bsonrw.ValueReader, val reflect.Value) error {
@@ -65,10 +63,10 @@ func uuidDecodeValue(ec bsoncodec.DecodeContext, r bsonrw.ValueReader, val refle
 		uid     uuid.UUID = uuid.Nil
 	)
 	switch rType := r.Type(); rType {
-	case bsontype.Binary:
+	case bson.TypeBinary:
 		data, subtype, err = r.ReadBinary()
 		switch subtype {
-		case bsontype.BinaryGeneric:
+		case bson.TypeBinaryGeneric:
 			if len(data) != 16 {
 				return errors.Errorf(
 					"cannot decode %v as a UUID: "+
@@ -78,7 +76,7 @@ func uuidDecodeValue(ec bsoncodec.DecodeContext, r bsonrw.ValueReader, val refle
 			}
 
 			fallthrough
-		case bsontype.BinaryUUID, bsontype.BinaryUUIDOld:
+		case bson.TypeBinaryUUID, bson.TypeBinaryUUIDOld:
 			copy(uid[:], data)
 
 		default:
@@ -89,10 +87,10 @@ func uuidDecodeValue(ec bsoncodec.DecodeContext, r bsonrw.ValueReader, val refle
 			)
 		}
 
-	case bsontype.Undefined:
+	case bson.TypeUndefined:
 		err = r.ReadUndefined()
 
-	case bsontype.Null:
+	case bson.TypeNull:
 		err = r.ReadNull()
 
 	default:
