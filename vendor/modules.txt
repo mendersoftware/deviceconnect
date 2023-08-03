@@ -176,7 +176,7 @@ github.com/nats-io/nats-server/v2/logger
 github.com/nats-io/nats-server/v2/server
 github.com/nats-io/nats-server/v2/server/pse
 github.com/nats-io/nats-server/v2/server/sysmem
-# github.com/nats-io/nats.go v1.27.1
+# github.com/nats-io/nats.go v1.28.0
 ## explicit; go 1.19
 github.com/nats-io/nats.go
 github.com/nats-io/nats.go/encoders/builtin
@@ -366,7 +366,7 @@ golang.org/x/net/idna
 ## explicit
 golang.org/x/sync/errgroup
 golang.org/x/sync/singleflight
-# golang.org/x/sys v0.9.0
+# golang.org/x/sys v0.10.0
 ## explicit; go 1.17
 golang.org/x/sys/cpu
 golang.org/x/sys/internal/unsafeheader
