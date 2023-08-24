@@ -6,6 +6,8 @@ variables:
   DOCKER_TLS_VERIFY: 1
 
   DOCKER_TLS_CERTDIR: "/certs" # Where docker:dind should generate certs
+  MULTIPLATFORM_BUILD: "true"
+  MULTIPLATFORM_PLATFORMS: "linux/amd64,linux/arm64"
 
 stages:
   - test
@@ -66,6 +68,21 @@ test:acceptance:
       - tests/coverage-acceptance.txt
     when: always
 
+# excludes non multiplatform build job
+build:docker:
+  rules:
+    - when: never
+
+# excludes non multiplatform build job
+publish:image:
+  rules:
+    - when: never
+ 
+# excludes non multiplatform build job
+publish:image:mender:
+  rules:
+    - when: never
+
 publish:acceptance:
   stage: publish
   except:
@@ -116,7 +133,7 @@ trigger:alvaldi-helm-version-bump:staging:
   rules:
     - if: '$CI_COMMIT_BRANCH =~ /^(master|staging)$/'
   needs:
-    - job: publish:image
+    - job: publish:image-multiplatform
   variables:
     SYNC_ENVIRONMENT: staging
     HELM_PATCH_VERSION: ${CI_PIPELINE_ID}-staging # pre-release version for trigger staging only deploy

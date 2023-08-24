@@ -1,4 +1,5 @@
-FROM golang:1.20.4-alpine3.16 as builder
+FROM --platform=$BUILDPLATFORM golang:1.20.4-alpine3.16 as builder
+ARG TARGETARCH
 WORKDIR /go/src/github.com/mendersoftware/deviceconnect
 RUN mkdir -p /etc_extra
 RUN echo "nobody:x:65534:" > /etc_extra/group
@@ -11,7 +12,7 @@ RUN apk add --no-cache \
     gcc \
     ca-certificates
 COPY ./ .
-RUN CGO_ENABLED=0 go build
+RUN CGO_ENABLED=0 GOARCH=$TARGETARCH go build
 
 FROM scratch
 EXPOSE 8080
