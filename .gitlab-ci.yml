@@ -136,8 +136,7 @@ trigger:alvaldi-helm-version-bump:staging:
   extends:
     - .trigger:alvaldi-helm-version-bump
   rules:
-    - if: $CI_COMMIT_BRANCH =~ /^(master|staging|^saas-[a-zA-Z0-9.]+)$/
-    - if: '$CI_COMMIT_TAG =~ /^saas-[a-zA-Z0-9.]+$/'
+    - if: $CI_COMMIT_BRANCH =~ /^(master|staging)$/
   variables:
     SYNC_ENVIRONMENT: staging
     HELM_PATCH_VERSION: ${CI_PIPELINE_ID}-staging # pre-release version for trigger staging only deploy
@@ -151,6 +150,4 @@ trigger:alvaldi-helm-version-bump:prod:
   variables:
     SYNC_ENVIRONMENT: prod
     HELM_PATCH_VERSION: ${CI_PIPELINE_ID}
-    DOCKER_PUBLISH_COMMIT_TAG: ${CI_COMMIT_BRANCH}
-  needs:
-    - trigger:alvaldi-helm-version-bump:staging
+    DOCKER_PUBLISH_COMMIT_TAG: ${CI_COMMIT_REF_NAME}
