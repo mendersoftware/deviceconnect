@@ -20,6 +20,7 @@ coverage-acceptance-worker.txt
 .vscode/
 .idea
 *.go.skip
+vendor
 
 # Python generated files
 __pycache__
