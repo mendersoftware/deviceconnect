@@ -1,4 +1,4 @@
-// Copyright 2022 Northern.tech AS
+// Copyright 2023 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -84,17 +84,30 @@ func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 	}()
 
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, unix.SIGINT, unix.SIGTERM)
-	<-quit
+	signal.Notify(quit, unix.SIGINT, unix.SIGTERM, unix.SIGUSR1)
+	recvSignal := <-quit
 
 	l.Info("server shutdown")
+
+	if recvSignal == unix.SIGUSR1 {
+		l.Info("received SIGUSR1, graceful shutdown")
+		timeout := conf.GetDuration(dconfig.SettingGracefulShutdownTimeout)
+		srv.RegisterOnShutdown(func() {
+			deviceConnectApp.Shutdown(timeout)
+		})
+	}
 
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctxWithTimeout); err != nil {
 		l.Fatal("error when shutting down the server ", err)
 	}
+	l.Info("server exited")
 
-	l.Info("server exiting")
+	if recvSignal == unix.SIGUSR1 {
+		deviceConnectApp.ShutdownDone()
+		l.Info("graceful shutdown completed")
+	}
+
 	return nil
 }

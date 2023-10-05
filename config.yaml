@@ -66,3 +66,8 @@ mongo_dbname: deviceconnect
 # ws:
 #   List of CORS allowed origins. The URLs are matched using exact match.
 #   allowed_origins: []
+
+# graceful shutdown timeout
+# Defaults to: 60s
+# Overwrite with environment variable DEVICECONNECT_GRACEFUL_SHUTDOWN_TIMEOUT
+# graceful_shutdown_timeout: 60s
