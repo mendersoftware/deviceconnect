@@ -1,4 +1,4 @@
-// Copyright 2022 Northern.tech AS
+// Copyright 2023 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -89,6 +89,11 @@ const (
 	// An empty list will disable cors checks
 	SettingWSAllowedOrigins        = "ws.allowed_origins"
 	SettingWSAllowedOriginsDefault = ""
+
+	// SettingGracefulShutdownTimeout is the config key for the
+	// graceful shutdown timeout.
+	SettingGracefulShutdownTimeout        = "graceful_shutdown_timeout"
+	SettingGracefulShutdownTimeoutDefault = "60s"
 )
 
 var (
@@ -107,5 +112,6 @@ var (
 		{Key: SettingEnableAuditLogs, Value: SettingEnableAuditLogsDefault},
 		{Key: SettingRecordingExpireSec, Value: SettingRecordingExpireDefault},
 		{Key: SettingWSAllowedOrigins, Value: SettingWSAllowedOriginsDefault},
+		{Key: SettingGracefulShutdownTimeout, Value: SettingGracefulShutdownTimeoutDefault},
 	}
 )

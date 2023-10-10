@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2023 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -54,6 +54,12 @@ func TestDeviceConnect(t *testing.T) {
 		IsDevice: true,
 	}
 	app := &app_mocks.App{}
+	app.On("RegisterShutdownCancel",
+		mock.AnythingOfType("context.CancelFunc"),
+	).Return(uint32(1))
+	app.On("UnregisterShutdownCancel",
+		mock.AnythingOfType("uint32"),
+	).Return()
 	app.On("UpdateDeviceStatus",
 		mock.MatchedBy(func(_ context.Context) bool {
 			return true

@@ -17,6 +17,7 @@ package app
 import (
 	"context"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -53,13 +54,19 @@ type App interface {
 	GetControlRecorder(ctx context.Context, sessionID string) io.Writer
 	DownloadFile(ctx context.Context, userID string, deviceID string, path string) error
 	UploadFile(ctx context.Context, userID string, deviceID string, path string) error
+	Shutdown(timeout time.Duration)
+	ShutdownDone()
+	RegisterShutdownCancel(context.CancelFunc) uint32
+	UnregisterShutdownCancel(uint32)
 }
 
 // app is an app object
 type app struct {
-	store     store.DataStore
-	inventory inventory.Client
-	workflows workflows.Client
+	store           store.DataStore
+	inventory       inventory.Client
+	workflows       workflows.Client
+	shutdownCancels map[uint32]context.CancelFunc
+	shutdownDone    chan struct{}
 	Config
 }
 
@@ -76,10 +83,12 @@ func New(ds store.DataStore, inv inventory.Client, wf workflows.Client, config .
 		}
 	}
 	return &app{
-		store:     ds,
-		inventory: inv,
-		workflows: wf,
-		Config:    conf,
+		store:           ds,
+		inventory:       inv,
+		workflows:       wf,
+		Config:          conf,
+		shutdownCancels: make(map[uint32]context.CancelFunc),
+		shutdownDone:    make(chan struct{}),
 	}
 }
 
@@ -307,4 +316,30 @@ func (a *app) submitFileTransferAuditlog(ctx context.Context, userID string, dev
 		}
 	}
 	return nil
+}
+
+func (a *app) Shutdown(timeout time.Duration) {
+	ticker := time.NewTicker(timeout / time.Duration(len(a.shutdownCancels)+1))
+	for _, cancel := range a.shutdownCancels {
+		cancel()
+		<-ticker.C
+	}
+	<-ticker.C
+	close(a.shutdownDone)
+}
+
+func (a *app) ShutdownDone() {
+	<-a.shutdownDone
+}
+
+var shutdownID uint32
+
+func (a *app) RegisterShutdownCancel(cancel context.CancelFunc) uint32 {
+	id := atomic.AddUint32(&shutdownID, 1)
+	a.shutdownCancels[id] = cancel
+	return id
+}
+
+func (a *app) UnregisterShutdownCancel(id uint32) {
+	delete(a.shutdownCancels, id)
 }

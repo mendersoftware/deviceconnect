@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2023 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -175,10 +175,15 @@ func (h DeviceController) Connect(c *gin.Context) {
 	}
 	conn.SetReadLimit(int64(app.MessageSizeLimit))
 
+	// register the websocket for graceful shutdown
+	ctxWithCancel, cancel := context.WithCancel(ctx)
+	registerID := h.app.RegisterShutdownCancel(cancel)
+	defer h.app.UnregisterShutdownCancel(registerID)
+
 	// websocketWriter is responsible for closing the websocket
 	//nolint:errcheck
-	go h.connectWSWriter(ctx, conn, msgChan, errChan)
-	err = h.ConnectServeWS(ctx, conn)
+	go h.connectWSWriter(ctxWithCancel, conn, msgChan, errChan)
+	err = h.ConnectServeWS(ctxWithCancel, conn)
 	if err != nil {
 		select {
 		case errChan <- err:
@@ -263,6 +268,7 @@ Loop:
 				break Loop
 			}
 		case <-ctx.Done():
+			err = errors.New("connection closed by the server")
 			break Loop
 		case <-ticker.C:
 			if !websocketPing(conn) {
