@@ -79,7 +79,7 @@ func TestDeviceConnect(t *testing.T) {
 	).Return(nil)
 
 	natsClient := NewNATSTestClient(t)
-	router, _ := NewRouter(app, natsClient)
+	router, _ := NewRouter(app, natsClient, nil)
 	s := httptest.NewServer(router)
 	defer s.Close()
 
@@ -358,7 +358,7 @@ func TestDeviceConnectFailures(t *testing.T) {
 				natsClient = NewNATSTestClient(t)
 			}
 
-			router, _ := NewRouter(nil, natsClient)
+			router, _ := NewRouter(nil, natsClient, nil)
 			req, err := http.NewRequest("GET", "http://localhost"+APIURLDevicesConnect, nil)
 			if !assert.NoError(t, err) {
 				t.FailNow()
@@ -440,7 +440,7 @@ func TestProvisionDevice(t *testing.T) {
 				).Return(tc.ProvisionDeviceErr)
 			}
 
-			router, _ := NewRouter(deviceConnectApp, nil)
+			router, _ := NewRouter(deviceConnectApp, nil, nil)
 
 			url := strings.Replace(APIURLInternalDevices, ":tenantId", tc.TenantID, 1)
 			req, err := http.NewRequest("POST", url, strings.NewReader(tc.Device))
@@ -499,7 +499,7 @@ func TestDeleteDevice(t *testing.T) {
 				).Return(tc.ProvisionDeviceErr)
 			}
 
-			router, _ := NewRouter(deviceConnectApp, nil)
+			router, _ := NewRouter(deviceConnectApp, nil, nil)
 
 			url := strings.Replace(APIURLInternalDevicesID, ":tenantId", tc.TenantID, 1)
 			url = strings.Replace(url, ":deviceId", tc.DeviceID, 1)

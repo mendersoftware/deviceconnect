@@ -66,7 +66,10 @@ func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 		},
 	)
 
-	router, err := api.NewRouter(deviceConnectApp, natsClient)
+	gracefulShutdownTimeout := conf.GetDuration(dconfig.SettingGracefulShutdownTimeout)
+	router, err := api.NewRouter(deviceConnectApp, natsClient, &api.RouterConfig{
+		GracefulShutdownTimeout: gracefulShutdownTimeout,
+	})
 	if err != nil {
 		l.Fatal(err)
 	}
@@ -91,9 +94,8 @@ func InitAndRun(conf config.Reader, dataStore store.DataStore) error {
 
 	if recvSignal == unix.SIGUSR1 {
 		l.Info("received SIGUSR1, graceful shutdown")
-		timeout := conf.GetDuration(dconfig.SettingGracefulShutdownTimeout)
 		srv.RegisterOnShutdown(func() {
-			deviceConnectApp.Shutdown(timeout)
+			deviceConnectApp.Shutdown(gracefulShutdownTimeout)
 		})
 	}
 

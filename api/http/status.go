@@ -17,6 +17,8 @@ package http
 import (
 	"context"
 	"net/http"
+	"os"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -33,12 +35,13 @@ const (
 
 // StatusController contains status-related end-points
 type StatusController struct {
-	app app.App
+	app                     app.App
+	gracefulShutdownTimeout time.Duration
 }
 
 // NewStatusController returns a new StatusController
-func NewStatusController(app app.App) *StatusController {
-	return &StatusController{app: app}
+func NewStatusController(app app.App, gracefulShutdownTimeout time.Duration) *StatusController {
+	return &StatusController{app: app, gracefulShutdownTimeout: gracefulShutdownTimeout}
 }
 
 // Alive responds to GET /alive
@@ -63,4 +66,20 @@ func (h StatusController) Health(c *gin.Context) {
 	}
 
 	c.Writer.WriteHeader(http.StatusNoContent)
+}
+
+// Shutdown responds to GET /shutdown
+func (h StatusController) Shutdown(c *gin.Context) {
+	pid := os.Getpid()
+	err := syscall.Kill(pid, syscall.SIGUSR1)
+	if err != nil {
+		ctx := c.Request.Context()
+		log.FromContext(ctx).Error(errors.Wrap(err, "shutdown failed"))
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+	time.Sleep(h.gracefulShutdownTimeout)
+	c.Writer.WriteHeader(http.StatusAccepted)
 }

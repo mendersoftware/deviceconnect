@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2023 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -157,7 +157,7 @@ func TestManagementGetDevice(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			app := &app_mocks.App{}
 
-			router, _ := NewRouter(app, nil)
+			router, _ := NewRouter(app, nil, nil)
 			s := httptest.NewServer(router)
 			defer s.Close()
 
@@ -229,7 +229,7 @@ func TestManagementConnect(t *testing.T) {
 			app := &app_mocks.App{}
 			defer app.AssertExpectations(t)
 			natsClient := NewNATSTestClient(t)
-			router, _ := NewRouter(app, natsClient)
+			router, _ := NewRouter(app, natsClient, nil)
 
 			headers := http.Header{}
 			headers.Set(headerAuthorization, "Bearer "+GenerateJWT(tc.Identity))
@@ -594,7 +594,7 @@ func TestManagementPlayback(t *testing.T) {
 			app := &app_mocks.App{}
 			defer app.AssertExpectations(t)
 			natsClient := NewNATSTestClient(t)
-			router, _ := NewRouter(app, natsClient)
+			router, _ := NewRouter(app, natsClient, nil)
 
 			headers := http.Header{}
 			if tc.Identity != nil {
@@ -780,7 +780,7 @@ func TestManagementConnectFailures(t *testing.T) {
 			}
 
 			natsClient := NewNATSTestClient(t)
-			router, _ := NewRouter(app, natsClient)
+			router, _ := NewRouter(app, natsClient, nil)
 			url := strings.Replace(APIURLManagementDeviceConnect, ":deviceId", tc.DeviceID, 1)
 			req, err := http.NewRequest("GET", "http://localhost"+url, nil)
 			if !assert.NoError(t, err) {
@@ -812,7 +812,7 @@ func TestManagementSessionLimit(t *testing.T) {
 
 	mapp := &app_mocks.App{}
 	natsClient := NewNATSTestClient(t)
-	router, _ := NewRouter(mapp, natsClient)
+	router, _ := NewRouter(mapp, natsClient, nil)
 
 	sid := "test_session_id"
 
@@ -1070,7 +1070,7 @@ func TestManagementCheckUpdate(t *testing.T) {
 			natsClient := &nats_mocks.Client{}
 			defer natsClient.AssertExpectations(t)
 
-			router, _ := NewRouter(app, natsClient)
+			router, _ := NewRouter(app, natsClient, nil)
 			s := httptest.NewServer(router)
 			defer s.Close()
 
@@ -1211,7 +1211,7 @@ func TestManagementSendInventory(t *testing.T) {
 			natsClient := &nats_mocks.Client{}
 			defer natsClient.AssertExpectations(t)
 
-			router, _ := NewRouter(app, natsClient)
+			router, _ := NewRouter(app, natsClient, nil)
 			s := httptest.NewServer(router)
 			defer s.Close()
 
