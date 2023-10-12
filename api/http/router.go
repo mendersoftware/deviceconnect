@@ -1,4 +1,4 @@
-// Copyright 2022 Northern.tech AS
+// Copyright 2023 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
 package http
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/mendersoftware/go-lib-micro/accesslog"
@@ -35,6 +37,7 @@ const (
 
 	APIURLInternalAlive     = APIURLInternal + "/alive"
 	APIURLInternalHealth    = APIURLInternal + "/health"
+	APIURLInternalShutdown  = APIURLInternal + "/shutdown"
 	APIURLInternalDevices   = APIURLInternal + "/tenants/:tenantId/devices"
 	APIURLInternalDevicesID = APIURLInternal +
 		"/tenants/:tenantId/devices/:deviceId"
@@ -54,10 +57,15 @@ const (
 	HdrKeyOrigin = "Origin"
 )
 
+type RouterConfig struct {
+	GracefulShutdownTimeout time.Duration
+}
+
 // NewRouter returns the gin router
 func NewRouter(
 	app app.App,
 	natsClient nats.Client,
+	config *RouterConfig,
 ) (*gin.Engine, error) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DisableConsoleColor()
@@ -71,9 +79,14 @@ func NewRouter(
 	))
 	router.Use(requestid.Middleware())
 
-	status := NewStatusController(app)
+	gracefulShutdownTimeout := time.Duration(0)
+	if config != nil && config.GracefulShutdownTimeout > gracefulShutdownTimeout {
+		gracefulShutdownTimeout = config.GracefulShutdownTimeout
+	}
+	status := NewStatusController(app, gracefulShutdownTimeout)
 	router.GET(APIURLInternalAlive, status.Alive)
 	router.GET(APIURLInternalHealth, status.Health)
+	router.GET(APIURLInternalShutdown, status.Shutdown)
 
 	internal := NewInternalController(app, natsClient)
 	router.POST(APIURLInternalDevicesIDCheckUpdate, internal.CheckUpdate)

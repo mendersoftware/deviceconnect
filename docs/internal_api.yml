@@ -52,6 +52,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /shutdown:
+    get:
+      tags:
+        - Internal API
+      summary: Shutdown the service.
+      operationId: Shutdown
+      responses:
+        202:
+          description: The service started the graceful shutdown procedure.
+        500:
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /tenants/{tenantId}/devices:
     post:
       tags:
