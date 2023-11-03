@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"testing"
 	"time"
 
@@ -642,7 +641,7 @@ func TestGetSessionRecording(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			sessionId := "00000000-0000-0000-0000-000000000000"
-			writer := ioutil.Discard
+			writer := io.Discard
 			store := &store_mocks.DataStore{}
 			store.On("WriteSessionRecords",
 				mock.MatchedBy(func(ctx context.Context) bool {
@@ -860,4 +859,54 @@ func TestUploadFile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestShutdown(t *testing.T) {
+	t.Parallel()
+	gracePeriod := 1 * time.Second
+
+	test := New(nil, nil, nil, Config{})
+	test.Shutdown(gracePeriod)
+	test.ShutdownDone()
+
+	// verify the channel is closed
+	testApp, _ := test.(*app)
+	_, ok := <-testApp.shutdownDone
+	assert.False(t, ok)
+}
+
+func TestShutdownCancels(t *testing.T) {
+	t.Parallel()
+	gracePeriod := 1 * time.Second
+
+	app := New(nil, nil, nil, Config{})
+
+	// register shutdown cancels
+	c1 := false
+	app.RegisterShutdownCancel(func() {
+		c1 = true
+	})
+
+	c2 := false
+	app.RegisterShutdownCancel(func() {
+		c2 = true
+	})
+
+	c3 := false
+	id := app.RegisterShutdownCancel(func() {
+		c3 = true
+	})
+	app.UnregisterShutdownCancel(id)
+
+	t1 := time.Now()
+	app.Shutdown(gracePeriod)
+
+	assert.True(t, c1)
+	assert.True(t, c2)
+	assert.False(t, c3)
+
+	elapsed := time.Now().Sub(t1)
+	assert.Greater(t, elapsed, gracePeriod)
+
+	app.ShutdownDone()
 }

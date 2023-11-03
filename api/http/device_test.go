@@ -1,4 +1,4 @@
-// Copyright 2021 Northern.tech AS
+// Copyright 2023 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -54,6 +54,12 @@ func TestDeviceConnect(t *testing.T) {
 		IsDevice: true,
 	}
 	app := &app_mocks.App{}
+	app.On("RegisterShutdownCancel",
+		mock.AnythingOfType("context.CancelFunc"),
+	).Return(uint32(1))
+	app.On("UnregisterShutdownCancel",
+		mock.AnythingOfType("uint32"),
+	).Return()
 	app.On("UpdateDeviceStatus",
 		mock.MatchedBy(func(_ context.Context) bool {
 			return true
@@ -73,7 +79,7 @@ func TestDeviceConnect(t *testing.T) {
 	).Return(nil)
 
 	natsClient := NewNATSTestClient(t)
-	router, _ := NewRouter(app, natsClient)
+	router, _ := NewRouter(app, natsClient, nil)
 	s := httptest.NewServer(router)
 	defer s.Close()
 
@@ -352,7 +358,7 @@ func TestDeviceConnectFailures(t *testing.T) {
 				natsClient = NewNATSTestClient(t)
 			}
 
-			router, _ := NewRouter(nil, natsClient)
+			router, _ := NewRouter(nil, natsClient, nil)
 			req, err := http.NewRequest("GET", "http://localhost"+APIURLDevicesConnect, nil)
 			if !assert.NoError(t, err) {
 				t.FailNow()
@@ -434,7 +440,7 @@ func TestProvisionDevice(t *testing.T) {
 				).Return(tc.ProvisionDeviceErr)
 			}
 
-			router, _ := NewRouter(deviceConnectApp, nil)
+			router, _ := NewRouter(deviceConnectApp, nil, nil)
 
 			url := strings.Replace(APIURLInternalDevices, ":tenantId", tc.TenantID, 1)
 			req, err := http.NewRequest("POST", url, strings.NewReader(tc.Device))
@@ -493,7 +499,7 @@ func TestDeleteDevice(t *testing.T) {
 				).Return(tc.ProvisionDeviceErr)
 			}
 
-			router, _ := NewRouter(deviceConnectApp, nil)
+			router, _ := NewRouter(deviceConnectApp, nil, nil)
 
 			url := strings.Replace(APIURLInternalDevicesID, ":tenantId", tc.TenantID, 1)
 			url = strings.Replace(url, ":deviceId", tc.DeviceID, 1)

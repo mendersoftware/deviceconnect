@@ -1,4 +1,4 @@
-// Copyright 2020 Northern.tech AS
+// Copyright 2023 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import (
 func TestAlive(t *testing.T) {
 	deviceConnectApp := &app_mocks.App{}
 
-	router, _ := NewRouter(deviceConnectApp, nil)
+	router, _ := NewRouter(deviceConnectApp, nil, nil)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", APIURLInternalAlive, nil)
@@ -68,7 +68,7 @@ func TestHealth(t *testing.T) {
 					return true
 				})).Return(tc.HealthCheckErr)
 
-			router, _ := NewRouter(deviceConnectApp, nil)
+			router, _ := NewRouter(deviceConnectApp, nil, nil)
 			req, err := http.NewRequest("GET", APIURLInternalHealth, nil)
 			if !assert.NoError(t, err) {
 				t.FailNow()
@@ -82,6 +82,34 @@ func TestHealth(t *testing.T) {
 			}
 
 			deviceConnectApp.AssertExpectations(t)
+		})
+	}
+}
+
+func TestShutdown(t *testing.T) {
+	testCases := []struct {
+		Name string
+
+		HTTPStatus int
+		HTTPBody   map[string]interface{}
+	}{
+		{
+			Name:       "ok",
+			HTTPStatus: http.StatusAccepted,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			router, _ := NewRouter(nil, nil, nil)
+			req, err := http.NewRequest("GET", APIURLInternalShutdown, nil)
+			if !assert.NoError(t, err) {
+				t.FailNow()
+			}
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			assert.Equal(t, tc.HTTPStatus, w.Code)
 		})
 	}
 }
