@@ -151,3 +151,6 @@ trigger:alvaldi-helm-version-bump:prod:
     SYNC_ENVIRONMENT: prod
     HELM_PATCH_VERSION: ${CI_PIPELINE_ID}
     DOCKER_PUBLISH_COMMIT_TAG: ${CI_COMMIT_REF_NAME}
+
+test:validate-open-api:
+  allow_failure: false
