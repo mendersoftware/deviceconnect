@@ -17,6 +17,7 @@ package app
 import (
 	"context"
 	"io"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -62,11 +63,12 @@ type App interface {
 
 // app is an app object
 type app struct {
-	store           store.DataStore
-	inventory       inventory.Client
-	workflows       workflows.Client
-	shutdownCancels map[uint32]context.CancelFunc
-	shutdownDone    chan struct{}
+	store            store.DataStore
+	inventory        inventory.Client
+	workflows        workflows.Client
+	shutdownCancels  map[uint32]context.CancelFunc
+	shutdownCancelsM *sync.Mutex
+	shutdownDone     chan struct{}
 	Config
 }
 
@@ -83,12 +85,13 @@ func New(ds store.DataStore, inv inventory.Client, wf workflows.Client, config .
 		}
 	}
 	return &app{
-		store:           ds,
-		inventory:       inv,
-		workflows:       wf,
-		Config:          conf,
-		shutdownCancels: make(map[uint32]context.CancelFunc),
-		shutdownDone:    make(chan struct{}),
+		store:            ds,
+		inventory:        inv,
+		workflows:        wf,
+		Config:           conf,
+		shutdownCancels:  make(map[uint32]context.CancelFunc),
+		shutdownCancelsM: &sync.Mutex{},
+		shutdownDone:     make(chan struct{}),
 	}
 }
 
@@ -319,6 +322,8 @@ func (a *app) submitFileTransferAuditlog(ctx context.Context, userID string, dev
 }
 
 func (a *app) Shutdown(timeout time.Duration) {
+	a.shutdownCancelsM.Lock()
+	defer a.shutdownCancelsM.Unlock()
 	ticker := time.NewTicker(timeout / time.Duration(len(a.shutdownCancels)+1))
 	for _, cancel := range a.shutdownCancels {
 		cancel()
@@ -335,11 +340,15 @@ func (a *app) ShutdownDone() {
 var shutdownID uint32
 
 func (a *app) RegisterShutdownCancel(cancel context.CancelFunc) uint32 {
+	a.shutdownCancelsM.Lock()
+	defer a.shutdownCancelsM.Unlock()
 	id := atomic.AddUint32(&shutdownID, 1)
 	a.shutdownCancels[id] = cancel
 	return id
 }
 
 func (a *app) UnregisterShutdownCancel(id uint32) {
+	a.shutdownCancelsM.Lock()
+	defer a.shutdownCancelsM.Unlock()
 	delete(a.shutdownCancels, id)
 }
