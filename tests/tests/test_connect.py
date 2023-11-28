@@ -39,7 +39,7 @@ class _TestConnect:
                 "00000000-0000-0000-0000-000000000000",
                 connection="Upgrade",
                 upgrade="websocket",
-                sec_websocket_key="mumbojumbo==",
+                sec_websocket_key="dGhlIHNhbXBsZSBub25jZQ==",
                 sec_websocket_version=13,
             )
         except management_api.ApiException as e:
@@ -53,7 +53,7 @@ class _TestConnect:
                 dev.id,
                 connection="Upgrade",
                 upgrade="websocket",
-                sec_websocket_key="mumbojumbo==",
+                sec_websocket_key="dGhlIHNhbXBsZSBub25jZQ==",
                 sec_websocket_version=13,
             )
         except management_api.ApiException as e:
@@ -84,7 +84,7 @@ class _TestConnect:
                     dev.id,
                     connection="Upgrade",
                     upgrade="websocket",
-                    sec_websocket_key="mumbojumbo==",
+                    sec_websocket_key="dGhlIHNhbXBsZSBub25jZQ==",
                     sec_websocket_version=13,
                 )
             except management_api.ApiException as e:
@@ -158,7 +158,7 @@ class _TestConnect:
                 dev.id,
                 connection="Upgrade",
                 upgrade="websocket",
-                sec_websocket_key="mumbojumbo==",
+                sec_websocket_key="dGhlIHNhbXBsZSBub25jZQ==",
                 sec_websocket_version=13,
             )
         except management_api.ApiException as e:
