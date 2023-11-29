@@ -11,7 +11,7 @@ github.com/go-playground/universal-translator,MIT
 github.com/go-playground/validator/v10,MIT
 github.com/golang/snappy,BSD-3-Clause
 github.com/google/uuid,BSD-3-Clause
-github.com/gorilla/websocket,BSD-2-Clause
+github.com/gorilla/websocket,BSD-3-Clause
 github.com/hashicorp/hcl,MPL-2.0
 github.com/klauspost/compress,Apache-2.0
 github.com/klauspost/compress/internal/snapref,BSD-3-Clause
