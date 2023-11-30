@@ -296,14 +296,16 @@ func (h ManagementController) downloadFileResponse(c *gin.Context, params *fileT
 		responseError = errors.Wrap(err, errFileTransferSubscribing.Error())
 		return
 	}
+	//nolint:errcheck
+	defer sub.Unsubscribe()
 
 	if err = h.filetransferHandshake(msgChan, params.SessionID, deviceTopic); err != nil {
 		responseError = err
 		return
 	}
-
+	// Inform the device that we're closing the session
 	//nolint:errcheck
-	defer sub.Unsubscribe()
+	defer h.publishControlMessage(params.SessionID, deviceTopic, ws.MessageTypeClose, nil)
 
 	// stat the remote file
 	req := wsft.StatFile{
@@ -314,10 +316,6 @@ func (h ManagementController) downloadFileResponse(c *gin.Context, params *fileT
 		responseError = err
 		return
 	}
-
-	// Inform the device that we're closing the session
-	//nolint:errcheck
-	defer h.publishControlMessage(params.SessionID, deviceTopic, ws.MessageTypeClose, nil)
 
 	ticker := time.NewTicker(fileTransferPingInterval)
 	defer ticker.Stop()
