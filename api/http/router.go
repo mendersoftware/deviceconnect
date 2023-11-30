@@ -101,6 +101,7 @@ func NewRouter(
 	router.GET(APIURLManagementDevice, management.GetDevice)
 	router.GET(APIURLManagementDeviceConnect, management.Connect)
 	router.GET(APIURLManagementDeviceDownload, management.DownloadFile)
+	router.HEAD(APIURLManagementDeviceDownload, management.DownloadFile)
 	router.POST(APIURLManagementDeviceCheckUpdate, management.CheckUpdate)
 	router.POST(APIURLManagementDeviceSendInventory, management.SendInventory)
 	router.PUT(APIURLManagementDeviceUpload, management.UploadFile)
