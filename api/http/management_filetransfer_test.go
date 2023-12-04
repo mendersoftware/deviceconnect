@@ -58,14 +58,17 @@ func int642pointer(v int64) *int64 {
 func TestManagementDownloadFile(t *testing.T) {
 	originalNewFileTransferSessionID := newFileTransferSessionID
 	originalFileTransferTimeout := fileTransferTimeout
+	originalFileTransferPingInterval := fileTransferPingInterval
 	originalAckSlidingWindowSend := ackSlidingWindowSend
 	defer func() {
 		newFileTransferSessionID = originalNewFileTransferSessionID
 		fileTransferTimeout = originalFileTransferTimeout
+		fileTransferPingInterval = originalFileTransferPingInterval
 		ackSlidingWindowSend = originalAckSlidingWindowSend
 	}()
 
 	fileTransferTimeout = 2 * time.Second
+	fileTransferPingInterval = 500 * time.Millisecond
 	ackSlidingWindowSend = 1
 
 	sessionID, _ := uuid.NewRandom()
@@ -133,7 +136,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						bodyData, err := msgpack.Marshal(body)
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeFileInfo,
 								SessionID: sessionID.String(),
 							},
@@ -147,7 +149,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						// first chunk
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
 								Properties: map[string]interface{}{
@@ -164,7 +165,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						// final chunk
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
 								Properties: map[string]interface{}{
@@ -259,7 +259,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						bodyData, err := msgpack.Marshal(body)
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeFileInfo,
 								SessionID: sessionID.String(),
 							},
@@ -273,7 +272,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						// first chunk
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
 								Properties: map[string]interface{}{
@@ -290,7 +288,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						// second chunk
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
 								Properties: map[string]interface{}{
@@ -307,7 +304,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						// final chunk
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
 							},
@@ -398,7 +394,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						bodyData, err := msgpack.Marshal(body)
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeError,
 								SessionID: sessionID.String(),
 							},
@@ -491,7 +486,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						bodyData, err := msgpack.Marshal(body)
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeFileInfo,
 								SessionID: sessionID.String(),
 							},
@@ -581,7 +575,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						bodyData, err := msgpack.Marshal(body)
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeFileInfo,
 								SessionID: sessionID.String(),
 							},
@@ -595,7 +588,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						// first chunk
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
 								Properties: map[string]interface{}{
@@ -617,7 +609,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						bodyData, err = msgpack.Marshal(errBody)
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeError,
 								SessionID: sessionID.String(),
 							},
@@ -779,7 +770,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						bodyData, err := msgpack.Marshal(body)
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeFileInfo,
 								SessionID: sessionID.String(),
 							},
@@ -793,7 +783,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						// first chunk
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
 								Properties: map[string]interface{}{
@@ -887,7 +876,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						bodyData, err := msgpack.Marshal(body)
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeFileInfo,
 								SessionID: sessionID.String(),
 							},
@@ -901,7 +889,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						// first chunk
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
 								Properties: map[string]interface{}{
@@ -918,7 +905,6 @@ func TestManagementDownloadFile(t *testing.T) {
 						// second chunk
 						msg = &ws.ProtoMsg{
 							Header: ws.ProtoHdr{
-								Proto:     ws.ProtoTypeFileTransfer,
 								MsgType:   wsft.MessageTypeChunk,
 								SessionID: sessionID.String(),
 								Properties: map[string]interface{}{
