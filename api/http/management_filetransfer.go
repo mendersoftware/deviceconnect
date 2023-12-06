@@ -501,7 +501,7 @@ func (h ManagementController) downloadFile(
 						latestOffset); err != nil {
 						return err
 					}
-					return nil
+					return bw.Flush()
 				}
 
 				// verify the offset property
