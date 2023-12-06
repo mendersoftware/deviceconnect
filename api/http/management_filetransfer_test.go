@@ -663,8 +663,7 @@ func TestManagementDownloadFile(t *testing.T) {
 			},
 			AppDownloadFile: true,
 
-			HTTPStatus: http.StatusOK,
-			HTTPBody:   []byte("12345"),
+			HTTPStatus: http.StatusInternalServerError,
 		},
 		{
 			Name:     "ko, request timeout",
@@ -842,8 +841,7 @@ func TestManagementDownloadFile(t *testing.T) {
 			},
 			AppDownloadFile: true,
 
-			HTTPStatus: http.StatusOK,
-			HTTPBody:   []byte("12345"),
+			HTTPStatus: http.StatusRequestTimeout,
 		},
 		{
 			Name:     "ko, wrong offset in chunks",
@@ -967,8 +965,7 @@ func TestManagementDownloadFile(t *testing.T) {
 			},
 			AppDownloadFile: true,
 
-			HTTPStatus: http.StatusOK,
-			HTTPBody:   []byte("12345"),
+			HTTPStatus: http.StatusInternalServerError,
 		},
 		{
 			Name:     "error, device does not support filetransfer",

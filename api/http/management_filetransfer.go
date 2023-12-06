@@ -458,7 +458,7 @@ func (h ManagementController) downloadFile(
 	path, sessionID, userID, deviceTopic string,
 ) error {
 	latestOffset := int64(0)
-	dst = bufio.NewWriter(dst)
+	bw := bufio.NewWriter(dst)
 	numberOfChunks := 0
 	req := wsft.GetFile{
 		Path: &path,
@@ -507,12 +507,12 @@ func (h ManagementController) downloadFile(
 				// verify the offset property
 				propOffset, _ := msg.Header.Properties[PropertyOffset].(int64)
 				if propOffset != latestOffset {
-					return errors.Wrap(errFileTransferFailed,
-						"wrong offset received")
+					return NewError(errors.Wrap(errFileTransferFailed,
+						"wrong offset received"), http.StatusInternalServerError)
 				}
 				latestOffset += int64(len(msg.Body))
 
-				_, err := dst.Write(msg.Body)
+				_, err := bw.Write(msg.Body)
 				if err != nil {
 					return err
 				}
