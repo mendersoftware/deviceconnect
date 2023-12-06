@@ -501,7 +501,7 @@ func (h ManagementController) downloadFile(
 						latestOffset); err != nil {
 						return err
 					}
-					return io.EOF
+					return nil
 				}
 
 				// verify the offset property
