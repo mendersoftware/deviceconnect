@@ -15,6 +15,7 @@
 package http
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -442,6 +443,9 @@ func (h ManagementController) downloadFileResponse(c *gin.Context, params *fileT
 		params.SessionID, params.UserID, deviceTopic,
 	)
 	if err != nil {
+		if !c.Writer.Written() {
+			h.handleResponseError(c, err)
+		}
 		log.FromContext(ctx).
 			Errorf("error downloading file from device: %s", err.Error())
 	}
@@ -454,6 +458,7 @@ func (h ManagementController) downloadFile(
 	path, sessionID, userID, deviceTopic string,
 ) error {
 	latestOffset := int64(0)
+	dst = bufio.NewWriter(dst)
 	numberOfChunks := 0
 	req := wsft.GetFile{
 		Path: &path,
