@@ -430,7 +430,7 @@ func (h ManagementController) downloadFileResponse(c *gin.Context, params *fileT
 	if fileInfo.Mode == nil || !os.FileMode(*fileInfo.Mode).IsRegular() {
 		h.handleResponseError(
 			c,
-			NewError(fmt.Errorf("file must be a regular file"), http.StatusBadRequest),
+			NewError(fmt.Errorf("path is not a regular file"), http.StatusBadRequest),
 		)
 		return
 	}
