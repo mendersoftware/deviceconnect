@@ -121,9 +121,9 @@ publish:acceptance:
 #
 .trigger:alvaldi-helm-version-bump:
   stage: alvaldi-version-bump
+  allow_failure: true
   trigger:
     project: Northern.tech/NorthernTechHQ/alvaldi-helm
-    strategy: depend
   variables:
     SYNC_CONTAINER_NAME: $CONTAINER_NAME
     SYNC_IMAGE_TAG: $DOCKER_PUBLISH_COMMIT_TAG
@@ -136,7 +136,7 @@ trigger:alvaldi-helm-version-bump:staging:
   extends:
     - .trigger:alvaldi-helm-version-bump
   rules:
-    - if: $CI_COMMIT_BRANCH =~ /^(master|staging)$/
+    - if: $CI_COMMIT_BRANCH =~ /^(staging)$/
   variables:
     SYNC_ENVIRONMENT: staging
     HELM_PATCH_VERSION: ${CI_PIPELINE_ID}-staging # pre-release version for trigger staging only deploy
