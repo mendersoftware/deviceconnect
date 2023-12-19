@@ -15,13 +15,14 @@
 package http
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -32,6 +33,7 @@ import (
 
 	"github.com/mendersoftware/go-lib-micro/identity"
 	"github.com/mendersoftware/go-lib-micro/log"
+	"github.com/mendersoftware/go-lib-micro/requestid"
 	"github.com/mendersoftware/go-lib-micro/ws"
 	wsft "github.com/mendersoftware/go-lib-micro/ws/filetransfer"
 
@@ -68,21 +70,52 @@ const (
 	paramDownloadPath = "path"
 )
 
-var fileTransferPingInterval = 30 * time.Second
 var fileTransferTimeout = 60 * time.Second
 var fileTransferBufferSize = 4096
 var ackSlidingWindowSend = 10
 var ackSlidingWindowRecv = 20
 
+type Error struct {
+	error      error
+	statusCode int
+}
+
+func NewError(err error, code int) error {
+	return &Error{
+		error:      err,
+		statusCode: code,
+	}
+}
+
+func (err *Error) Error() string {
+	return err.error.Error()
+}
+
+func (err *Error) Unwrap() error {
+	return err.error
+}
+
 var (
-	errFileTransferMarshalling    = errors.New("failed to marshal the request")
-	errFileTransferUnmarshalling  = errors.New("failed to unmarshal the request")
-	errFileTransferPublishing     = errors.New("failed to publish the message")
-	errFileTransferSubscribing    = errors.New("failed to subscribe to the mesages")
-	errFileTransferTimeout        = errors.New("file transfer timed out")
-	errFileTransferFailed         = errors.New("file transfer failed")
-	errFileTransferNotImplemented = errors.New("file transfer not implemented on device")
-	errFileTransferDisabled       = errors.New("file transfer disabled on device")
+	errFileTransferMarshalling   = errors.New("failed to marshal the request")
+	errFileTransferUnmarshalling = errors.New("failed to unmarshal the request")
+	errFileTransferPublishing    = errors.New("failed to publish the message")
+	errFileTransferSubscribing   = errors.New("failed to subscribe to the mesages")
+	errFileTransferTimeout       = &Error{
+		error:      errors.New("file transfer timed out"),
+		statusCode: http.StatusRequestTimeout,
+	}
+	errFileTransferFailed = &Error{
+		error:      errors.New("file transfer failed"),
+		statusCode: http.StatusBadRequest,
+	}
+	errFileTransferNotImplemented = &Error{
+		error:      errors.New("file transfer not implemented on device"),
+		statusCode: http.StatusBadGateway,
+	}
+	errFileTransferDisabled = &Error{
+		error:      errors.New("file transfer disabled on device"),
+		statusCode: http.StatusBadGateway,
+	}
 )
 
 var newFileTransferSessionID = func() (uuid.UUID, error) {
@@ -236,7 +269,6 @@ func (h ManagementController) decodeFileTransferProtoMessage(data []byte) (*ws.P
 }
 
 func writeHeaders(c *gin.Context, fileInfo *wsft.FileInfo) {
-	c.Writer.WriteHeader(http.StatusOK)
 	c.Writer.Header().Add(hdrContentType, "application/octet-stream")
 	if fileInfo.Path != nil {
 		filename := path.Base(*fileInfo.Path)
@@ -256,201 +288,258 @@ func writeHeaders(c *gin.Context, fileInfo *wsft.FileInfo) {
 	if fileInfo.Size != nil {
 		c.Writer.Header().Add(hdrMenderFileTransferSize, fmt.Sprintf("%d", *fileInfo.Size))
 	}
+	c.Writer.WriteHeader(http.StatusOK)
+}
+func (h ManagementController) handleResponseError(c *gin.Context, err error) {
+	l := log.FromContext(c.Request.Context())
+	l.Errorf("error handling request: %s", err.Error())
+	if !c.Writer.Written() {
+		var statusError *Error
+		var errMsg string = err.Error()
+		var statusCode int = http.StatusInternalServerError
+		if errors.As(err, &statusError) {
+			statusCode = statusError.statusCode
+		}
+		if statusCode >= 500 {
+			errMsg = "internal error"
+		}
+		c.Writer.WriteHeader(statusCode)
+		c.JSON(statusCode, gin.H{
+			"error":      errMsg,
+			"request_id": requestid.FromContext(c.Request.Context()),
+		})
+	} else {
+		l.Warn("response already written")
+	}
 }
 
-func (h ManagementController) downloadFileResponseError(c *gin.Context,
-	responseHeaderSent *bool, responseError *error) {
-	l := log.FromContext(c.Request.Context())
-	if !*responseHeaderSent && *responseError != nil {
-		l.Error((*responseError).Error())
-		status := http.StatusInternalServerError
-		// errFileTranserFailed is a special case, we return 400 instead of 500
-		if strings.Contains((*responseError).Error(), errFileTransferFailed.Error()) {
-			status = http.StatusBadRequest
-		} else if *responseError == errFileTransferTimeout {
-			status = http.StatusRequestTimeout
-		} else if *responseError == errFileTransferNotImplemented ||
-			*responseError == errFileTransferDisabled {
-			status = http.StatusBadGateway
+func chanTimeout(
+	src <-chan *natsio.Msg,
+	timeout time.Duration,
+) <-chan *natsio.Msg {
+	timer := time.NewTimer(timeout)
+	dst := make(chan *natsio.Msg)
+	go func() {
+		for {
+			select {
+			case <-timer.C:
+				close(dst)
+				return
+			case msg, ok := <-src:
+				if !ok {
+					close(dst)
+					return
+				}
+				if !timer.Stop() {
+					// Timer must be stopped and drained before calling Reset.
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				timer.Reset(timeout)
+				dst <- msg
+			}
 		}
-		c.JSON(status, gin.H{
-			"error": (*responseError).Error(),
-		})
-		return
+	}()
+	return dst
+}
+
+func (h ManagementController) statFile(
+	ctx context.Context,
+	sessChan <-chan *natsio.Msg,
+	path, sessionID, userID, deviceTopic string) (*wsft.FileInfo, error) {
+	// stat the remote file
+	req := wsft.StatFile{
+		Path: &path,
 	}
+	if err := h.publishFileTransferProtoMessage(sessionID,
+		userID, deviceTopic, wsft.MessageTypeStat, req, 0); err != nil {
+		return nil, err
+	}
+	var fileInfo *wsft.FileInfo
+	select {
+	case rsp, ok := <-sessChan:
+		if !ok {
+			return nil, errFileTransferTimeout
+		}
+		var msg ws.ProtoMsg
+		err := msgpack.Unmarshal(rsp.Data, &msg)
+		if err != nil {
+			return nil, fmt.Errorf("malformed message from device: %w", err)
+		}
+		if msg.Header.MsgType == ws.MessageTypeError {
+			var errMsg ws.Error
+			_ = msgpack.Unmarshal(msg.Body, &errMsg)
+			rspErr := NewError(
+				fmt.Errorf("error received from device: %s", errMsg.Error),
+				http.StatusBadRequest,
+			)
+			return nil, rspErr
+		}
+		if msg.Header.Proto != ws.ProtoTypeFileTransfer ||
+			msg.Header.MsgType != wsft.MessageTypeFileInfo {
+			return nil, fmt.Errorf("unexpected response from device %q", msg.Header.MsgType)
+		}
+		err = msgpack.Unmarshal(msg.Body, &fileInfo)
+		if err != nil {
+			return nil, fmt.Errorf("malformed message body from device: %w", err)
+		}
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return fileInfo, nil
 }
 
 func (h ManagementController) downloadFileResponse(c *gin.Context, params *fileTransferParams,
 	request *model.DownloadFileRequest) {
+	ctx := c.Request.Context()
 	// send a JSON-encoded error message in case of failure
-	var responseError error
-	var responseHeaderSent bool
-	defer h.downloadFileResponseError(c, &responseHeaderSent, &responseError)
 
 	// subscribe to messages from the device
 	deviceTopic := model.GetDeviceSubject(params.TenantID, params.Device.ID)
 	sessionTopic := model.GetSessionSubject(params.TenantID, params.SessionID)
-	msgChan := make(chan *natsio.Msg, channelSize)
-	sub, err := h.nats.ChanSubscribe(sessionTopic, msgChan)
+	subChan := make(chan *natsio.Msg, channelSize)
+	defer close(subChan)
+	sub, err := h.nats.ChanSubscribe(sessionTopic, subChan)
 	if err != nil {
-		responseError = errors.Wrap(err, errFileTransferSubscribing.Error())
+		h.handleResponseError(c, errors.Wrap(err, errFileTransferSubscribing.Error()))
 		return
 	}
-
-	if err = h.filetransferHandshake(msgChan, params.SessionID, deviceTopic); err != nil {
-		responseError = err
-		return
-	}
-
 	//nolint:errcheck
 	defer sub.Unsubscribe()
 
-	// stat the remote file
-	req := wsft.StatFile{
-		Path: request.Path,
-	}
-	if err := h.publishFileTransferProtoMessage(params.SessionID,
-		params.UserID, deviceTopic, wsft.MessageTypeStat, req, 0); err != nil {
-		responseError = err
+	msgChan := chanTimeout(subChan, fileTransferTimeout)
+
+	if err = h.filetransferHandshake(msgChan, params.SessionID, deviceTopic); err != nil {
+		h.handleResponseError(c, err)
 		return
 	}
-
 	// Inform the device that we're closing the session
 	//nolint:errcheck
 	defer h.publishControlMessage(params.SessionID, deviceTopic, ws.MessageTypeClose, nil)
 
-	ticker := time.NewTicker(fileTransferPingInterval)
-	defer ticker.Stop()
-
-	// handle messages from the device
-	timeout := time.NewTimer(fileTransferTimeout)
-	latestOffset := int64(0)
-	numberOfChunks := 0
-	var fileInfo wsft.FileInfo
-	for {
-		select {
-		case wsMessage := <-msgChan:
-			// reset the timeout ticket
-			timeout.Reset(fileTransferTimeout)
-			// process the message
-			err := h.downloadFileResponseProcessMessage(c, params, request,
-				wsMessage, deviceTopic, &latestOffset, &numberOfChunks,
-				&responseHeaderSent, &fileInfo, ticker)
-			if err == io.EOF {
-				return
-			} else if err != nil {
-				responseError = err
-				return
-			}
-		// send a Ping message to keep the session alive
-		case <-ticker.C:
-			responseError = h.publishControlMessage(
-				params.SessionID, deviceTopic, ws.MessageTypePing, nil,
-			)
-			if responseError != nil {
-				return
-			}
-
-		// no message after timeout expired, stop here
-		case <-timeout.C:
-			responseError = errFileTransferTimeout
-			return
+	fileInfo, err := h.statFile(
+		ctx, msgChan, *request.Path,
+		params.SessionID, params.UserID, deviceTopic,
+	)
+	if err != nil {
+		h.handleResponseError(c, fmt.Errorf("failed to retrieve file info: %w", err))
+		return
+	}
+	if fileInfo.Mode == nil || !os.FileMode(*fileInfo.Mode).IsRegular() {
+		h.handleResponseError(
+			c,
+			NewError(fmt.Errorf("path is not a regular file"), http.StatusBadRequest),
+		)
+		return
+	}
+	writeHeaders(c, fileInfo)
+	if c.Request.Method == http.MethodHead {
+		return
+	}
+	err = h.downloadFile(
+		ctx, msgChan, c.Writer, *request.Path,
+		params.SessionID, params.UserID, deviceTopic,
+	)
+	if err != nil {
+		if !c.Writer.Written() {
+			h.handleResponseError(c, err)
 		}
+		log.FromContext(ctx).
+			Errorf("error downloading file from device: %s", err.Error())
 	}
 }
 
-func (h ManagementController) downloadFileResponseProcessMessage(c *gin.Context,
-	params *fileTransferParams, request *model.DownloadFileRequest, wsMessage *natsio.Msg,
-	deviceTopic string, latestOffset *int64, numberOfChunks *int, responseHeaderSent *bool,
-	fileInfo *wsft.FileInfo, ticker *time.Ticker) error {
-	msg, msgBody, err := h.decodeFileTransferProtoMessage(wsMessage.Data)
-	if err != nil {
+func (h ManagementController) downloadFile(
+	ctx context.Context,
+	msgChan <-chan *natsio.Msg,
+	dst io.Writer,
+	path, sessionID, userID, deviceTopic string,
+) error {
+	latestOffset := int64(0)
+	bw := bufio.NewWriter(dst)
+	numberOfChunks := 0
+	req := wsft.GetFile{
+		Path: &path,
+	}
+	if err := h.publishFileTransferProtoMessage(
+		sessionID,
+		userID,
+		deviceTopic,
+		wsft.MessageTypeGet,
+		req, 0); err != nil {
 		return err
 	}
+	for {
+		select {
+		case wsMessage, ok := <-msgChan:
+			if !ok {
+				return errFileTransferTimeout
+			}
 
-	// process incoming messages from the device by type
-	switch msg.Header.MsgType {
-
-	// error message, stop here
-	case wsft.MessageTypeError:
-		errorMsg := msgBody.(*wsft.Error)
-		if *errorMsg.MessageType == wsft.MessageTypeStat {
-			return errors.Wrap(errors.New(*errorMsg.Error),
-				errFileTransferFailed.Error())
-		} else {
-			return errors.New(*errorMsg.Error)
-		}
-
-	// file stat response, if okay, let's get the file
-	case wsft.MessageTypeFileInfo:
-		req := wsft.GetFile{
-			Path: request.Path,
-		}
-		if err := h.publishFileTransferProtoMessage(params.SessionID,
-			params.UserID, deviceTopic, wsft.MessageTypeGet,
-			req, 0); err != nil {
-			return err
-		}
-		*fileInfo = *msgBody.(*wsft.FileInfo)
-		if (os.FileMode(*fileInfo.Mode) & os.ModeType) != 0 {
-			err := errors.New("path is not a regular file")
-			return errors.Wrap(err, errFileTransferFailed.Error())
-		}
-
-	// file data chunk
-	case wsft.MessageTypeChunk:
-		if !*responseHeaderSent {
-			writeHeaders(c, fileInfo)
-			*responseHeaderSent = true
-		}
-		if msg.Body == nil {
-			if err := h.publishFileTransferProtoMessage(
-				params.SessionID, params.UserID, deviceTopic,
-				wsft.MessageTypeACK, nil,
-				*latestOffset); err != nil {
+			// process the message
+			msg, msgBody, err := h.decodeFileTransferProtoMessage(wsMessage.Data)
+			if err != nil {
 				return err
 			}
-			return io.EOF
-		}
 
-		// verify the offset property
-		propOffset, _ := msg.Header.Properties[PropertyOffset].(int64)
-		if propOffset != *latestOffset {
-			return errors.Wrap(errFileTransferFailed,
-				"wrong offset received")
-		}
-		*latestOffset += int64(len(msg.Body))
+			// process incoming messages from the device by type
+			switch msg.Header.MsgType {
 
-		_, err := c.Writer.Write(msg.Body)
-		if err != nil {
-			return err
-		}
+			// error message, stop here
+			case wsft.MessageTypeError:
+				errorMsg := msgBody.(*wsft.Error)
+				return errors.New(*errorMsg.Error)
 
-		(*numberOfChunks)++
-		if *numberOfChunks >= ackSlidingWindowSend {
-			if err := h.publishFileTransferProtoMessage(
-				params.SessionID, params.UserID, deviceTopic,
-				wsft.MessageTypeACK, nil,
-				*latestOffset); err != nil {
-				return err
+			// file data chunk
+			case wsft.MessageTypeChunk:
+				if msg.Body == nil {
+					if err := h.publishFileTransferProtoMessage(
+						sessionID, userID, deviceTopic,
+						wsft.MessageTypeACK, nil,
+						latestOffset); err != nil {
+						return err
+					}
+					return bw.Flush()
+				}
+
+				// verify the offset property
+				propOffset, _ := msg.Header.Properties[PropertyOffset].(int64)
+				if propOffset != latestOffset {
+					return NewError(errors.Wrap(errFileTransferFailed,
+						"wrong offset received"), http.StatusInternalServerError)
+				}
+				latestOffset += int64(len(msg.Body))
+
+				_, err := bw.Write(msg.Body)
+				if err != nil {
+					return err
+				}
+
+				numberOfChunks++
+				if numberOfChunks >= ackSlidingWindowSend {
+					if err := h.publishFileTransferProtoMessage(
+						sessionID, userID, deviceTopic,
+						wsft.MessageTypeACK, nil,
+						latestOffset); err != nil {
+						return err
+					}
+					numberOfChunks = 0
+				}
+
+			case ws.MessageTypePing:
+				if err := h.publishFileTransferProtoMessage(
+					sessionID, userID, deviceTopic,
+					ws.MessageTypePong, nil,
+					-1); err != nil {
+					return err
+				}
 			}
-			*numberOfChunks = 0
+		case <-ctx.Done():
+			return ctx.Err()
 		}
-
-	case ws.MessageTypePing:
-		if err := h.publishFileTransferProtoMessage(
-			params.SessionID, params.UserID, deviceTopic,
-			ws.MessageTypePong, nil,
-			-1); err != nil {
-			return err
-		}
-		fallthrough
-
-	case ws.MessageTypePong:
-		ticker.Reset(fileTransferPingInterval)
 	}
-
-	return nil
 }
 
 func (h ManagementController) DownloadFile(c *gin.Context) {
@@ -557,7 +646,10 @@ func (h ManagementController) filetransferHandshake(
 		return errFileTransferPublishing
 	}
 	select {
-	case natsMsg := <-sessChan:
+	case natsMsg, ok := <-sessChan:
+		if !ok {
+			return errFileTransferTimeout
+		}
 		var msg ws.ProtoMsg
 		err := msgpack.Unmarshal(natsMsg.Data, &msg)
 		if err != nil {
