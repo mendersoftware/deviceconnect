@@ -124,6 +124,8 @@ publish:acceptance:
   allow_failure: true
   trigger:
     project: Northern.tech/NorthernTechHQ/alvaldi-helm
+    strategy: depend
+  resource_group: alvaldi-helm
   variables:
     SYNC_CONTAINER_NAME: $CONTAINER_NAME
     SYNC_IMAGE_TAG: $DOCKER_PUBLISH_COMMIT_TAG
