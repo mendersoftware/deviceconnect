@@ -68,8 +68,8 @@ github.com/magiconair/properties v1.8.7 h1:IeQXZAiQcpL9mgcAe1Nu6cX9LLw6ExEHKjN0V
 github.com/magiconair/properties v1.8.7/go.mod h1:Dhd985XPs7jluiymwWYZ0G4Z61jb3vdS329zhj2hYo0=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
-github.com/mendersoftware/go-lib-micro v0.0.0-20240110171355-b10f353cc448 h1:jMO9smxaUjJlsXtyB8lrTmpUvijDCIPPJIsyXjA/HSI=
-github.com/mendersoftware/go-lib-micro v0.0.0-20240110171355-b10f353cc448/go.mod h1:+1LpAQemdtwHyEU82qMuORCIa3AEUuTrlUjsqR9trKY=
+github.com/mendersoftware/go-lib-micro v0.0.0-20240315102243-a195c1db1e1b h1:qBLw4oFx8LrOLd/WTtOeAjKpWfyn+9qgvLnYgVbRlXU=
+github.com/mendersoftware/go-lib-micro v0.0.0-20240315102243-a195c1db1e1b/go.mod h1:y7NHPDk4gvE1D9pGJv1nZcN/ojvM7sLr68CbeegeqVI=
 github.com/minio/highwayhash v1.0.2 h1:Aak5U0nElisjDCfPSG79Tgzkn2gl66NxOMspRrKnA/g=
 github.com/minio/highwayhash v1.0.2/go.mod h1:BQskDq+xkJ12lmlUUi7U0M5Swg3EWR+dLTk+kldvVxY=
 github.com/mitchellh/mapstructure v1.5.0 h1:jeMsZIYE/09sWLaz43PL7Gy6RuMjD2eJVyuac5Z2hdY=
