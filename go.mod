@@ -9,13 +9,13 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/mendersoftware/go-lib-micro v0.0.0-20240110171355-b10f353cc448
 	github.com/nats-io/nats-server/v2 v2.10.7
-	github.com/nats-io/nats.go v1.33.1
+	github.com/nats-io/nats.go v1.34.0
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli v1.22.14
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	go.mongodb.org/mongo-driver v1.14.0
-	golang.org/x/sys v0.17.0
+	golang.org/x/sys v0.18.0
 )
 
 require (
