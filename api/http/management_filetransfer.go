@@ -248,7 +248,7 @@ func (h ManagementController) decodeFileTransferProtoMessage(data []byte) (*ws.P
 
 	switch msg.Header.MsgType {
 	case wsft.MessageTypeError:
-		msgBody := &wsft.Error{}
+		msgBody := &ws.Error{}
 		err := msgpack.Unmarshal(msg.Body, msgBody)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, errFileTransferUnmarshalling.Error())
@@ -371,9 +371,13 @@ func (h ManagementController) statFile(
 		if msg.Header.MsgType == ws.MessageTypeError {
 			var errMsg ws.Error
 			_ = msgpack.Unmarshal(msg.Body, &errMsg)
+			errCode := http.StatusBadRequest
+			if errMsg.Code > 0 {
+				errCode = errMsg.Code
+			}
 			rspErr := NewError(
 				fmt.Errorf("error received from device: %s", errMsg.Error),
-				http.StatusBadRequest,
+				errCode,
 			)
 			return nil, rspErr
 		}
@@ -489,8 +493,12 @@ func (h ManagementController) downloadFile(
 
 			// error message, stop here
 			case wsft.MessageTypeError:
-				errorMsg := msgBody.(*wsft.Error)
-				return errors.New(*errorMsg.Error)
+				err := msgBody.(*ws.Error)
+				errCode := http.StatusInternalServerError
+				if err.Code > 0 {
+					errCode = err.Code
+				}
+				return NewError(errors.New(err.Error), errCode)
 
 			// file data chunk
 			case wsft.MessageTypeChunk:
@@ -600,8 +608,12 @@ func (h ManagementController) uploadFileResponseHandleInboundMessages(
 
 			// error message, stop here
 			case wsft.MessageTypeError:
-				errorMsg := msgBody.(*wsft.Error)
-				errorChan <- errors.New(*errorMsg.Error)
+				errorMsg := msgBody.(*ws.Error)
+				errCode := http.StatusBadRequest
+				if errorMsg.Code > 0 {
+					errCode = errorMsg.Code
+				}
+				errorChan <- NewError(errors.New(errorMsg.Error), errCode)
 				return
 
 			// you can continue the upload
@@ -660,7 +672,15 @@ func (h ManagementController) filetransferHandshake(
 			erro := new(ws.Error)
 			//nolint:errcheck
 			msgpack.Unmarshal(natsMsg.Data, erro)
-			return errors.Errorf("handshake error from client: %s", erro.Error)
+			errCode := http.StatusInternalServerError
+			if erro.Code > 0 {
+				errCode = erro.Code
+			}
+			rspErr := NewError(
+				fmt.Errorf("handshake error from client: %s", erro.Error),
+				errCode,
+			)
+			return fmt.Errorf("handshake error from client: %w", rspErr)
 		} else if msg.Header.MsgType != ws.MessageTypeAccept {
 			return errFileTransferNotImplemented
 		}
@@ -695,6 +715,10 @@ func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTra
 	defer func() {
 		if responseError != nil {
 			l.Error(responseError.Error())
+			var statusError *Error
+			if errors.As(responseError, &statusError) {
+				errorStatusCode = statusError.statusCode
+			}
 			c.JSON(errorStatusCode, gin.H{
 				"error": responseError.Error(),
 			})
@@ -758,9 +782,12 @@ func (h ManagementController) uploadFileResponse(c *gin.Context, params *fileTra
 
 		// error message, stop here
 		case wsft.MessageTypeError:
-			errorMsg := msgBody.(*wsft.Error)
+			errorMsg := msgBody.(*ws.Error)
 			errorStatusCode = http.StatusBadRequest
-			responseError = errors.New(*errorMsg.Error)
+			if errorMsg.Code > 0 {
+				errorStatusCode = errorMsg.Code
+			}
+			responseError = NewError(errors.New(errorMsg.Error), errorStatusCode)
 			return
 
 		// you can continue the upload
