@@ -1664,9 +1664,10 @@ func TestManagementUploadFile(t *testing.T) {
 						chanMsg <- &natsio.Msg{Data: data}
 
 						// put response
-						body := wsft.Error{
-							Error:       string2pointer("failed to Write"),
-							MessageType: string2pointer(wsft.MessageTypePut),
+						body := ws.Error{
+							Error:       "failed to Write",
+							MessageType: wsft.MessageTypePut,
+							Code:        http.StatusBadRequest,
 						}
 						bodyData, err := msgpack.Marshal(body)
 						msg = &ws.ProtoMsg{
