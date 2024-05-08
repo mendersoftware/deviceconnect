@@ -45,7 +45,7 @@ test:acceptance:
   except:
     - /^saas-[a-zA-Z0-9.-]+$/
   tags:
-    - docker
+    - hetzner-amd-beefy
   image: docker:20.10.21
   services:
     - name: docker:20.10.21-dind
