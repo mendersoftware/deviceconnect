@@ -241,7 +241,7 @@ func TestPopControlMessage(t *testing.T) {
 			})
 			assert.NoError(t, err)
 
-			c, err := collSess.Find(nil, bson.M{
+			c, err := collSess.Find(context.Background(), bson.M{
 				dbFieldSessionID: tc.SessionID,
 			})
 			assert.NotNil(t, c)
