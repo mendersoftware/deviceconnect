@@ -108,7 +108,7 @@ func TestReadRecording(t *testing.T) {
 				"created_ts": 1,
 			}
 			findOptions.SetSort(sortField)
-			c, err := collSess.Find(nil,
+			c, err := collSess.Find(context.Background(),
 				bson.M{
 					dbFieldSessionID: tc.SessionID,
 				},
