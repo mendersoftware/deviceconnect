@@ -227,6 +227,41 @@ func (_m *App) SaveSessionRecording(ctx context.Context, id string, sessionBytes
 	return r0
 }
 
+// SetDeviceConnected provides a mock function with given fields: ctx, tenantID, deviceID
+func (_m *App) SetDeviceConnected(ctx context.Context, tenantID string, deviceID string) (int64, error) {
+	ret := _m.Called(ctx, tenantID, deviceID)
+
+	var r0 int64
+	if rf, ok := ret.Get(0).(func(context.Context, string, string) int64); ok {
+		r0 = rf(ctx, tenantID, deviceID)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = rf(ctx, tenantID, deviceID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// SetDeviceDisconnected provides a mock function with given fields: ctx, tenantID, deviceID, version
+func (_m *App) SetDeviceDisconnected(ctx context.Context, tenantID string, deviceID string, version int64) error {
+	ret := _m.Called(ctx, tenantID, deviceID, version)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, int64) error); ok {
+		r0 = rf(ctx, tenantID, deviceID, version)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // Shutdown provides a mock function with given fields: timeout
 func (_m *App) Shutdown(timeout time.Duration) {
 	_m.Called(timeout)
