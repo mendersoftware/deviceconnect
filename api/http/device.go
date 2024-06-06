@@ -285,10 +285,8 @@ func (h DeviceController) ConnectServeWS(
 	sessMap := make(map[string]*model.ActiveSession)
 
 	// update the device status on websocket opening
-	err = h.app.UpdateDeviceStatus(
-		ctx, id.Tenant,
-		id.Subject, model.DeviceStatusConnected,
-	)
+	var version int64
+	version, err = h.app.SetDeviceConnected(ctx, id.Tenant, id.Subject)
 	if err != nil {
 		l.Error(err)
 		return
@@ -317,9 +315,9 @@ func (h DeviceController) ConnectServeWS(
 			}
 		}
 		// update the device status on websocket closing
-		eStatus := h.app.UpdateDeviceStatus(
+		eStatus := h.app.SetDeviceDisconnected(
 			ctx, id.Tenant,
-			id.Subject, model.DeviceStatusDisconnected,
+			id.Subject, version,
 		)
 		if eStatus != nil {
 			l.Error(eStatus)

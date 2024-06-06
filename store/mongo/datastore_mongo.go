@@ -67,6 +67,7 @@ const (
 	ControlCollectionName = "control"
 
 	dbFieldID        = "_id"
+	dbFieldVersion   = "version"
 	dbFieldSessionID = "session_id"
 	dbFieldDeviceID  = "device_id"
 	dbFieldStatus    = "status"
@@ -237,6 +238,70 @@ func (db *DataStoreMongo) GetDevice(
 	}
 
 	return device, nil
+}
+
+func (db *DataStoreMongo) SetDeviceConnected(
+	ctx context.Context,
+	tenantID, deviceID string,
+) (int64, error) {
+	coll := db.client.Database(DbName).Collection(DevicesCollectionName)
+
+	updateOpts := mopts.FindOneAndUpdate().
+		SetUpsert(true).
+		SetReturnDocument(mopts.After).
+		SetProjection(bson.M{"version": 1})
+
+	now := clock.Now().UTC()
+
+	var version struct {
+		Version int64 `bson:"version"`
+	}
+
+	err := coll.FindOneAndUpdate(ctx,
+		bson.M{dbFieldID: deviceID, mstore.FieldTenantID: tenantID},
+		bson.M{
+			"$set": bson.M{
+				dbFieldStatus:    model.DeviceStatusConnected,
+				dbFieldUpdatedTs: &now,
+			},
+			"$inc": bson.M{"version": 1},
+			"$setOnInsert": bson.M{
+				dbFieldCreatedTs:     &now,
+				mstore.FieldTenantID: tenantID,
+			},
+		},
+		updateOpts,
+	).Decode(&version)
+
+	return version.Version, err
+}
+func (db *DataStoreMongo) SetDeviceDisconnected(
+	ctx context.Context,
+	tenantID, deviceID string,
+	version int64,
+) error {
+	coll := db.client.Database(DbName).Collection(DevicesCollectionName)
+
+	now := clock.Now().UTC()
+
+	_, err := coll.UpdateOne(ctx,
+		bson.M{
+			dbFieldID:            deviceID,
+			mstore.FieldTenantID: tenantID,
+			dbFieldVersion:       version,
+		},
+		bson.M{
+			"$set": bson.M{
+				dbFieldStatus:    model.DeviceStatusDisconnected,
+				dbFieldUpdatedTs: &now,
+			},
+			"$setOnInsert": bson.M{
+				dbFieldCreatedTs:     &now,
+				mstore.FieldTenantID: tenantID,
+			},
+		},
+	)
+	return err
 }
 
 // UpsertDeviceStatus upserts the connection status of a device
