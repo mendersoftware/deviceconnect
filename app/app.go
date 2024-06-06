@@ -45,6 +45,8 @@ type App interface {
 	ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error
 	GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error)
 	DeleteDevice(ctx context.Context, tenantID, deviceID string) error
+	SetDeviceConnected(ctx context.Context, tenantID, deviceID string) (int64, error)
+	SetDeviceDisconnected(ctx context.Context, tenantID, deviceID string, version int64) error
 	UpdateDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error
 	PrepareUserSession(ctx context.Context, sess *model.Session) error
 	LogUserSession(ctx context.Context, sess *model.Session, sessionType string) error
@@ -127,6 +129,22 @@ func (a *app) GetDevice(
 // DeleteDevice provisions a new tenant
 func (a *app) DeleteDevice(ctx context.Context, tenantID, deviceID string) error {
 	return a.store.DeleteDevice(ctx, tenantID, deviceID)
+}
+
+func (a *app) SetDeviceConnected(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+) (int64, error) {
+	return a.store.SetDeviceConnected(ctx, tenantID, deviceID)
+}
+func (a *app) SetDeviceDisconnected(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+	version int64,
+) error {
+	return a.store.SetDeviceDisconnected(ctx, tenantID, deviceID, version)
 }
 
 // UpdateDeviceStatus provisions a new tenant
