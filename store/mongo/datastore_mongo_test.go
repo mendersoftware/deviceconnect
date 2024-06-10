@@ -99,59 +99,6 @@ func TestProvisionAndDeleteDevice(t *testing.T) {
 	assert.Nil(t, device)
 }
 
-func TestUpsertDeviceStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping TestPing in short mode.")
-	}
-	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
-	defer cancel()
-
-	const (
-		tenantID = "1234"
-		deviceID = "abcd"
-	)
-
-	ds := DataStoreMongo{client: db.Client()}
-	defer ds.DropDatabase()
-	err := ds.ProvisionDevice(ctx, tenantID, deviceID)
-	assert.NoError(t, err)
-
-	device, err := ds.GetDevice(ctx, tenantID, deviceID)
-	assert.NoError(t, err)
-	assert.Equal(t, model.DeviceStatusUnknown, device.Status)
-
-	previousClock := clock
-	defer func() {
-		clock = previousClock
-	}()
-
-	clock = mockClock{}
-
-	err = ds.UpsertDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusConnected)
-	assert.NoError(t, err)
-
-	device, err = ds.GetDevice(ctx, tenantID, deviceID)
-	assert.NoError(t, err)
-	assert.Equal(t, model.DeviceStatusConnected, device.Status)
-	assert.NotEqual(t, mockTime, device.CreatedTs)
-	assert.Equal(t, mockTime, device.UpdatedTs)
-
-	const anotherDeviceID = "efgh"
-	err = ds.UpsertDeviceStatus(ctx, tenantID, anotherDeviceID, model.DeviceStatusConnected)
-	assert.NoError(t, err)
-
-	device, err = ds.GetDevice(ctx, tenantID, anotherDeviceID)
-	assert.NoError(t, err)
-	assert.Equal(t, model.DeviceStatusConnected, device.Status)
-
-	err = ds.UpsertDeviceStatus(ctx, tenantID, anotherDeviceID, model.DeviceStatusDisconnected)
-	assert.NoError(t, err)
-
-	device, err = ds.GetDevice(ctx, tenantID, anotherDeviceID)
-	assert.NoError(t, err)
-	assert.Equal(t, model.DeviceStatusDisconnected, device.Status)
-}
-
 func TestSetDeviceStatus(t *testing.T) {
 	ds := DataStoreMongo{client: db.Client()}
 	collDevices := ds.client.Database(DbName).

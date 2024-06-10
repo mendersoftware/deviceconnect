@@ -146,30 +146,6 @@ func TestGetDevice(t *testing.T) {
 	store.AssertExpectations(t)
 }
 
-func TestUpdateDeviceStatus(t *testing.T) {
-	err := errors.New("error")
-	const tenantID = "1234"
-	const deviceID = "abcd"
-
-	store := &store_mocks.DataStore{}
-	store.On("UpsertDeviceStatus",
-		mock.MatchedBy(func(ctx context.Context) bool {
-			return true
-		}),
-		tenantID,
-		deviceID,
-		mock.AnythingOfType("string"),
-	).Return(err)
-
-	app := New(store, nil, nil)
-
-	ctx := context.Background()
-	res := app.UpdateDeviceStatus(ctx, tenantID, deviceID, "anything")
-	assert.Equal(t, err, res)
-
-	store.AssertExpectations(t)
-}
-
 type brokenReader struct{}
 
 func (r brokenReader) Read(b []byte) (int, error) {
