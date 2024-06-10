@@ -232,20 +232,6 @@ func (_m *DataStore) SetDeviceDisconnected(ctx context.Context, tenantID string,
 	return r0
 }
 
-// UpsertDeviceStatus provides a mock function with given fields: ctx, tenantID, deviceID, status
-func (_m *DataStore) UpsertDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error {
-	ret := _m.Called(ctx, tenantID, deviceID, status)
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
-		r0 = rf(ctx, tenantID, deviceID, status)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
 // WriteSessionRecords provides a mock function with given fields: ctx, sessionID, w
 func (_m *DataStore) WriteSessionRecords(ctx context.Context, sessionID string, w io.Writer) error {
 	ret := _m.Called(ctx, sessionID, w)

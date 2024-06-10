@@ -304,38 +304,6 @@ func (db *DataStoreMongo) SetDeviceDisconnected(
 	return err
 }
 
-// UpsertDeviceStatus upserts the connection status of a device
-func (db *DataStoreMongo) UpsertDeviceStatus(
-	ctx context.Context,
-	tenantID string,
-	deviceID string,
-	status string,
-) error {
-	coll := db.client.Database(DbName).Collection(DevicesCollectionName)
-
-	updateOpts := &mopts.UpdateOptions{}
-	updateOpts.SetUpsert(true)
-
-	now := clock.Now().UTC()
-
-	_, err := coll.UpdateOne(ctx,
-		bson.M{dbFieldID: deviceID, mstore.FieldTenantID: tenantID},
-		bson.M{
-			"$set": bson.M{
-				dbFieldStatus:    status,
-				dbFieldUpdatedTs: &now,
-			},
-			"$setOnInsert": bson.M{
-				dbFieldCreatedTs:     &now,
-				mstore.FieldTenantID: tenantID,
-			},
-		},
-		updateOpts,
-	)
-
-	return err
-}
-
 // AllocateSession allocates a new session.
 func (db *DataStoreMongo) AllocateSession(ctx context.Context, sess *model.Session) error {
 

@@ -30,7 +30,6 @@ type DataStore interface {
 	ProvisionDevice(ctx context.Context, tenantID string, deviceID string) error
 	DeleteDevice(ctx context.Context, tenantID, deviceID string) error
 	GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error)
-	UpsertDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error
 	SetDeviceConnected(ctx context.Context, tenantID, deviceID string) (int64, error)
 	SetDeviceDisconnected(ctx context.Context, tenantID, deviceID string, version int64) error
 	AllocateSession(ctx context.Context, sess *model.Session) error

@@ -246,20 +246,6 @@ func (_m *App) SetDeviceDisconnected(ctx context.Context, tenantID string, devic
 	return r0
 }
 
-// UpdateDeviceStatus provides a mock function with given fields: ctx, tenantID, deviceID, status
-func (_m *App) UpdateDeviceStatus(ctx context.Context, tenantID string, deviceID string, status string) error {
-	ret := _m.Called(ctx, tenantID, deviceID, status)
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
-		r0 = rf(ctx, tenantID, deviceID, status)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
 // UploadFile provides a mock function with given fields: ctx, userID, deviceID, path
 func (_m *App) UploadFile(ctx context.Context, userID string, deviceID string, path string) error {
 	ret := _m.Called(ctx, userID, deviceID, path)
