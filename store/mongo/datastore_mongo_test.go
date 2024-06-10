@@ -152,6 +152,77 @@ func TestUpsertDeviceStatus(t *testing.T) {
 	assert.Equal(t, model.DeviceStatusDisconnected, device.Status)
 }
 
+func TestSetDeviceStatus(t *testing.T) {
+	ds := DataStoreMongo{client: db.Client()}
+	collDevices := ds.client.Database(DbName).
+		Collection(DevicesCollectionName)
+	const (
+		tenantID = "000000000000000000000000"
+		deviceID = "00000000-0000-0000-0000-000000000000"
+	)
+	ctx := context.Background()
+	versionFirst, err := ds.SetDeviceConnected(ctx, tenantID, deviceID)
+	if err != nil {
+		t.Fatalf("received unexpected test error: %s", err)
+	}
+	versionNext, err := ds.SetDeviceConnected(ctx, tenantID, deviceID)
+	if err != nil {
+		t.Fatalf("received unexpected test error: %s", err)
+	} else if versionFirst >= versionNext {
+		t.Errorf("version number did not inctement as expected")
+		t.Fatalf("first version %d, next version: %d", versionFirst, versionNext)
+	}
+	type DeviceWithVersion struct {
+		model.Device `bson:"inline"`
+		Version      int64 `bson:"version"`
+	}
+	var devStateActual DeviceWithVersion
+	getDeviceStatus := func() DeviceWithVersion {
+		var res DeviceWithVersion
+		err = collDevices.FindOne(ctx, bson.M{dbFieldID: deviceID},
+			mopts.FindOne().SetProjection(bson.M{
+				dbFieldVersion: 1,
+				dbFieldStatus:  1,
+			})).Decode(&res)
+		if err != nil {
+			t.Fatalf("unexpected status retrieving device: %s", err.Error())
+		}
+		return res
+	}
+	devStateActual = getDeviceStatus()
+	if devStateActual.Status != "connected" {
+		t.Fatalf(`unexpected device status: expected: %q; actual: %q`,
+			model.DeviceStatusConnected, devStateActual.Status)
+	} else if devStateActual.Version != versionNext {
+		t.Fatalf(`unexpected device status: expected: %d; actual: %d`,
+			versionNext, devStateActual.Version,
+		)
+	}
+	t.Run("disconnect first out of two sessions", func(t *testing.T) {
+		err := ds.SetDeviceDisconnected(ctx, tenantID, deviceID, versionFirst)
+		if err != nil {
+			t.Fatalf("unexpected error setting device disconnected: %s", err.Error())
+		}
+		devStateActual = getDeviceStatus()
+		if devStateActual.Status != "connected" {
+			t.Fatalf(`unexpected device status: expected: %q; actual: %q`,
+				model.DeviceStatusConnected, devStateActual.Status)
+		}
+	})
+
+	t.Run("disconnect last session", func(t *testing.T) {
+		err := ds.SetDeviceDisconnected(ctx, tenantID, deviceID, versionNext)
+		if err != nil {
+			t.Fatalf("unexpected error setting device disconnected: %s", err.Error())
+		}
+		devStateActual = getDeviceStatus()
+		if devStateActual.Status != "disconnected" {
+			t.Fatalf(`unexpected device status: expected: %q; actual: %q`,
+				model.DeviceStatusConnected, devStateActual.Status)
+		}
+	})
+}
+
 type brokenReader struct{}
 
 func (r brokenReader) Read(b []byte) (int, error) {
