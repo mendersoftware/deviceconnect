@@ -60,23 +60,22 @@ func TestDeviceConnect(t *testing.T) {
 	app.On("UnregisterShutdownCancel",
 		mock.AnythingOfType("uint32"),
 	).Return()
-	app.On("UpdateDeviceStatus",
+	app.On("SetDeviceConnected",
 		mock.MatchedBy(func(_ context.Context) bool {
 			return true
 		}),
 		Identity.Tenant,
 		Identity.Subject,
-		model.DeviceStatusConnected,
-	).Return(nil)
+	).Return(int64(1), nil).Once()
 
-	app.On("UpdateDeviceStatus",
+	app.On("SetDeviceDisconnected",
 		mock.MatchedBy(func(_ context.Context) bool {
 			return true
 		}),
 		Identity.Tenant,
 		Identity.Subject,
-		model.DeviceStatusDisconnected,
-	).Return(nil)
+		int64(1),
+	).Return(nil).Once()
 
 	natsClient := NewNATSTestClient(t)
 	router, _ := NewRouter(app, natsClient, nil)
@@ -274,22 +273,21 @@ func TestDeviceConnect(t *testing.T) {
 	conn.Close()
 
 	// Restart a connection to check error handling
-	app.On("UpdateDeviceStatus",
+	app.On("SetDeviceConnected",
 		mock.MatchedBy(func(_ context.Context) bool {
 			return true
 		}),
 		Identity.Tenant,
 		Identity.Subject,
-		model.DeviceStatusConnected,
-	).Return(nil)
+	).Return(int64(1), nil)
 
-	app.On("UpdateDeviceStatus",
+	app.On("SetDeviceDisconnected",
 		mock.MatchedBy(func(_ context.Context) bool {
 			return true
 		}),
 		Identity.Tenant,
 		Identity.Subject,
-		model.DeviceStatusDisconnected,
+		int64(1),
 	).Return(nil)
 
 	conn, _, err = websocket.DefaultDialer.Dial(url+APIURLDevicesConnect, headers)
