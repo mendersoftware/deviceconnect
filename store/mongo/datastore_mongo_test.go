@@ -99,57 +99,75 @@ func TestProvisionAndDeleteDevice(t *testing.T) {
 	assert.Nil(t, device)
 }
 
-func TestUpsertDeviceStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping TestPing in short mode.")
-	}
-	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
-	defer cancel()
-
-	const (
-		tenantID = "1234"
-		deviceID = "abcd"
-	)
-
+func TestSetDeviceStatus(t *testing.T) {
 	ds := DataStoreMongo{client: db.Client()}
-	defer ds.DropDatabase()
-	err := ds.ProvisionDevice(ctx, tenantID, deviceID)
-	assert.NoError(t, err)
+	collDevices := ds.client.Database(DbName).
+		Collection(DevicesCollectionName)
+	const (
+		tenantID = "000000000000000000000000"
+		deviceID = "00000000-0000-0000-0000-000000000000"
+	)
+	ctx := context.Background()
+	versionFirst, err := ds.SetDeviceConnected(ctx, tenantID, deviceID)
+	if err != nil {
+		t.Fatalf("received unexpected test error: %s", err)
+	}
+	versionNext, err := ds.SetDeviceConnected(ctx, tenantID, deviceID)
+	if err != nil {
+		t.Fatalf("received unexpected test error: %s", err)
+	} else if versionFirst >= versionNext {
+		t.Errorf("version number did not inctement as expected")
+		t.Fatalf("first version %d, next version: %d", versionFirst, versionNext)
+	}
+	type DeviceWithVersion struct {
+		model.Device `bson:"inline"`
+		Version      int64 `bson:"version"`
+	}
+	var devStateActual DeviceWithVersion
+	getDeviceStatus := func() DeviceWithVersion {
+		var res DeviceWithVersion
+		err = collDevices.FindOne(ctx, bson.M{dbFieldID: deviceID},
+			mopts.FindOne().SetProjection(bson.M{
+				dbFieldVersion: 1,
+				dbFieldStatus:  1,
+			})).Decode(&res)
+		if err != nil {
+			t.Fatalf("unexpected status retrieving device: %s", err.Error())
+		}
+		return res
+	}
+	devStateActual = getDeviceStatus()
+	if devStateActual.Status != "connected" {
+		t.Fatalf(`unexpected device status: expected: %q; actual: %q`,
+			model.DeviceStatusConnected, devStateActual.Status)
+	} else if devStateActual.Version != versionNext {
+		t.Fatalf(`unexpected device status: expected: %d; actual: %d`,
+			versionNext, devStateActual.Version,
+		)
+	}
+	t.Run("disconnect first out of two sessions", func(t *testing.T) {
+		err := ds.SetDeviceDisconnected(ctx, tenantID, deviceID, versionFirst)
+		if err != nil {
+			t.Fatalf("unexpected error setting device disconnected: %s", err.Error())
+		}
+		devStateActual = getDeviceStatus()
+		if devStateActual.Status != "connected" {
+			t.Fatalf(`unexpected device status: expected: %q; actual: %q`,
+				model.DeviceStatusConnected, devStateActual.Status)
+		}
+	})
 
-	device, err := ds.GetDevice(ctx, tenantID, deviceID)
-	assert.NoError(t, err)
-	assert.Equal(t, model.DeviceStatusUnknown, device.Status)
-
-	previousClock := clock
-	defer func() {
-		clock = previousClock
-	}()
-
-	clock = mockClock{}
-
-	err = ds.UpsertDeviceStatus(ctx, tenantID, deviceID, model.DeviceStatusConnected)
-	assert.NoError(t, err)
-
-	device, err = ds.GetDevice(ctx, tenantID, deviceID)
-	assert.NoError(t, err)
-	assert.Equal(t, model.DeviceStatusConnected, device.Status)
-	assert.NotEqual(t, mockTime, device.CreatedTs)
-	assert.Equal(t, mockTime, device.UpdatedTs)
-
-	const anotherDeviceID = "efgh"
-	err = ds.UpsertDeviceStatus(ctx, tenantID, anotherDeviceID, model.DeviceStatusConnected)
-	assert.NoError(t, err)
-
-	device, err = ds.GetDevice(ctx, tenantID, anotherDeviceID)
-	assert.NoError(t, err)
-	assert.Equal(t, model.DeviceStatusConnected, device.Status)
-
-	err = ds.UpsertDeviceStatus(ctx, tenantID, anotherDeviceID, model.DeviceStatusDisconnected)
-	assert.NoError(t, err)
-
-	device, err = ds.GetDevice(ctx, tenantID, anotherDeviceID)
-	assert.NoError(t, err)
-	assert.Equal(t, model.DeviceStatusDisconnected, device.Status)
+	t.Run("disconnect last session", func(t *testing.T) {
+		err := ds.SetDeviceDisconnected(ctx, tenantID, deviceID, versionNext)
+		if err != nil {
+			t.Fatalf("unexpected error setting device disconnected: %s", err.Error())
+		}
+		devStateActual = getDeviceStatus()
+		if devStateActual.Status != "disconnected" {
+			t.Fatalf(`unexpected device status: expected: %q; actual: %q`,
+				model.DeviceStatusConnected, devStateActual.Status)
+		}
+	})
 }
 
 type brokenReader struct{}
