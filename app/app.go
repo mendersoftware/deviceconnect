@@ -35,6 +35,7 @@ var (
 )
 
 // App interface describes app objects
+//
 //nolint:lll
 //go:generate ../utils/mockgen.sh
 type App interface {
@@ -42,7 +43,8 @@ type App interface {
 	ProvisionDevice(ctx context.Context, tenantID string, device *model.Device) error
 	GetDevice(ctx context.Context, tenantID, deviceID string) (*model.Device, error)
 	DeleteDevice(ctx context.Context, tenantID, deviceID string) error
-	UpdateDeviceStatus(ctx context.Context, tenantID, deviceID, status string) error
+	SetDeviceConnected(ctx context.Context, tenantID, deviceID string) (int64, error)
+	SetDeviceDisconnected(ctx context.Context, tenantID, deviceID string, version int64) error
 	PrepareUserSession(ctx context.Context, sess *model.Session) error
 	LogUserSession(ctx context.Context, sess *model.Session, sessionType string) error
 	FreeUserSession(ctx context.Context, sessionID string, sessionTypes []string) error
@@ -116,12 +118,20 @@ func (a *app) DeleteDevice(ctx context.Context, tenantID, deviceID string) error
 	return a.store.DeleteDevice(ctx, tenantID, deviceID)
 }
 
-// UpdateDeviceStatus provisions a new tenant
-func (a *app) UpdateDeviceStatus(
+func (a *app) SetDeviceConnected(
 	ctx context.Context,
-	tenantID, deviceID, status string,
+	tenantID string,
+	deviceID string,
+) (int64, error) {
+	return a.store.SetDeviceConnected(ctx, tenantID, deviceID)
+}
+func (a *app) SetDeviceDisconnected(
+	ctx context.Context,
+	tenantID string,
+	deviceID string,
+	version int64,
 ) error {
-	return a.store.UpsertDeviceStatus(ctx, tenantID, deviceID, status)
+	return a.store.SetDeviceDisconnected(ctx, tenantID, deviceID, version)
 }
 
 // PrepareUserSession prepares a new user session

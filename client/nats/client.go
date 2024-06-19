@@ -32,6 +32,7 @@ const (
 )
 
 // Client is the nats client
+//
 //go:generate ../../utils/mockgen.sh
 type Client interface {
 	Publish(string, []byte) error
