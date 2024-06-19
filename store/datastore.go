@@ -23,6 +23,7 @@ import (
 )
 
 // DataStore interface for DataStore services
+//
 //nolint:lll - skip line length check for interface declaration.
 //go:generate ../utils/mockgen.sh
 type DataStore interface {
