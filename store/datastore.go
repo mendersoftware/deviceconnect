@@ -39,6 +39,7 @@ type DataStore interface {
 	InsertSessionRecording(ctx context.Context, sessionID string, sessionBytes []byte) error
 	InsertControlRecording(ctx context.Context, sessionID string, sessionBytes []byte) error
 	DeleteSession(ctx context.Context, sessionID string) (*model.Session, error)
+	DeleteTenant(ctx context.Context, tenantID string) error
 	Close() error
 }
 

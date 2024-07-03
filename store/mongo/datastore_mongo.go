@@ -612,3 +612,19 @@ func (db *DataStoreMongo) DropDatabase() error {
 	err := db.client.Database(DbName).Drop(ctx)
 	return err
 }
+
+func (db *DataStoreMongo) DeleteTenant(ctx context.Context, tenantID string) error {
+	database := db.client.Database(DbName)
+	collectionNames, err := database.ListCollectionNames(ctx, mopts.ListCollectionsOptions{})
+	if err != nil {
+		return err
+	}
+	for _, collName := range collectionNames {
+		collection := database.Collection(collName)
+		_, e := collection.DeleteMany(ctx, mstore.WithTenantID(ctx, bson.D{}))
+		if e != nil {
+			return e
+		}
+	}
+	return nil
+}

@@ -87,3 +87,17 @@ func (h InternalController) sendMenderCommand(c *gin.Context, msgType string) {
 
 	c.JSON(http.StatusAccepted, nil)
 }
+
+func (h InternalController) DeleteTenant(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenantID := c.Param("tenantId")
+
+	err := h.app.DeleteTenant(ctx, tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+	}
+
+	c.Status(http.StatusNoContent)
+}
