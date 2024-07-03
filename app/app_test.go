@@ -17,6 +17,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -30,6 +31,7 @@ import (
 	wf_mocks "github.com/mendersoftware/deviceconnect/client/workflows/mocks"
 	"github.com/mendersoftware/deviceconnect/model"
 	store_mocks "github.com/mendersoftware/deviceconnect/store/mocks"
+	"github.com/mendersoftware/go-lib-micro/identity"
 )
 
 func TestHealthCheck(t *testing.T) {
@@ -885,4 +887,50 @@ func TestShutdownCancels(t *testing.T) {
 	assert.Greater(t, elapsed, gracePeriod)
 
 	app.ShutdownDone()
+}
+
+func TestDeleteTenant(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		tenantId string
+
+		dbErr  error
+		outErr string
+	}{
+		{
+			tenantId: "tenant1",
+			dbErr:    errors.New("error"),
+		},
+		{
+			tenantId: "tenant2",
+		},
+	}
+
+	for i, tc := range testCases {
+		t.Run(fmt.Sprintf("tc %d", i), func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+
+			ds := new(store_mocks.DataStore)
+			defer ds.AssertExpectations(t)
+			ds.On("DeleteTenant",
+				mock.MatchedBy(func(ctx context.Context) bool {
+					ident := identity.FromContext(ctx)
+					return assert.NotNil(t, ident) &&
+						assert.Equal(t, tc.tenantId, ident.Tenant)
+				}),
+				tc.tenantId,
+			).Return(tc.dbErr)
+			app := New(ds, nil, nil, Config{})
+			err := app.DeleteTenant(ctx, tc.tenantId)
+
+			if tc.dbErr != nil {
+				assert.EqualError(t, err, tc.dbErr.Error())
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

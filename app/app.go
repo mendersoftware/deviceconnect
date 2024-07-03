@@ -24,6 +24,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 
+	"github.com/mendersoftware/go-lib-micro/identity"
+
 	"github.com/mendersoftware/deviceconnect/client/inventory"
 	"github.com/mendersoftware/deviceconnect/client/workflows"
 	"github.com/mendersoftware/deviceconnect/model"
@@ -56,6 +58,7 @@ type App interface {
 	GetControlRecorder(ctx context.Context, sessionID string) io.Writer
 	DownloadFile(ctx context.Context, userID string, deviceID string, path string) error
 	UploadFile(ctx context.Context, userID string, deviceID string, path string) error
+	DeleteTenant(ctx context.Context, tenantID string) error
 	Shutdown(timeout time.Duration)
 	ShutdownDone()
 	RegisterShutdownCancel(context.CancelFunc) uint32
@@ -360,4 +363,11 @@ func (a *app) UnregisterShutdownCancel(id uint32) {
 	a.shutdownCancelsM.Lock()
 	defer a.shutdownCancelsM.Unlock()
 	delete(a.shutdownCancels, id)
+}
+
+func (d *app) DeleteTenant(ctx context.Context, tenantID string) error {
+	tenantCtx := identity.WithContext(ctx, &identity.Identity{
+		Tenant: tenantID,
+	})
+	return d.store.DeleteTenant(tenantCtx, tenantID)
 }
