@@ -46,6 +46,20 @@ func (_m *App) DeleteDevice(ctx context.Context, tenantID string, deviceID strin
 	return r0
 }
 
+// DeleteTenant provides a mock function with given fields: ctx, tenantID
+func (_m *App) DeleteTenant(ctx context.Context, tenantID string) error {
+	ret := _m.Called(ctx, tenantID)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = rf(ctx, tenantID)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // DownloadFile provides a mock function with given fields: ctx, userID, deviceID, path
 func (_m *App) DownloadFile(ctx context.Context, userID string, deviceID string, path string) error {
 	ret := _m.Called(ctx, userID, deviceID, path)

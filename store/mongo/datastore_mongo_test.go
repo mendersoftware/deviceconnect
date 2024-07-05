@@ -29,6 +29,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	mopts "go.mongodb.org/mongo-driver/mongo/options"
@@ -688,4 +689,32 @@ func TestSetSessionRecording(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeleteTenant(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping TestDeleteTenant in short mode.")
+	}
+
+	const tenant = "foo"
+	deviceID := uuid.NewSHA1(uuid.NameSpaceDNS, []byte("mender.io")).String()
+
+	ctx := identity.WithContext(context.Background(),
+		&identity.Identity{
+			Tenant: tenant,
+		},
+	)
+
+	d := &DataStoreMongo{
+		client: db.Client(),
+	}
+	err := d.ProvisionDevice(ctx, tenant, deviceID)
+	require.NoError(t, err)
+
+	err = d.DeleteTenant(ctx, tenant)
+	assert.NoError(t, err)
+
+	dev, err := d.GetDevice(ctx, tenant, deviceID)
+	assert.Nil(t, dev)
+	assert.NoError(t, err)
 }

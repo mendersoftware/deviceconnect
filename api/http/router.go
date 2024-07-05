@@ -38,6 +38,7 @@ const (
 	APIURLInternalAlive     = APIURLInternal + "/alive"
 	APIURLInternalHealth    = APIURLInternal + "/health"
 	APIURLInternalShutdown  = APIURLInternal + "/shutdown"
+	APIURLInternalTenant    = APIURLInternal + "/tenants/:tenantId"
 	APIURLInternalDevices   = APIURLInternal + "/tenants/:tenantId/devices"
 	APIURLInternalDevicesID = APIURLInternal +
 		"/tenants/:tenantId/devices/:deviceId"
@@ -89,6 +90,7 @@ func NewRouter(
 	router.GET(APIURLInternalShutdown, status.Shutdown)
 
 	internal := NewInternalController(app, natsClient)
+	router.DELETE(APIURLInternalTenant, internal.DeleteTenant)
 	router.POST(APIURLInternalDevicesIDCheckUpdate, internal.CheckUpdate)
 	router.POST(APIURLInternalDevicesIDSendInventory, internal.SendInventory)
 

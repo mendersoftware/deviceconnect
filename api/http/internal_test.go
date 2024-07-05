@@ -270,3 +270,67 @@ func TestInternalSendInventory(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteTenant(t *testing.T) {
+	t.Parallel()
+	const tenantID = "123456789012345678901234"
+
+	testCases := []struct {
+		Name    string
+		Request *http.Request
+		Error   error
+		Status  int
+	}{{
+		Name: "ok",
+
+		Request: func() *http.Request {
+			repl := strings.NewReplacer(
+				":tenantId", tenantID,
+			)
+			req, _ := http.NewRequest("DELETE",
+				"http://localhost"+repl.Replace(APIURLInternalTenant),
+				nil,
+			)
+			return req
+		}(),
+
+		Status: http.StatusNoContent,
+	}, {
+		Name: "error, internal server error",
+
+		Request: func() *http.Request {
+			repl := strings.NewReplacer(
+				":tenantId", tenantID,
+			)
+			req, _ := http.NewRequest("DELETE",
+				"http://localhost"+repl.Replace(APIURLInternalTenant),
+				nil,
+			)
+			return req
+		}(),
+
+		Error:  errors.New("error"),
+		Status: http.StatusInternalServerError,
+	}}
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			app := &app_mocks.App{}
+			defer app.AssertExpectations(t)
+
+			router, _ := NewRouter(app, nil, nil)
+			s := httptest.NewServer(router)
+			defer s.Close()
+
+			app.On("DeleteTenant",
+				mock.MatchedBy(func(_ context.Context) bool {
+					return true
+				}),
+				tenantID,
+			).Return(tc.Error)
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, tc.Request)
+			assert.Equal(t, tc.Status, w.Code)
+		})
+	}
+}
