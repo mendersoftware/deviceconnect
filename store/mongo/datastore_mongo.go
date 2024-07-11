@@ -1,4 +1,4 @@
-// Copyright 2023 Northern.tech AS
+// Copyright 2024 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -120,7 +120,7 @@ func NewClient(ctx context.Context, c config.Reader) (*mongo.Client, error) {
 		return nil, errors.Errorf("Invalid mongoURL %q: missing schema.",
 			mongoURL)
 	}
-	clientOptions.ApplyURI(mongoURL)
+	clientOptions.ApplyURI(mongoURL).SetRegistry(newRegistry())
 
 	username := c.GetString(dconfig.SettingDbUsername)
 	if username != "" {
