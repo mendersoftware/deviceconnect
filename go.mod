@@ -9,7 +9,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/mendersoftware/go-lib-micro v0.0.0-20240808092732-904477fef2ef
 	github.com/nats-io/nats-server/v2 v2.10.7
-	github.com/nats-io/nats.go v1.36.0
+	github.com/nats-io/nats.go v1.37.0
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli v1.22.15
