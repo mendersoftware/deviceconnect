@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.23.3-alpine3.20 as builder
+FROM --platform=$BUILDPLATFORM golang:1.23.3-alpine3.20 AS builder
 ARG TARGETARCH
 WORKDIR /go/src/github.com/mendersoftware/deviceconnect
 RUN apk add --no-cache \
