@@ -37,8 +37,7 @@ $(BINFILE): $(SRCFILES)
 	$(GO) build -o $@ .
 
 $(BINFILE).test: $(GOFILES)
-	go test -c -o $(BINFILE).test -tags main \
-		-cover -covermode atomic -coverpkg $(PACKAGES)
+	go build -cover -covermode atomic -o $(BINFILE).test
 
 $(COVERFILE): $(GOFILES)
 	$(GO) test -cover -covermode=atomic -coverprofile=$@ ${TEST_FLAGS} ./...

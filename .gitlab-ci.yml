@@ -46,26 +46,19 @@ test:acceptance:
     - /^saas-[a-zA-Z0-9.-]+$/
   tags:
     - hetzner-amd-beefy
-  image: docker:20.10.21
+  image: docker:28.1.1
   services:
-    - name: docker:20.10.21-dind
+    - name: docker:28.1.1-dind
       alias: docker
   before_script:
     - apk add docker-compose make
   script:
     - make acceptance-tests
-  after_script:
-    - set -- tests/coverage-acceptance@*.txt
-    - head -n 1 $1 > tests/coverage-acceptance.txt
-    - |
-      for cover in $@; do
-        tail -n +2 $cover >> tests/coverage-acceptance.txt;
-      done
+  after_script: []
   artifacts:
     expire_in: 2w
     paths:
-      - tests/acceptance.*
-      - tests/coverage-acceptance.txt
+      - tests/cover
     when: always
 
 # excludes non multiplatform build job
@@ -92,12 +85,13 @@ publish:acceptance:
   stage: publish
   except:
     - /^saas-[a-zA-Z0-9.-]+$/
-  image: golang:1.18
+  image: golang:1.23
   needs:
     - job: test:acceptance
       artifacts: true
   before_script:
-    - GO111MODULE=off go get github.com/mattn/goveralls
+    - go tool covdata textfmt -i tests/cover -o coverage.txt
+    - go install github.com/mattn/goveralls@latest
     # Coveralls env variables:
     #  According to https://docs.coveralls.io/supported-ci-services
     #  we should set CI_NAME, CI_BUILD_NUMBER, etc. But according
@@ -114,7 +108,7 @@ publish:acceptance:
       -covermode atomic
       -flagname acceptance
       -parallel
-      -coverprofile ./tests/coverage-acceptance.txt
+      -coverprofile coverage.txt
 
 #
 # Alvaldi Helm Rolling release
