@@ -30,9 +30,9 @@ var (
 
 func init() {
 	// Add UUID encoder/decoder for github.com/google/uuid.UUID
-	bson.DefaultRegistry = bson.NewRegistry()
-	bson.DefaultRegistry.RegisterTypeEncoder(tUUID, bsoncodec.ValueEncoderFunc(uuidEncodeValue))
-	bson.DefaultRegistry.RegisterTypeDecoder(tUUID, bsoncodec.ValueDecoderFunc(uuidDecodeValue))
+	bson.DefaultRegistry = bson.NewRegistry()                                                    //nolint
+	bson.DefaultRegistry.RegisterTypeEncoder(tUUID, bsoncodec.ValueEncoderFunc(uuidEncodeValue)) //nolint
+	bson.DefaultRegistry.RegisterTypeDecoder(tUUID, bsoncodec.ValueDecoderFunc(uuidDecodeValue)) //nolint
 }
 
 func uuidEncodeValue(ec bsoncodec.EncodeContext, w bsonrw.ValueWriter, val reflect.Value) error {
