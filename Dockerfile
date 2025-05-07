@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOARCH=$TARGETARCH go build
 FROM scratch
 EXPOSE 8080
 COPY --from=builder /etc_extra/ /etc/
-USER 65534
+USER 65534:65534
 WORKDIR /etc/deviceconnect
 COPY --from=builder --chown=nobody /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --chown=nobody ./config.yaml .
