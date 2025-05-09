@@ -22,6 +22,7 @@ services:
         dockerfile: "Dockerfile.acceptance"
         context: ".."
       image: mendersoftware/deviceconnect:prtest
+      user: "${UID:-0}:${GID:-0}"
       networks:
         mender:
           aliases:
@@ -34,6 +35,7 @@ services:
         - mender-nats
       environment:
         DEVICECONNECT_NATS_URL: "nats://mender-nats"
+        GOCOVERDIR: "/testing/tests/cover"
 
     mmock:
       image: "jordimartin/mmock:v3.0.0"

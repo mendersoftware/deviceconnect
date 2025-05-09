@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 			}
 		}()
 		return m.Run()
-	})
+	}, nil)
 
 	os.Exit(status)
 }
